@@ -1,0 +1,56 @@
+import { ComponentType, type APIContainerComponent } from 'discord.js';
+import { describe, expect, it } from 'vitest';
+import { renderHub } from '../src/discord/embeds/hub.js';
+import { renderConsent, renderMeetingManager } from '../src/discord/embeds/meetingManager.js';
+import { decode } from '../src/domain/customId.js';
+import { messages } from '../src/i18n/index.js';
+
+const m = messages('fr');
+const id = '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b';
+const meeting = { id, title: 'Bureau', status: 'scheduled' as const, autoRecord: false };
+
+function actions(c: APIContainerComponent): string[] {
+  const out: string[] = [];
+  const walk = (x: { type: number; custom_id?: string; components?: unknown[] }) => {
+    if (x.type === ComponentType.Button && x.custom_id) {
+      const a = decode(x.custom_id);
+      out.push(a ? a.type : '?');
+    }
+    for (const y of (x.components as never[]) ?? []) walk(y);
+  };
+  walk(c as never);
+  return out;
+}
+
+describe('panneau « Gérer »', () => {
+  it('réunion à venir : toutes les actions, sans régénération tant que rien n’est enregistré', () => {
+    expect(actions(renderMeetingManager(meeting, { hasRecording: false }, m))).toEqual([
+      'meeting.edit',
+      'meeting.duplicate',
+      'meeting.autoRecord',
+      'meeting.end',
+      'meeting.cancel',
+    ]);
+  });
+  it('clôture : confirmation demandée', () => {
+    expect(actions(renderMeetingManager(meeting, { hasRecording: false, confirmEnd: true }, m))).toContain('meeting.endConfirm');
+  });
+  it('réunion close et enregistrée : dupliquer et régénérer seulement', () => {
+    expect(actions(renderMeetingManager({ ...meeting, status: 'ended' }, { hasRecording: true }, m))).toEqual(['meeting.duplicate', 'meeting.regen', 'meeting.regenAll']);
+  });
+});
+
+describe('choix d’enregistrement', () => {
+  it('accepte : bouton Refuser actif', () => {
+    const c = renderConsent({ roleConfigured: true, refused: false }, m);
+    expect(actions(c)).toEqual(['consent.refuse', 'consent.accept']);
+    expect(JSON.stringify(c)).toContain('**acceptez**');
+  });
+  it('aucun rôle configuré : explication, pas de bouton', () => {
+    expect(actions(renderConsent({ roleConfigured: false, refused: false }, m))).toEqual([]);
+  });
+  it('accessible depuis le post épinglé', () => {
+    const hub = renderHub([], m);
+    expect(hub.components[0]!.components.map((b) => decode((b as { custom_id: string }).custom_id)?.type)).toEqual(['meeting.create', 'consent.open']);
+  });
+});

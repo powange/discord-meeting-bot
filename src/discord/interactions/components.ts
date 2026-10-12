@@ -19,13 +19,20 @@ import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
 import { fetchForum } from '../threads.js';
-import { agendaItemModal, meetingModal, readAgendaItemModal, readMeetingModal } from '../modals.js';
+import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingModal } from '../modals.js';
+import { renderMeetingManager } from '../embeds/meetingManager.js';
+import { formatWhen } from '../../domain/time.js';
+import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
 
 type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
 
 /** Traite un bouton, menu ou formulaire dont le customId a été décodé. */
-export async function handleAction(ctx: AppContext, interaction: ComponentInteraction, action: Exclude<Action, { type: 'tx' } | { type: 'cfg' }>): Promise<void> {
+export async function handleAction(
+  ctx: AppContext,
+  interaction: ComponentInteraction,
+  action: Exclude<Action, { type: 'tx' } | { type: 'cfg' } | { type: 'consent.open' } | { type: 'consent.refuse' } | { type: 'consent.accept' }>,
+): Promise<void> {
   if (action.type === 'meeting.create') {
     if (!interaction.isButton()) return;
     return showCreateModal(ctx, interaction);
@@ -201,6 +208,120 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       return;
     }
 
+    // ---------------------------------------------------------------- panneau « Gérer »
+
+    case 'meeting.manage': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      const payload = { components: [await managerPanel(ctx, meeting)] };
+      // Ouvert depuis la carte : nouveau message privé ; « Retour » depuis le panneau : mise à jour.
+      if (interaction.message.flags.has(MessageFlags.Ephemeral)) await interaction.update(payload);
+      else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+      return;
+    }
+
+    case 'meeting.autoRecord': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await ctx.meetings.setAutoRecord(meeting.id, !meeting.autoRecord);
+      const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;
+      await interaction.update({ components: [await managerPanel(ctx, updated, { notice: m.recording.autoSet(updated.autoRecord) })] });
+      return;
+    }
+
+    case 'meeting.end': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.update({ components: [await managerPanel(ctx, meeting, { confirmEnd: true, notice: m.manage.endAsk })] });
+      return;
+    }
+
+    case 'meeting.endConfirm': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.deferUpdate();
+      const ok = await ctx.meetings.end(meeting.id, interaction.user.id);
+      const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;
+      await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: ok ? m.replies.ended : m.errors.meetingClosed })] });
+      return;
+    }
+
+    case 'meeting.cancel': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'meeting.cancelSubmit', meetingId: meeting.id }))
+          .setTitle(m.manage.cancelModal)
+          .addLabelComponents(
+            new LabelBuilder()
+              .setLabel(m.manage.cancelReason)
+              .setDescription(m.manage.cancelReasonHint)
+              .setTextInputComponent(new TextInputBuilder().setCustomId('reason').setStyle(TextInputStyle.Paragraph).setMaxLength(500).setRequired(false)),
+          ),
+      );
+      return;
+    }
+
+    case 'meeting.cancelSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      requireManager(scope);
+      const reason = interaction.fields.getTextInputValue('reason').trim() || null;
+      const ok = await ctx.meetings.cancel(meeting.id, interaction.user.id, reason);
+      await replyEphemeral(interaction, ok ? m.replies.cancelled : m.errors.meetingClosed);
+      return;
+    }
+
+    case 'meeting.duplicate': {
+      if (!interaction.isButton()) return;
+      if (!canCreateMeeting(scope.actor, scope.settings)) throw new UserError(m.errors.cannotCreate);
+      await interaction.showModal(
+        duplicateModal(m, {
+          customId: encode({ type: 'meeting.duplicateSubmit', meetingId: meeting.id }),
+          timezone: scope.settings.timezone,
+          locale: scope.settings.locale,
+          startsAt: meeting.startsAt,
+          durationMin: meeting.durationMin,
+        }),
+      );
+      return;
+    }
+
+    case 'meeting.duplicateSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      if (!canCreateMeeting(scope.actor, scope.settings)) throw new UserError(m.errors.cannotCreate);
+      const input = readDuplicateModal(interaction, m, scope.settings.timezone, meeting.durationMin);
+      const copy = await ctx.meetings.create(
+        interaction.guild,
+        interaction.user.id,
+        { title: meeting.title, description: meeting.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceChannelId },
+        input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
+      );
+      await replyEphemeral(interaction, m.replies.duplicated(copy.threadId!));
+      return;
+    }
+
+    case 'meeting.regen':
+    case 'meeting.regenAll': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      const retranscribe = action.type === 'meeting.regenAll';
+      const recordings = await ctx.repos.listRecordingsForMeeting(meeting.id);
+      let notice: string;
+      if (recordings.length === 0) notice = m.pipeline.nothing;
+      else if (ctx.recordings.isRecording(meeting.id)) notice = m.errors.alreadyRecording;
+      else if (ctx.pipeline.isQueued(meeting.id)) notice = m.pipeline.running_reply;
+      else if (retranscribe && recordings.some((r) => r.purgedAt)) {
+        const purged = recordings.find((r) => r.purgedAt)!;
+        notice = m.pipeline.purged(formatWhen(purged.purgedAt!, scope.settings.timezone, scope.settings.locale, m.format.when));
+      } else {
+        await ctx.pipeline.regenerate(meeting.id, retranscribe);
+        notice = m.pipeline.scheduled;
+      }
+      await interaction.update({ components: [await managerPanel(ctx, meeting, { notice })] });
+      return;
+    }
+
     case 'meeting.edit': {
       if (!interaction.isButton()) return;
       await showEditModal(interaction, scope);
@@ -224,7 +345,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
   }
 }
 
-/** Ouvre le formulaire de modification (bouton « Modifier » ou `/reunion modifier`). */
+/** Ouvre le formulaire de modification (panneau « Gérer » → Modifier). */
 export async function showEditModal(interaction: ButtonInteraction<'cached'> | ChatInputCommandInteraction<'cached'>, scope: MeetingScope): Promise<void> {
   requireManager(scope);
   const { meeting, m } = scope;
@@ -277,6 +398,13 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
   });
   const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
   await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
+}
+
+/** Panneau « Gérer » d'une réunion. */
+async function managerPanel(ctx: AppContext, meeting: MeetingRow, state: { confirmEnd?: boolean; notice?: string } = {}) {
+  const m = await ctx.settings.messages(meeting.guildId);
+  const hasRecording = (await ctx.repos.listRecordingsForMeeting(meeting.id)).length > 0;
+  return renderMeetingManager(meeting, { hasRecording, ...state }, m);
 }
 
 async function updateManager(

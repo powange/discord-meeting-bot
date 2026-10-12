@@ -36,6 +36,7 @@ export const fr = {
     addItem: 'Ajouter un point',
     manageAgenda: "Gérer l'ODJ",
     edit: 'Modifier',
+    manage: 'Gérer',
     moveUp: 'Monter',
     moveDown: 'Descendre',
     remove: 'Retirer',
@@ -130,11 +131,11 @@ export const fr = {
     warning: (optoutRole: string | null) =>
       '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.' +
       (optoutRole
-        ? `\nPour ne pas être enregistré : \`/enregistrement refuser\` (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
+        ? `\nPour ne pas être enregistré : bouton « Mon choix d'enregistrement » ci-dessous (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
         : ''),
     started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
     arrival: (userId: string) =>
-      `🔴 <@${userId}>, cette réunion est **enregistrée** (une piste audio par participant, pour le compte rendu). Pour ne pas l'être : \`/enregistrement refuser\`.`,
+      `🔴 <@${userId}>, cette réunion est **enregistrée** (une piste audio par participant, pour le compte rendu). Pour ne pas l'être : bouton ci-dessous.`,
     reasons: {
       manual: 'arrêt manuel',
       empty: 'vocal vide',
@@ -262,6 +263,41 @@ export const fr = {
     recordingInterrupted: (title: string, reason: string, url: string) => `Enregistrement de « ${title} » interrompu (${reason}). Reprise possible depuis le post : ${url}`,
   },
 
+  manage: {
+    title: 'Gérer la réunion',
+    edit: 'Modifier',
+    duplicate: 'Dupliquer',
+    autoOn: 'Enregistrer automatiquement',
+    autoOff: "Ne plus enregistrer automatiquement",
+    end: 'Clore maintenant',
+    endConfirm: 'Confirmer la clôture',
+    cancel: 'Annuler la réunion',
+    back: 'Retour',
+    regen: 'Régénérer le résumé',
+    regenAll: 'Tout retranscrire',
+    endAsk: 'Clore la réunion maintenant ? Un enregistrement en cours sera arrêté et le compte rendu lancé.',
+    cancelModal: 'Annuler la réunion',
+    cancelReason: 'Raison (affichée dans le post)',
+    cancelReasonHint: 'Optionnelle',
+    duplicateModal: 'Dupliquer la réunion',
+    copyAgenda: "Reprendre l'ordre du jour",
+    copyYes: "Oui, reprendre les points",
+    copyNo: 'Non, ordre du jour vide',
+  },
+
+  consent: {
+    title: 'Mon choix d’enregistrement',
+    open: "Mon choix d'enregistrement",
+    statusAccepted: '🎙️ Vous **acceptez** que votre voix soit enregistrée pendant les réunions.',
+    statusRefused: '🔇 Vous **refusez** l’enregistrement : votre voix n’est jamais enregistrée (votre présence reste notée).',
+    explain: "Les réunions peuvent être enregistrées pour en produire le compte rendu (une piste par participant). Vous pouvez changer d'avis à tout moment.",
+    refuse: 'Refuser',
+    accept: 'Accepter',
+    refused: '✅ C’est noté : vous ne serez plus enregistré.',
+    accepted: '✅ C’est noté : vous serez de nouveau enregistré.',
+    notConfigured: "Aucun rôle « ne pas m'enregistrer » n'est configuré sur ce serveur : demandez à un administrateur (`/config` → Rôles).",
+  },
+
   pipeline: {
     title: '## 📝 Compte rendu',
     steps: { mix: 'Audio complet', transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication' } as Record<string, string>,
@@ -359,7 +395,7 @@ export const fr = {
       roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, opt-out, relance', help: "Gestionnaires : gèrent toutes les réunions. Ne pas enregistrer : voix jamais enregistrée. Relance : membres mentionnés s'ils n'ont pas répondu. Videz un sélecteur pour retirer un rôle." },
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
-      recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage automatique par défaut', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (/reunion enregistrement-auto)." },
+      recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage automatique par défaut', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },
       transcription: { emoji: '🎙️', label: 'Transcription', hint: 'Serveurs Vibe / Whisper', help: '' },
       summary: {
         emoji: '📝',

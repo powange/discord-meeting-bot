@@ -30,6 +30,12 @@ describe('customId', () => {
     { type: 'rec.start', meetingId: id },
     { type: 'rec.stop', meetingId: id },
     { type: 'meeting.create' },
+    { type: 'meeting.manage', meetingId: id },
+    { type: 'meeting.duplicateSubmit', meetingId: id },
+    { type: 'meeting.regenAll', meetingId: id },
+    { type: 'consent.open' },
+    { type: 'consent.refuse' },
+    { type: 'consent.accept' },
     { type: 'meeting.createSubmit' },
   ];
 
@@ -59,6 +65,8 @@ describe('customId', () => {
     'v1:tx:explode:1',
     'v1:tx:up:abc',
     'v1:cfg:explode',
+    `v1:meeting:explode:${id}`,
+    'v1:consent:maybe',
     'v1:cfg:page:../etc',
     `v1:rec:start:${id}:x`,
     `v1:meeting:edit:${id}:x`,

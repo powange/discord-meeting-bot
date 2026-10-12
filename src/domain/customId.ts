@@ -16,8 +16,10 @@ export type Action =
   | { type: 'agenda.edit'; meetingId: string; itemId: number }
   | { type: 'agenda.editSubmit'; meetingId: string; itemId: number }
   | { type: 'agenda.lock'; meetingId: string; locked: boolean }
-  | { type: 'meeting.edit'; meetingId: string }
-  | { type: 'meeting.editSubmit'; meetingId: string }
+  | { type: MeetingVerbType; meetingId: string }
+  | { type: 'consent.open' }
+  | { type: 'consent.refuse' }
+  | { type: 'consent.accept' }
   | { type: 'report.retry'; meetingId: string }
   | { type: 'report.correct'; meetingId: string }
   | { type: 'report.correctSubmit'; meetingId: string }
@@ -62,6 +64,26 @@ export const CFG_ACTIONS = [
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 
+/**
+ * Actions sur une réunion (panneau « Gérer » de la carte) : `meeting.<verbe>:<meetingId>`.
+ * Ils remplacent les anciennes sous-commandes /reunion.
+ */
+export const MEETING_VERBS = [
+  'edit',
+  'editSubmit',
+  'manage',
+  'duplicate',
+  'duplicateSubmit',
+  'autoRecord',
+  'end',
+  'endConfirm',
+  'cancel',
+  'cancelSubmit',
+  'regen',
+  'regenAll',
+] as const;
+type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
+
 const VERSION = 'v1';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -93,6 +115,11 @@ export function encode(action: Action): string {
       break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
+      break;
+    case 'consent.open':
+    case 'consent.refuse':
+    case 'consent.accept':
+      parts.push('consent', action.type.split('.')[1]!);
       break;
     default: {
       const [group, verb] = action.type.split('.') as [string, string];
@@ -131,6 +158,12 @@ export function decode(customId: string): Action | null {
   }
 
   const [verb, meetingId, a, b] = rest;
+  if (group === 'consent') {
+    const [v] = rest;
+    if (rest.length === 1 && (v === 'open' || v === 'refuse' || v === 'accept')) return { type: `consent.${v}` };
+    return null;
+  }
+
   if (group === 'meeting' && rest.length === 1) {
     if (verb === 'create') return { type: 'meeting.create' };
     if (verb === 'createSubmit') return { type: 'meeting.createSubmit' };
@@ -138,10 +171,8 @@ export function decode(customId: string): Action | null {
   if (!isUuid(meetingId)) return null;
 
   if (group === 'meeting') {
-    if (rest.length !== 2) return null;
-    if (verb === 'edit') return { type: 'meeting.edit', meetingId };
-    if (verb === 'editSubmit') return { type: 'meeting.editSubmit', meetingId };
-    return null;
+    if (rest.length !== 2 || !MEETING_VERBS.includes(verb as (typeof MEETING_VERBS)[number])) return null;
+    return { type: `meeting.${verb}` as MeetingVerbType, meetingId };
   }
 
   if (group === 'report') {

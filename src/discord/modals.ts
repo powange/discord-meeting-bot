@@ -46,20 +46,7 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
   if (o.reschedulable) {
     const now = o.now ?? new Date();
     const selectedDay = d.startsAt ? dayOf(d.startsAt, o.timezone) : undefined;
-    const today = dayOf(now, o.timezone);
-    const day = new StringSelectMenuBuilder()
-      .setCustomId(F.day)
-      .setPlaceholder(m.modal.dayPlaceholder)
-      .setRequired(true)
-      .addOptions(
-        ...dayChoices(o.timezone, now, DAY_CHOICES - 1, selectedDay).map((iso) => ({
-          label: dayLabel(iso, today, o.timezone, o.locale, m),
-          value: iso,
-          default: iso === selectedDay,
-        })),
-        // Au-delà des prochains jours : la date se saisit avec l'horaire.
-        { label: m.modal.otherDay, value: OTHER_DAY, emoji: '📅', description: m.modal.otherDayHint },
-      );
+    const day = dayMenu(m, o.timezone, o.locale, selectedDay, now);
 
     const time = new TextInputBuilder()
       .setCustomId(F.time)
@@ -92,6 +79,74 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
   if (d.description) description.setValue(d.description);
   modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.description).setTextInputComponent(description));
   return modal;
+}
+
+/** Liste des jours (24 prochains + « Autre date… »), partagée par les formulaires de réunion et de duplication. */
+function dayMenu(m: Messages, timezone: string, locale: string, selectedDay: string | undefined, now: Date): StringSelectMenuBuilder {
+  const today = dayOf(now, timezone);
+  return new StringSelectMenuBuilder()
+    .setCustomId(F.day)
+    .setPlaceholder(m.modal.dayPlaceholder)
+    .setRequired(true)
+    .addOptions(
+      ...dayChoices(timezone, now, DAY_CHOICES - 1, selectedDay).map((iso) => ({
+        label: dayLabel(iso, today, timezone, locale, m),
+        value: iso,
+        default: iso === selectedDay,
+      })),
+      { label: m.modal.otherDay, value: OTHER_DAY, emoji: '📅', description: m.modal.otherDayHint },
+    );
+}
+
+/** Lit « jour + horaire » (ou « Autre date » + date et horaire saisis). */
+function readDayAndTime(interaction: ModalSubmitInteraction<'cached'>, m: Messages, timezone: string): { startsAt: Date; durationMin: number | null } {
+  let day = interaction.fields.getStringSelectValues(F.day)[0];
+  if (!day) throw new UserError(m.errors.dayRequired);
+  const timeInput = interaction.fields.getTextInputValue(F.time);
+  let range: { hour: number; minute: number; durationMin: number | null };
+  if (day === OTHER_DAY) {
+    const dated = parseDatedRange(timeInput, timezone, DateTime.now());
+    if (!dated.ok) throw new UserError(dated.error === 'format' ? m.errors.otherDayFormat : m.errors.dateInvalid);
+    day = dated.day;
+    range = dated;
+  } else {
+    const parsed = parseTimeRange(timeInput);
+    if (!parsed.ok) throw new UserError(m.errors.timeFormat);
+    range = parsed;
+  }
+  const startsAt = combineDayTime(day, range.hour, range.minute, timezone);
+  if (!startsAt) throw new UserError(m.errors.dateInvalid);
+  return { startsAt, durationMin: range.durationMin };
+}
+
+/** Formulaire « Dupliquer » : nouveau jour et horaire, reprise ou non de l'ordre du jour. */
+export function duplicateModal(m: Messages, o: { customId: string; timezone: string; locale: string; startsAt: Date; durationMin: number }): ModalBuilder {
+  const time = new TextInputBuilder()
+    .setCustomId(F.time)
+    .setStyle(TextInputStyle.Short)
+    .setMaxLength(40)
+    .setRequired(true)
+    .setValue(formatTimeRange(o.startsAt, o.durationMin, o.timezone));
+  const copy = new StringSelectMenuBuilder()
+    .setCustomId('copyAgenda')
+    .setRequired(true)
+    .addOptions({ label: m.manage.copyNo, value: 'no', default: true }, { label: m.manage.copyYes, value: 'yes' });
+  return new ModalBuilder()
+    .setCustomId(o.customId)
+    .setTitle(m.manage.duplicateModal)
+    .addLabelComponents(
+      new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(dayMenu(m, o.timezone, o.locale, undefined, new Date())),
+      new LabelBuilder().setLabel(m.modal.time).setDescription(m.modal.timeHint(m.card.minutes(o.durationMin), o.timezone)).setTextInputComponent(time),
+      new LabelBuilder().setLabel(m.manage.copyAgenda).setStringSelectMenuComponent(copy),
+    );
+}
+
+export function readDuplicateModal(interaction: ModalSubmitInteraction<'cached'>, m: Messages, timezone: string, defaultDurationMin: number) {
+  const { startsAt, durationMin } = readDayAndTime(interaction, m, timezone);
+  if (startsAt.getTime() <= Date.now()) throw new UserError(m.errors.datePast);
+  const duration = durationMin ?? defaultDurationMin;
+  if (!(duration >= DURATION_MIN && duration <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
+  return { startsAt, durationMin: duration, copyAgenda: interaction.fields.getStringSelectValues('copyAgenda')[0] === 'yes' };
 }
 
 /** « lundi 12/10 (aujourd'hui) » */
@@ -128,23 +183,8 @@ export function readMeetingModal(
     return { ...options.current, title, description };
   }
 
-  let day = interaction.fields.getStringSelectValues(F.day)[0];
-  if (!day) throw new UserError(m.errors.dayRequired);
-  const timeInput = interaction.fields.getTextInputValue(F.time);
-  let range: { hour: number; minute: number; durationMin: number | null };
-  if (day === OTHER_DAY) {
-    const dated = parseDatedRange(timeInput, options.timezone, DateTime.now());
-    if (!dated.ok) throw new UserError(dated.error === 'format' ? m.errors.otherDayFormat : m.errors.dateInvalid);
-    day = dated.day;
-    range = dated;
-  } else {
-    const parsed = parseTimeRange(timeInput);
-    if (!parsed.ok) throw new UserError(m.errors.timeFormat);
-    range = parsed;
-  }
-  const startsAt = combineDayTime(day, range.hour, range.minute, options.timezone);
-  if (!startsAt) throw new UserError(m.errors.dateInvalid);
-  const durationMin = range.durationMin ?? options.current?.durationMin ?? options.defaultDurationMin;
+  const { startsAt, durationMin: rangeDuration } = readDayAndTime(interaction, m, options.timezone);
+  const durationMin = rangeDuration ?? options.current?.durationMin ?? options.defaultDurationMin;
   if (!(durationMin >= DURATION_MIN && durationMin <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
 
   let voiceChannelId = options.fixedVoiceChannelId;

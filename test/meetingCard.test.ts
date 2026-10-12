@@ -42,7 +42,7 @@ describe('renderMeetingCard', () => {
     expect(fields.find((f) => f.name.startsWith('✅'))!.value).toBe('<@1>');
     expect(fields.find((f) => f.name.startsWith('❌'))!.value).toBe(m.card.nobody);
     expect(fields.some((f) => f.name.includes(m.card.agenda))).toBe(false);
-    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier']);
+    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Gérer']);
   });
 
   it('reste sous les limites Discord même avec beaucoup de monde', () => {
@@ -65,7 +65,13 @@ describe('renderMeetingCard', () => {
   });
 
   it('désactive les boutons quand la réunion est close', () => {
-    expect(buttons(renderMeetingCard({ ...meeting, status: 'ended' }, [], m)).every((b) => b.disabled)).toBe(true);
+    // Réponses figées ; « Gérer » reste disponible (dupliquer, régénérer le compte rendu).
+    expect(buttons(renderMeetingCard({ ...meeting, status: 'ended' }, [], m)).map((b) => [b.label, b.disabled ?? false])).toEqual([
+      ['Présent (0)', true],
+      ['Peut-être (0)', true],
+      ['Absent (0)', true],
+      ['Gérer', false],
+    ]);
     expect(buttons(renderAgendaMessage({ ...meeting, status: 'cancelled' }, [], m)).every((b) => b.disabled)).toBe(true);
   });
 });

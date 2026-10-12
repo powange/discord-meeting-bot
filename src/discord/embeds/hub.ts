@@ -4,6 +4,7 @@ import { discordTimestamp } from '../../domain/time.js';
 import type { MeetingStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
 import { joinLinesWithin } from '../../lib/text.js';
+import { consentButton } from './meetingManager.js';
 import type { RenderedMessage } from './meetingCard.js';
 
 export interface HubMeeting {
@@ -29,6 +30,7 @@ export function renderHub(upcoming: readonly HubMeeting[], m: Messages): Rendere
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(encode({ type: 'meeting.create' })).setLabel(m.hub.create).setEmoji('📅').setStyle(ButtonStyle.Primary),
+    consentButton(m),
   );
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };
 }

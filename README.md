@@ -16,7 +16,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ODJ** : l'organisateur ou un gestionnaire peut modifier, monter, descendre, retirer et verrouiller. Chaque participant peut modifier ses propres points tant que l'ODJ n'est pas verrouillé. |
 | Tags | `À venir` → `En cours` (à l'heure prévue) → `Terminée` / `Annulée`. |
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
-| `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |
+| ⚙️ Gérer | Bouton de la carte (organisateur ou gestionnaire), qui ouvre un panneau privé : modifier, dupliquer (nouveau jour et horaire, ODJ repris ou non), enregistrement auto oui/non, clore maintenant (avec confirmation), annuler (raison facultative), régénérer le compte rendu. **Le bot n'a qu'une seule commande, `/config`** : tout le reste passe par des boutons. |
 | Clôture auto | **Uniquement quand le vocal est vide** depuis 5 min, compté depuis le départ de la dernière personne (ou depuis la fin prévue si personne n'est venu). Une réunion qui déborde n'est jamais coupée tant qu'il reste quelqu'un. |
 | `/config` | Une seule commande, réservée à « Gérer le serveur », qui ouvre un **panneau interactif**. L'accueil résume tous les réglages ; un menu ouvre chaque section : Forum, Salon vocal (imposé ou libre), Rôles, Rappels, Général (fuseau, durée, création), Enregistrement auto, Transcription, Résumé (serveur et modèle, liste des modèles, test, activation), Alertes. Les réglages se font avec des sélecteurs de salon et de rôle, des boutons et de petits formulaires. |
 
@@ -27,11 +27,11 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 | Fonction | Détail |
 |---|---|
 | Démarrer | Message **🎙️ Enregistrement** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). Il devient **⏹️ Arrêter** pendant l'enregistrement. |
-| Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
+| Automatique | Carte → ⚙️ Gérer → « Enregistrer automatiquement », ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
 | Pendant | Le bot est dans le vocal, micro coupé, et **renommé « 🔴 Enregistrement »** (pseudo restauré à l'arrêt). Avertissement dans le post et dans le chat du vocal au démarrage, puis à **chaque personne qui arrive en cours de route** (une fois par session). La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
-| Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
-| Fin | Bouton Arrêter, `/reunion terminer`, ou clôture automatique de la réunion (vocal vide depuis 5 min). |
+| Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun le prend ou le rend avec le bouton **🎙️ Mon choix d'enregistrement** : sur le post épinglé, sous l'avertissement de démarrage et dans le message aux arrivants. La présence est notée, pas la voix. |
+| Fin | Bouton Arrêter, carte → ⚙️ Gérer → « Clore maintenant », ou clôture automatique de la réunion (vocal vide depuis 5 min). |
 | Bilan | Message silencieux dans le post. Il signale « ⚠️ audio possiblement incomplet » quand une part notable des paquets d'une personne n'a pas pu être déchiffrée (DAVE) ; `recording.debugVoice: true` journalise les détails de la connexion vocale. Il indique aussi : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
 
@@ -52,9 +52,9 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 1. Activer **Server Members Intent** (déjà requis), et vérifier que le bot voit le salon vocal et peut s'y connecter.
 2. Optionnel : choisir le rôle « ne pas m'enregistrer » dans `/config` → Rôles, puis placer ce rôle sous celui du bot.
 3. Créer une réunion dans quelques minutes et rejoindre le vocal à deux. À l'heure prévue, le message **🎙️ Enregistrement** apparaît : cliquer **🔴 Enregistrer**.
-4. Parler à tour de rôle, faire `/enregistrement refuser` avec un compte et vérifier que sa voix n'est plus captée.
+4. Parler à tour de rôle, utiliser « Mon choix d'enregistrement » → Refuser avec un compte et vérifier que sa voix n'est plus captée.
 5. **⏹️ Arrêter l'enregistrement** dans ce message : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
-6. Tester l'automatique : `/reunion enregistrement-auto actif:True` sur une réunion dans 5 min. Le bot arrive à H-2.
+6. Tester l'automatique : carte → ⚙️ Gérer → « Enregistrer automatiquement » sur une réunion dans 5 min. Le bot arrive à H-2.
 7. Rester au-delà de l'heure de fin : rien ne se coupe. Puis quitter le vocal : 5 min après, la réunion est close et l'enregistrement s'arrête.
 
 ## Phase 3 — Transcription et compte rendu
@@ -69,7 +69,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 | Publication | Compte rendu en Components V2, découpé sur plusieurs messages si besoin, avec la **transcription complète en `.md`** jointe. Les responsables d'actions reconnus sont mentionnés, donc notifiés. La trace des modèles utilisés est en pied de message. |
 | Échec | L'étape passe en ❌ avec l'erreur et un bouton **🔁 Relancer** (organisateur ou gestionnaire) : seule l'étape en échec et les suivantes sont refaites, les blocs déjà transcrits sont conservés. Un arrêt du bot reprend au démarrage. |
 | Corriger | Bouton **✏️ Corriger** sous le compte rendu (organisateur ou gestionnaire) : une consigne libre (« Pol et non Paul », « la décision était de reporter »). Elle est ajoutée aux consignes précédentes et transmise au modèle en priorité, puis le résumé est régénéré sans retranscrire. |
-| Régénérer | `/reunion compte-rendu` dans le post (résumé et publication), avec `retranscrire:True` pour tout refaire. L'ancien compte rendu est remplacé. |
+| Régénérer | Carte → ⚙️ Gérer → « Régénérer le résumé », ou « Tout retranscrire ». L'ancien compte rendu est remplacé. |
 
 ### Mettre en place l'IA
 
@@ -91,8 +91,8 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 ### Tester la phase 3
 
-- **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore avec `/reunion terminer`.
-- **Sur une réunion déjà enregistrée** : `/reunion compte-rendu` dans son post.
+- **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore (carte → ⚙️ Gérer → Clore maintenant).
+- **Sur une réunion déjà enregistrée** : carte → ⚙️ Gérer → Régénérer le résumé.
 - **Tests automatiques** : `TEST_DATABASE_URL=… npm test` lance aussi un test de bout en bout : vraies pistes OGG, ffmpeg, bascule entre serveurs simulés, LLM simulé, relance et reprise.
 
 ## 1. Créer l'application Discord
@@ -111,7 +111,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    - Créer et gérer les événements
    - Se connecter (enregistrement)
    - Changer le pseudo : le bot s'appelle « 🔴 Enregistrement » pendant une capture
-   - Gérer les rôles : uniquement pour `/enregistrement refuser|accepter`. Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
+   - Gérer les rôles : pour le bouton « Mon choix d'enregistrement ». Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
 5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions.
 
 > Discord ne sait pas trier les posts d'un forum selon la date de la réunion : seulement par activité récente ou par date de création. L'ordre chronologique se lit dans le post épinglé.
@@ -147,7 +147,7 @@ Commandes utiles :
 4. Avec deux comptes, répondre (Présent / Peut-être) et ajouter des points à l'ordre du jour. La carte se met à jour en environ une seconde.
 5. Avec **Gérer l'ODJ**, réordonner, retirer un point et verrouiller. Avec le second compte, vérifier que l'ajout est refusé.
 6. Vérifier les rappels à H-5 et H-2 min, puis le passage du tag à « En cours » et de l'événement à « Actif » à l'heure prévue.
-7. `/reunion terminer` dans le post : tag « Terminée », boutons désactivés, événement terminé.
+7. Carte → ⚙️ Gérer → Clore maintenant : tag « Terminée », boutons désactivés, événement terminé.
 8. Redémarrer le bot entre deux étapes. Les boutons et les échéances doivent continuer à fonctionner, car tout est en BDD.
 
 ## 3. Déploiement Portainer

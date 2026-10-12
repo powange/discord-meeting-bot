@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { entersState, joinVoiceChannel, VoiceConnectionStatus, type VoiceConnection } from '@discordjs/voice';
 import {
+  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
@@ -15,6 +16,7 @@ import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { renderRecordingControl } from '../discord/embeds/recordingControl.js';
+import { consentButton } from '../discord/embeds/meetingManager.js';
 import { renderRecordingSummary } from '../discord/embeds/recordingSummary.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { displayName } from '../discord/notify.js';
@@ -216,13 +218,14 @@ export class RecordingService {
     const optout = settings.optoutRoleId ? (channel.guild.roles.cache.get(settings.optoutRoleId)?.name ?? null) : null;
     const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
     const text = `${m.recording.started(byName)}\n${m.recording.warning(optout)}`;
+    const components = settings.optoutRoleId ? [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()] : [];
     const thread = await fetchThread(this.client, meeting.threadId);
     if (thread) {
       await ensureUnarchived(thread);
-      await thread.send({ content: text, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (post) impossible', err));
+      await thread.send({ content: text, components, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (post) impossible', err));
     }
     if (channel.isTextBased()) {
-      await channel.send({ content: text, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (chat vocal) impossible', err));
+      await channel.send({ content: text, components, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (chat vocal) impossible', err));
     }
   }
 
@@ -322,7 +325,11 @@ export class RecordingService {
           const m = messages(settings.locale);
           if (channel?.isTextBased()) {
             await channel
-              .send({ content: m.recording.arrival(member.id), allowedMentions: { users: [member.id] } })
+              .send({
+                content: m.recording.arrival(member.id),
+                components: [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()],
+                allowedMentions: { users: [member.id] },
+              })
               .catch((err) => this.warn(entry.meetingId, 'Avertissement de l’arrivant impossible', err));
           }
         }

@@ -85,12 +85,8 @@ export function renderMeetingCard(
     rsvpButton(meeting.id, 'yes', `${m.rsvp.yes} (${groups.yes.length})`, ButtonStyle.Success, '✅', open),
     rsvpButton(meeting.id, 'maybe', `${m.rsvp.maybe} (${groups.maybe.length})`, ButtonStyle.Secondary, '❔', open),
     rsvpButton(meeting.id, 'no', `${m.rsvp.no} (${groups.no.length})`, ButtonStyle.Secondary, '❌', open),
-    new ButtonBuilder()
-      .setCustomId(encode({ type: 'meeting.edit', meetingId: meeting.id }))
-      .setLabel(m.buttons.edit)
-      .setEmoji('✏️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!open),
+    // Panneau de gestion (organisateur et gestionnaires) : modifier, dupliquer, clore, annuler…
+    new ButtonBuilder().setCustomId(encode({ type: 'meeting.manage', meetingId: meeting.id })).setLabel(m.buttons.manage).setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
   );
 
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };

@@ -7,6 +7,7 @@ import { UserError } from '../../lib/errors.js';
 import { commands } from '../commands/index.js';
 import { handleBackendPanel } from './backendPanel.js';
 import { handleConfigPanel } from './configPanel.js';
+import { handleConsent } from './consent.js';
 import { handleAction } from './components.js';
 import { replyEphemeral } from './common.js';
 
@@ -35,6 +36,11 @@ export async function routeInteraction(ctx: AppContext, interaction: Interaction
       log.debug({ action: action.type }, 'Interaction');
       if (action.type === 'cfg') {
         await handleConfigPanel(ctx, interaction, action.action, action.arg);
+        return;
+      }
+      if (action.type === 'consent.open' || action.type === 'consent.refuse' || action.type === 'consent.accept') {
+        if (!interaction.isButton()) return;
+        await handleConsent(ctx, interaction, action.type.split('.')[1] as 'open' | 'refuse' | 'accept');
         return;
       }
       if (action.type === 'tx') {
