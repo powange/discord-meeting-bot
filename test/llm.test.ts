@@ -165,10 +165,27 @@ describe('sanitize', () => {
     ]);
   });
 
-  it('plusieurs sujets pour un même point : fusionnés', () => {
-    const out = sanitize({ overview: '', topics: [topic(2, 'Tabac', ['A']), topic(null, 'Plan pour aller acheter du tabac', ['B'])] }, db);
-    expect(out.topics).toHaveLength(1);
-    expect(out.topics[0]).toMatchObject({ agendaItemId: 58, decisions: ['A', 'B'], summary: 'Résumé Tabac Résumé Plan pour aller acheter du tabac' });
+  it('plusieurs sujets pour un même point : ceux qui en portent le titre sont fusionnés', () => {
+    const out = sanitize({ overview: '', topics: [topic(2, 'Séries du soir', ['A']), topic(null, 'Plan pour aller acheter du tabac', ['B'])] }, db);
+    expect(out.topics).toHaveLength(2);
+    // Le sujet principal est celui qui porte le titre du point ; l'autre, sans rapport, reste distinct (hors ODJ).
+    expect(out.topics.map((t) => [t.title, t.agendaItemId, t.decisions])).toEqual([
+      ['Séries du soir', null, ['A']],
+      ['Plan pour aller acheter du tabac', 58, ['B']],
+    ]);
+    const merged = sanitize({ overview: '', topics: [topic(2, 'Plan pour aller acheter du tabac', ['A']), topic(2, 'Acheter du tabac', ['B'])] }, db);
+    expect(merged.topics).toEqual([expect.objectContaining({ agendaItemId: 58, decisions: ['A', 'B'] })]);
+  });
+
+  it('digression rangée par le modèle dans un point déjà traité : redevient un sujet hors ODJ', () => {
+    const out = sanitize(
+      { overview: '', topics: [topic(2, 'Plan pour aller acheter du tabac', ['Y aller ensemble']), topic(2, 'Regarder Les Carnets de l’Apothicaire', ['Saison 3'])] },
+      db,
+    );
+    expect(out.topics.map((t) => [t.title, t.agendaItemId])).toEqual([
+      ['Plan pour aller acheter du tabac', 58],
+      ['Regarder Les Carnets de l’Apothicaire', null],
+    ]);
   });
 
   it('le prompt numérote les points au lieu d’exposer les ids', async () => {

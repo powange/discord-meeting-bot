@@ -36,8 +36,9 @@ const FORMAT = `Réponds uniquement avec un objet JSON de la forme :
 const RULES = `Règles :
 - Écris en français, de façon factuelle et concise, même si la réunion s'est tenue dans une autre langue ou en plusieurs langues.
 - N'invente rien : uniquement ce qui figure dans la transcription. Une transcription automatique contient des erreurs : corrige les mots manifestement mal reconnus, sans changer le sens.
-- Rattache chaque sujet au point d'ordre du jour correspondant, par son numéro (agendaItemId), même s'il a été abordé dans un autre ordre ou formulé autrement. Un sujet n'est hors ordre du jour (null) que si aucun point ne lui correspond.
-- Un seul sujet par point d'ordre du jour ; un point non abordé n'apparaît pas.
+- Un sujet = une question discutée. Rattache-le à un point de l'ordre du jour (son numéro dans agendaItemId) seulement s'il traite vraiment de ce point, même abordé dans le désordre ou en d'autres termes.
+- Tout autre sujet (digression, autre projet, sujet évoqué en passant) est un sujet distinct hors ordre du jour (agendaItemId null), avec un titre court que tu rédiges et ses propres décisions et actions. Ne le fusionne jamais dans un point de l'ordre du jour, même s'il a été évoqué juste après ou par les mêmes personnes.
+- Un point de l'ordre du jour non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).
 - Listes vides si rien de tel n'a été dit.`;
 
@@ -149,40 +150,45 @@ export async function summarizeMeeting(
 /**
  * Rattachement fiable à l'ordre du jour : le modèle désigne les points par leur numéro (1, 2…),
  * converti ici en id. Un sujet sans numéro valide mais dont le titre est celui d'un point y est
- * rattaché (les petits modèles se trompent de numéro). Les sujets d'un même point sont fusionnés ;
- * les sujets vides sont retirés.
+ * rattaché (les petits modèles se trompent de numéro). Plusieurs sujets pour un même point : ceux
+ * dont le titre est celui du point y sont fusionnés, les autres sont des sujets distincts, hors ODJ
+ * (un modèle range volontiers une digression dans le point voisin). Les sujets vides sont retirés.
  */
 export function sanitize(summary: MeetingSummary, ctx: SummaryContext): MeetingSummary {
-  const byTitle = new Map(ctx.agenda.map((a) => [normalizeTitle(a.title), a.id]));
+  const titleOf = new Map(ctx.agenda.map((a) => [a.id, normalizeTitle(a.title)]));
+  const sameTitle = (topicTitle: string, agendaId: number): boolean => {
+    const a = titleOf.get(agendaId)!;
+    const t = normalizeTitle(topicTitle);
+    return a === t || (a.length >= 4 && t.length >= 4 && (a.includes(t) || t.includes(a)));
+  };
   const resolve = (t: Topic): number | null => {
     const n = t.agendaItemId;
     if (n !== null && Number.isInteger(n) && n >= 1 && n <= ctx.agenda.length) return ctx.agenda[n - 1]!.id;
-    const title = normalizeTitle(t.title);
-    const exact = byTitle.get(title);
-    if (exact !== undefined) return exact;
-    const close = ctx.agenda.filter((a) => {
-      const a2 = normalizeTitle(a.title);
-      return a2.length >= 4 && title.length >= 4 && (a2.includes(title) || title.includes(a2));
-    });
+    const close = ctx.agenda.filter((a) => sameTitle(t.title, a.id));
     return close.length === 1 ? close[0]!.id : null;
   };
 
+  const kept = summary.topics
+    .filter((t) => t.summary || t.decisions.length || t.actions.length || t.openQuestions.length)
+    .map((t) => ({ ...t, agendaItemId: resolve(t) }));
+  // Sujet principal de chaque point : le premier qui en porte le titre, sinon le premier rattaché.
+  const primary = new Map<number, Topic>();
+  for (const t of kept) if (t.agendaItemId !== null && !primary.has(t.agendaItemId) && sameTitle(t.title, t.agendaItemId)) primary.set(t.agendaItemId, t);
+  for (const t of kept) if (t.agendaItemId !== null && !primary.has(t.agendaItemId)) primary.set(t.agendaItemId, t);
+
   const topics: Topic[] = [];
-  const byItem = new Map<number, Topic>();
-  for (const raw of summary.topics) {
-    if (!(raw.summary || raw.decisions.length || raw.actions.length || raw.openQuestions.length)) continue;
-    const agendaItemId = resolve(raw);
-    const topic = { ...raw, agendaItemId };
-    const existing = agendaItemId === null ? undefined : byItem.get(agendaItemId);
-    if (!existing) {
-      topics.push(topic);
-      if (agendaItemId !== null) byItem.set(agendaItemId, topic);
-      continue;
+  for (const t of kept) {
+    const main = t.agendaItemId === null ? undefined : primary.get(t.agendaItemId);
+    if (!main || main === t) {
+      topics.push(t);
+    } else if (sameTitle(t.title, t.agendaItemId!)) {
+      main.summary = [main.summary, t.summary].filter(Boolean).join(' ');
+      main.decisions = [...main.decisions, ...t.decisions];
+      main.actions = [...main.actions, ...t.actions];
+      main.openQuestions = [...main.openQuestions, ...t.openQuestions];
+    } else {
+      topics.push({ ...t, agendaItemId: null });
     }
-    existing.summary = [existing.summary, topic.summary].filter(Boolean).join(' ');
-    existing.decisions.push(...topic.decisions);
-    existing.actions.push(...topic.actions);
-    existing.openQuestions.push(...topic.openQuestions);
   }
   return { overview: summary.overview, topics };
 }
