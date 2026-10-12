@@ -1,6 +1,6 @@
 import { chunkLines, estimateTokens } from '../../domain/transcript.js';
 import type { ChatMessage, LlmClient } from './client.js';
-import { meetingSummarySchema, type MeetingSummary } from './schema.js';
+import { meetingSummarySchema, type MeetingSummary, type Topic } from './schema.js';
 
 export interface SummaryContext {
   title: string;
@@ -23,7 +23,7 @@ const FORMAT = `Réponds uniquement avec un objet JSON de la forme :
   "overview": "synthèse de la réunion en 2 à 4 phrases",
   "topics": [
     {
-      "agendaItemId": <id du point d'ordre du jour, ou null pour un sujet hors ordre du jour>,
+      "agendaItemId": <numéro du point d'ordre du jour (1, 2…), ou null pour un sujet hors ordre du jour>,
       "title": "titre du sujet",
       "summary": "ce qui a été dit, en quelques phrases",
       "decisions": ["décision prise", ...],
@@ -36,7 +36,8 @@ const FORMAT = `Réponds uniquement avec un objet JSON de la forme :
 const RULES = `Règles :
 - Écris en français, de façon factuelle et concise, même si la réunion s'est tenue dans une autre langue ou en plusieurs langues.
 - N'invente rien : uniquement ce qui figure dans la transcription. Une transcription automatique contient des erreurs : corrige les mots manifestement mal reconnus, sans changer le sens.
-- Rattache chaque sujet au point d'ordre du jour correspondant (agendaItemId) ; un point non abordé n'apparaît pas.
+- Rattache chaque sujet au point d'ordre du jour correspondant, par son numéro (agendaItemId), même s'il a été abordé dans un autre ordre ou formulé autrement. Un sujet n'est hors ordre du jour (null) que si aucun point ne lui correspond.
+- Un seul sujet par point d'ordre du jour ; un point non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).
 - Listes vides si rien de tel n'a été dit.`;
 
@@ -48,7 +49,7 @@ export function correctionsBlock(corrections: readonly string[] | undefined): st
 
 function contextBlock(ctx: SummaryContext): string {
   const agenda = ctx.agenda.length
-    ? ctx.agenda.map((a) => `- [id ${a.id}] ${a.title}${a.detail ? ` — ${a.detail}` : ''}`).join('\n')
+    ? ctx.agenda.map((a, i) => `${i + 1}. ${a.title}${a.detail ? ` — ${a.detail}` : ''}`).join('\n')
     : '(aucun ordre du jour)';
   return `Réunion : ${ctx.title}${ctx.description ? `\nDescription : ${ctx.description}` : ''}
 Date : ${ctx.date}
@@ -145,13 +146,53 @@ export async function summarizeMeeting(
   return { summary: sanitize(partials[0]!, ctx), passes: pass, models: [...models] };
 }
 
-/** Ids d'ordre du jour inconnus ramenés à null ; sujets vides retirés. */
+/**
+ * Rattachement fiable à l'ordre du jour : le modèle désigne les points par leur numéro (1, 2…),
+ * converti ici en id. Un sujet sans numéro valide mais dont le titre est celui d'un point y est
+ * rattaché (les petits modèles se trompent de numéro). Les sujets d'un même point sont fusionnés ;
+ * les sujets vides sont retirés.
+ */
 export function sanitize(summary: MeetingSummary, ctx: SummaryContext): MeetingSummary {
-  const ids = new Set(ctx.agenda.map((a) => a.id));
-  return {
-    overview: summary.overview,
-    topics: summary.topics
-      .map((t) => ({ ...t, agendaItemId: t.agendaItemId !== null && ids.has(t.agendaItemId) ? t.agendaItemId : null }))
-      .filter((t) => t.summary || t.decisions.length || t.actions.length || t.openQuestions.length),
+  const byTitle = new Map(ctx.agenda.map((a) => [normalizeTitle(a.title), a.id]));
+  const resolve = (t: Topic): number | null => {
+    const n = t.agendaItemId;
+    if (n !== null && Number.isInteger(n) && n >= 1 && n <= ctx.agenda.length) return ctx.agenda[n - 1]!.id;
+    const title = normalizeTitle(t.title);
+    const exact = byTitle.get(title);
+    if (exact !== undefined) return exact;
+    const close = ctx.agenda.filter((a) => {
+      const a2 = normalizeTitle(a.title);
+      return a2.length >= 4 && title.length >= 4 && (a2.includes(title) || title.includes(a2));
+    });
+    return close.length === 1 ? close[0]!.id : null;
   };
+
+  const topics: Topic[] = [];
+  const byItem = new Map<number, Topic>();
+  for (const raw of summary.topics) {
+    if (!(raw.summary || raw.decisions.length || raw.actions.length || raw.openQuestions.length)) continue;
+    const agendaItemId = resolve(raw);
+    const topic = { ...raw, agendaItemId };
+    const existing = agendaItemId === null ? undefined : byItem.get(agendaItemId);
+    if (!existing) {
+      topics.push(topic);
+      if (agendaItemId !== null) byItem.set(agendaItemId, topic);
+      continue;
+    }
+    existing.summary = [existing.summary, topic.summary].filter(Boolean).join(' ');
+    existing.decisions.push(...topic.decisions);
+    existing.actions.push(...topic.actions);
+    existing.openQuestions.push(...topic.openQuestions);
+  }
+  return { overview: summary.overview, topics };
+}
+
+/** « L'Apothicaire ! » → « l apothicaire » : casse, accents et ponctuation ignorés. */
+function normalizeTitle(title: string): string {
+  return title
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }

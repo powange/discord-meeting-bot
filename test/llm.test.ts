@@ -140,8 +140,42 @@ describe('corrections de l’organisateur', () => {
 });
 
 describe('sanitize', () => {
-  it('id d’ordre du jour inconnu → hors ODJ ; sujet vide retiré', () => {
-    const out = sanitize({ overview: '', topics: [topic(99, 'X'), { ...topic(1, 'Vide'), summary: '' }] }, ctx);
-    expect(out.topics).toEqual([{ ...topic(null, 'X') }]);
+  // Ids en base différents des numéros présentés au modèle (1, 2…).
+  const db: SummaryContext = {
+    ...ctx,
+    agenda: [
+      { id: 57, title: 'Présentation entre les participants', detail: '' },
+      { id: 58, title: 'Plan pour aller acheter du tabac', detail: '' },
+    ],
+  };
+
+  it('numéro de point → id en base ; numéro inconnu → hors ODJ ; sujet vide retiré', () => {
+    const out = sanitize({ overview: '', topics: [topic(2, 'Tabac'), topic(99, 'Séries'), { ...topic(1, 'Vide'), summary: '' }] }, db);
+    expect(out.topics.map((t) => [t.title, t.agendaItemId])).toEqual([
+      ['Tabac', 58],
+      ['Séries', null],
+    ]);
+  });
+
+  it('sujet marqué hors ODJ mais portant le titre d’un point : rattaché à ce point', () => {
+    const out = sanitize({ overview: '', topics: [topic(null, 'Présentation entre les participants !'), topic(null, 'présentation'), topic(null, 'Autre chose')] }, db);
+    expect(out.topics.map((t) => [t.title, t.agendaItemId])).toEqual([
+      ['Présentation entre les participants !', 57],
+      ['Autre chose', null],
+    ]);
+  });
+
+  it('plusieurs sujets pour un même point : fusionnés', () => {
+    const out = sanitize({ overview: '', topics: [topic(2, 'Tabac', ['A']), topic(null, 'Plan pour aller acheter du tabac', ['B'])] }, db);
+    expect(out.topics).toHaveLength(1);
+    expect(out.topics[0]).toMatchObject({ agendaItemId: 58, decisions: ['A', 'B'], summary: 'Résumé Tabac Résumé Plan pour aller acheter du tabac' });
+  });
+
+  it('le prompt numérote les points au lieu d’exposer les ids', async () => {
+    reply = () => JSON.stringify({ overview: 'ok', topics: [] });
+    await summarizeMeeting(llm(), db, ['[18:00:00] Alice : Bonjour.'], 6000);
+    const prompt = requests.at(-1)!.body.messages.at(-1)!.content;
+    expect(prompt).toContain('1. Présentation entre les participants\n2. Plan pour aller acheter du tabac');
+    expect(prompt).not.toContain('57');
   });
 });
