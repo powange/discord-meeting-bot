@@ -47,6 +47,9 @@ async function main(): Promise<void> {
     await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
     scheduler.start();
     hub.startWatchdog();
+    // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
+    // des réunions ouvertes, sans notification (simple édition des messages existants).
+    for (const meeting of await repos.listOpenMeetings().catch(() => [])) cards.refresh(meeting.id);
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
   client.on(Events.MessageCreate, (message) => {

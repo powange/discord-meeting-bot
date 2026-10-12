@@ -79,6 +79,11 @@ export class Repositories {
     return row;
   }
 
+  /** Réunions à venir ou en cours, tous serveurs confondus. */
+  async listOpenMeetings(): Promise<MeetingRow[]> {
+    return this.db.select().from(meetings).where(inArray(meetings.status, ['scheduled', 'live']));
+  }
+
   async listMeetings(guildId: string, statuses: readonly MeetingStatus[]): Promise<MeetingRow[]> {
     return this.db
       .select()
