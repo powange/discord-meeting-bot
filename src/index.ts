@@ -5,12 +5,14 @@ import { Repositories } from './db/repositories.js';
 import { createClient, Events } from './discord/client.js';
 import { routeInteraction } from './discord/interactions/router.js';
 import { registerCommands } from './discord/registerCommands.js';
+import { startHealthServer } from './lib/health.js';
 import { createLogger } from './lib/logger.js';
 import { PipelineService } from './pipeline/runner.js';
 import { createSteps } from './pipeline/steps.js';
 import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
+import { AlertService } from './services/alerts.js';
 import { MeetingService } from './services/meetings.js';
 import { OwnersService } from './services/owners.js';
 import { RetentionService } from './services/retention.js';
@@ -27,13 +29,22 @@ async function main(): Promise<void> {
   log.info('Migrations appliquées');
 
   const client = createClient();
+  const health = startHealthServer(Number(process.env.HEALTH_PORT ?? 3000), async () => ({
+    discord: client.isReady(),
+    database: await pool
+      .query('select 1')
+      .then(() => true)
+      .catch(() => false),
+  }));
   const repos = new Repositories(db);
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
   const hub = new HubService(client, repos, settings, log);
   const meetings = new MeetingService(config, client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
   const recordings = new RecordingService(client, repos, settings, cards, config, log);
-  const pipelineDeps = { client, repos, settings, config, log };
+  const alerts = new AlertService(client, repos, log);
+  recordings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
+  const pipelineDeps = { client, repos, settings, config, log, alerts };
   const pipeline = new PipelineService(pipelineDeps, createSteps(pipelineDeps));
   meetings.hooks = {
     afterStart: (meeting) => recordings.onMeetingStarted(meeting),
@@ -45,7 +56,7 @@ async function main(): Promise<void> {
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
-  const retention = new RetentionService(repos, config, log);
+  const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));
   await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
@@ -98,6 +109,7 @@ async function main(): Promise<void> {
     await cards.flush().catch(() => undefined);
     await hub.flush().catch(() => undefined);
     await client.destroy();
+    health.close();
     await pool.end();
     clearTimeout(force);
     log.info('Arrêté');

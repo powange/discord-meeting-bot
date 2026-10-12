@@ -25,6 +25,8 @@ export interface StepContext {
 export type StepFn = (ctx: StepContext) => Promise<Record<string, unknown>>;
 
 export interface PipelineDeps {
+  /** Alertes opérateur (optionnel : absent dans les tests). */
+  alerts?: { guild(guildId: string, cause: string, message: string): Promise<void> };
   client: Client;
   repos: Repositories;
   settings: SettingsService;
@@ -195,6 +197,10 @@ export class PipelineService {
         await repos.updateStep(meetingId, row.step, { status: 'failed', finishedAt: new Date(), error: message });
         details.set(row.step, message);
         await status.update(details);
+        const url = meeting.threadId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}` : '';
+        await this.deps.alerts
+          ?.guild(meeting.guildId, `pipeline:${row.step}`, m.alerts.stepFailed(meeting.title, m.pipeline.steps[row.step] ?? row.step, message.slice(0, 300), url))
+          .catch(() => undefined);
         return;
       }
     }

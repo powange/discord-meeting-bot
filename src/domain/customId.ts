@@ -44,6 +44,9 @@ export const CFG_ACTIONS = [
   'generalSubmit',
   'toggleCreators',
   'toggleAutoRecord',
+  'alerts',
+  'alertsClear',
+  'alertsTest',
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 

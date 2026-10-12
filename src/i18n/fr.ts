@@ -235,6 +235,11 @@ export const fr = {
       `🎧 Audio complet de la réunion (${duration}, ${mb} Mo) : trop lourd pour être envoyé sur Discord, il est conservé sur le serveur.`,
   },
 
+  alerts: {
+    stepFailed: (title: string, step: string, error: string, url: string) => `Compte rendu de « ${title} » : l'étape ${step} a échoué (${error}). ${url}`,
+    recordingInterrupted: (title: string, reason: string, url: string) => `Enregistrement de « ${title} » interrompu (${reason}). Reprise possible depuis le post : ${url}`,
+  },
+
   pipeline: {
     title: '## 📝 Compte rendu',
     steps: { mix: 'Audio complet', transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication' } as Record<string, string>,
@@ -308,6 +313,7 @@ export const fr = {
     recordingBusy: 'Un enregistrement est déjà en cours sur ce serveur (un bot ne peut être que dans un vocal à la fois).',
     alreadyRecording: 'Cette réunion est déjà en cours d’enregistrement.',
     notRecording: "Cette réunion n'est pas en cours d'enregistrement.",
+    alertChannel: "Je ne peux pas écrire dans ce salon : vérifiez mes permissions (voir le salon, envoyer des messages).",
     voicePermissions: (perms: string) => `Il me manque des permissions sur le salon vocal : ${perms}.`,
     voiceJoinFailed: 'Connexion au salon vocal impossible (délai dépassé). Réessayez dans un instant.',
     optoutNotConfigured: "Aucun rôle « ne pas m'enregistrer » n'est configuré : un administrateur doit le choisir dans `/config` → Rôles.",
@@ -330,6 +336,12 @@ export const fr = {
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
       recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage automatique par défaut', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (/reunion enregistrement-auto)." },
       transcription: { emoji: '🎙️', label: 'Transcription', hint: 'Serveurs Vibe / Whisper', help: '' },
+      alerts: {
+        emoji: '🚨',
+        label: 'Alertes',
+        hint: 'Où signaler les problèmes',
+        help: "Le bot y signale ce qui demande une action : compte rendu en échec, enregistrement coupé, disque presque plein. Une même alerte au plus une fois par heure. Choisissez un salon réservé aux administrateurs.",
+      },
     },
     voiceImposed: 'imposé',
     voiceFree: 'au choix de l’organisateur',
@@ -350,6 +362,11 @@ export const fr = {
     pickManager: 'Rôle gestionnaire (vide : aucun)',
     pickOptout: 'Rôle « ne pas m’enregistrer » (vide : aucun)',
     pickNudge: 'Rôle relancé si pas de réponse (vide : aucun)',
+    pickAlerts: "Choisir le salon d'alertes…",
+    alertsTest: 'Envoyer une alerte de test',
+    alertsClear: 'Désactiver les alertes',
+    alertsTestMessage: 'Alerte de test : ce salon recevra les problèmes du bot de réunions.',
+    alertsTestSent: (id: string) => `✅ Alerte de test envoyée dans <#${id}>.`,
     editReminders: 'Modifier les délais',
     editGeneral: 'Modifier fuseau et durée',
     remindersModal: 'Rappels avant la réunion',

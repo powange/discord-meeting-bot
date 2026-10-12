@@ -165,8 +165,15 @@ L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/disco
 
 Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migrations s'appliquent au démarrage, et l'arrêt est propre sur `SIGTERM` : le scheduler s'arrête et les cartes en attente sont mises à jour.
 
-### Sauvegarde
+### Supervision et sauvegarde
 
-```bash
-docker exec meeting-bot-postgres-1 pg_dump -U bot meetingbot > meetingbot-$(date +%F).sql
-```
+- **Santé** : le conteneur du bot a un `HEALTHCHECK` (connexion à Discord et à la base). Portainer l'affiche « healthy » ou « unhealthy ».
+- **Alertes** : `/config` → Alertes. Choisir un salon réservé aux administrateurs. Le bot y signale un compte rendu en échec, un enregistrement coupé ou un disque presque plein, au plus une fois par heure et par cause.
+- **Sauvegarde automatique** : le service `backup` de la stack fait un `pg_dump` compressé chaque jour dans le volume `backups`, conservé 14 jours (`BACKUP_KEEP_DAYS`).
+- **Restaurer** :
+  ```bash
+  docker compose stop bot
+  gunzip -c meetingbot-AAAA-MM-JJ-HHMM.sql.gz | docker exec -i meeting-bot-postgres-1 psql -U bot -d meetingbot
+  docker compose start bot
+  ```
+  Pour une base vide : la recréer avant l'import (`dropdb`/`createdb`). Les fichiers audio sont dans le volume `recordings`, à sauvegarder séparément si besoin.

@@ -24,6 +24,8 @@ export const guildSettings = pgTable('guild_settings', {
   forumChannelId: text(),
   /** Post épinglé du forum : bouton « Nouvelle réunion » et liste des prochaines réunions. */
   hubThreadId: text(),
+  /** Salon où le bot signale les problèmes qui demandent une action (traitement en échec, disque…). */
+  alertChannelId: text(),
   /** Si renseigné, toutes les réunions se tiennent dans ce salon vocal (pas de choix à la création). */
   voiceChannelId: text(),
   tagIds: jsonb().$type<StatusTagIds>(),

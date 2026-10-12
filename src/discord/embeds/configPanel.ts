@@ -15,7 +15,7 @@ import { encode, type CfgAction } from '../../domain/customId.js';
 import { formatOffset } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
 
-export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription'] as const;
+export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'alerts'] as const;
 export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
 export interface ConfigContext {
@@ -52,6 +52,8 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
       return s.autoRecordDefault ? t.autoOn : t.autoOff;
     case 'transcription':
       return c.transcription;
+    case 'alerts':
+      return s.alertChannelId ? `<#${s.alertChannelId}>` : `*${t.none}*`;
   }
 }
 
@@ -123,6 +125,18 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
         ),
       );
       break;
+    case 'alerts': {
+      const select = new ChannelSelectMenuBuilder()
+        .setCustomId(cfg('alerts'))
+        .setChannelTypes(ChannelType.GuildText)
+        .setPlaceholder(t.pickAlerts);
+      if (s.alertChannelId) select.setDefaultChannels(s.alertChannelId);
+      rows.push(new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select));
+      if (s.alertChannelId) {
+        rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('alertsTest', t.alertsTest, '🧪'), btn('alertsClear', t.alertsClear, '🔕')));
+      }
+      break;
+    }
     case 'recording':
       rows.push(
         new ActionRowBuilder<ButtonBuilder>().addComponents(

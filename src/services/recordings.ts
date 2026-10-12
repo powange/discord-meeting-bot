@@ -88,6 +88,12 @@ export class RecordingService {
     }
   }
 
+  private alert: (guildId: string, cause: string, message: string) => Promise<unknown> = async () => undefined;
+
+  setAlert(fn: (guildId: string, cause: string, message: string) => Promise<unknown>): void {
+    this.alert = fn;
+  }
+
   setOnStopped(fn: (meetingId: string) => Promise<unknown>): void {
     this.onStopped = fn;
   }
@@ -235,6 +241,7 @@ export class RecordingService {
       await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Mise à jour du contrôle impossible', err));
     }
     if (!interrupted) await this.onStopped(meetingId).catch((err) => this.warn(meetingId, 'Lancement du compte rendu impossible', err));
+    if (reason === 'disconnected') await this.alertInterrupted(meetingId, reason);
     return true;
   }
 
@@ -254,6 +261,7 @@ export class RecordingService {
       await this.postSummary(rec.id, rec.meetingId, 'crash', true).catch((err) => this.warn(rec.meetingId, 'Bilan impossible', err));
       this.cards.refresh(rec.meetingId, ['card']);
       await this.syncControl(rec.meetingId).catch((err) => this.warn(rec.meetingId, 'Mise à jour du contrôle impossible', err));
+      await this.alertInterrupted(rec.meetingId, 'crash');
     }
   }
 
@@ -378,6 +386,14 @@ export class RecordingService {
     if (!settings.optoutRoleId) return false;
     for (const id of roleIds) if (id === settings.optoutRoleId) return true;
     return false;
+  }
+
+  private async alertInterrupted(meetingId: string, reason: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting) return;
+    const m = await this.settings.messages(meeting.guildId);
+    const url = meeting.threadId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}` : '';
+    await this.alert(meeting.guildId, `recording:${meetingId}`, m.alerts.recordingInterrupted(meeting.title, m.recording.reasons[reason] ?? reason, url)).catch(() => undefined);
   }
 
   // ---------------------------------------------------------------- bilan

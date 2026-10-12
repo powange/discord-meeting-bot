@@ -9,6 +9,7 @@ const m = messages('fr');
 const settings: GuildSettingsRow = {
   guildId: 'g',
   forumChannelId: '111',
+  alertChannelId: null,
   hubThreadId: null,
   voiceChannelId: null,
   tagIds: null,
@@ -59,6 +60,7 @@ describe('panneau /config', () => {
     ['reminders', ['remindersEdit', 'home']],
     ['general', ['generalEdit', 'toggleCreators', 'home']],
     ['recording', ['toggleAutoRecord', 'home']],
+    ['alerts', ['alerts', 'home']],
   ] as const)('section %s : ses contrôles et le retour', (section, expected) => {
     const view = renderConfigSection(section, c, m);
     expect(ids(view)).toEqual(expected);

@@ -63,6 +63,17 @@ export class Repositories {
     return rows.map((r) => r.id!);
   }
 
+  /** Réglages sans création (lecture seule). */
+  async getSettingsIfExists(guildId: string): Promise<GuildSettingsRow | undefined> {
+    const [row] = await this.db.select().from(guildSettings).where(eq(guildSettings.guildId, guildId));
+    return row;
+  }
+
+  async listAlertChannels(): Promise<string[]> {
+    const rows = await this.db.select({ id: guildSettings.alertChannelId }).from(guildSettings).where(isNotNull(guildSettings.alertChannelId));
+    return rows.map((r) => r.id!);
+  }
+
   async updateSettings(guildId: string, patch: SettingsPatch): Promise<void> {
     await this.db.update(guildSettings).set(patch).where(eq(guildSettings.guildId, guildId));
   }

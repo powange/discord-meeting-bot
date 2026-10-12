@@ -167,6 +167,23 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show('general', t.saved);
     }
 
+    case 'alerts': {
+      if (!interaction.isChannelSelectMenu()) return;
+      await ctx.repos.updateSettings(guildId, { alertChannelId: interaction.channels.first()?.id ?? null });
+      return show('alerts', t.saved);
+    }
+    case 'alertsClear':
+      await ctx.repos.updateSettings(guildId, { alertChannelId: null });
+      return show('alerts', t.saved);
+    case 'alertsTest': {
+      const channelId = (await ctx.settings.get(guildId)).alertChannelId;
+      if (!channelId) return show('alerts');
+      const channel = await ctx.client.channels.fetch(channelId).catch(() => null);
+      if (!channel?.isSendable()) return show('alerts', `❌ ${m.errors.alertChannel}`);
+      await channel.send({ content: `🚨 ${t.alertsTestMessage}`, allowedMentions: { parse: [] } });
+      return show('alerts', t.alertsTestSent(channelId));
+    }
+
     case 'toggleAutoRecord': {
       const settings = await ctx.settings.get(guildId);
       await ctx.repos.updateSettings(guildId, { autoRecordDefault: !settings.autoRecordDefault });
