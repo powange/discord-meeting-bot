@@ -125,7 +125,7 @@ export const config: Command = {
       case 'rappels': {
         const raw = interaction.options.getString('delais', true).trim();
         const offsets = /^(aucun|non|0)$/i.test(raw) ? [] : parseOffsets(raw);
-        if (!offsets) throw new UserError(m.errors.offsets);
+        if (!offsets) throw new UserError(m.errors.offsets(raw.slice(0, 100)));
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         await ctx.repos.updateSettings(guildId, { reminderOffsetsMin: offsets });
         await ctx.meetings.replanGuild(guildId);

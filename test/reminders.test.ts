@@ -60,11 +60,18 @@ describe('parseOffsets', () => {
     ['1j, 15min', [1440, 15]],
     ['15 2h 1d', [1440, 120, 15]],
     ['30;30', [30]],
+    ['1j, 15 min', [1440, 15]],
+    ['1 jour et 15 minutes', [1440, 15]],
+    ['24h, 15mn', [1440, 15]],
+    ['2 heures + 30min', [120, 30]],
+    ['1h30', [90]],
+    ['1h 30', [60, 30]],
+    ['1J,15MIN', [1440, 15]],
   ])('%s', (input, expected) => {
     expect(parseOffsets(input)).toEqual(expected);
   });
 
-  it.each(['', 'abc', '0', '15j', '1,2,3,4,5,6', '-5'])('rejette « %s »', (input) => {
+  it.each(['', 'abc', '0', '15j', '1,2,3,4,5,6', '-5', '15 semaines', '15 min puis 2h', '1.5h'])('rejette « %s »', (input) => {
     expect(parseOffsets(input)).toBeNull();
   });
 

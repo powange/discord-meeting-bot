@@ -111,7 +111,8 @@ export const fr = {
     agendaEmptyTitle: 'Le titre du point est obligatoire.',
     agendaItemGone: "Ce point n'existe plus.",
     alreadyInState: 'La réunion est déjà dans cet état.',
-    offsets: 'Délais illisibles. Exemple : `1j, 15min` ou `1440, 15` (5 délais max, 14 jours max).',
+    offsets: (input: string) =>
+      `Délais illisibles : « ${input} ». Exemples : \`1j, 15min\`, \`1 jour et 15 minutes\`, \`24h, 1h30\` ou \`aucun\` (5 délais max, 14 jours max).`,
     timezone: 'Fuseau horaire inconnu (ex. `Europe/Paris`).',
     forumPermissions: (perms: string) => `Il me manque des permissions sur ce forum : ${perms}.`,
   },
