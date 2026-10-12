@@ -18,6 +18,8 @@ describe('customId', () => {
     { type: 'meeting.edit', meetingId: id },
     { type: 'meeting.editSubmit', meetingId: id },
     { type: 'report.retry', meetingId: id },
+    { type: 'report.correct', meetingId: id },
+    { type: 'report.correctSubmit', meetingId: id },
     { type: 'tx', action: 'up', backendId: 12 },
     { type: 'tx', action: 'add', backendId: null },
     { type: 'cfg', action: 'forum' },

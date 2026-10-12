@@ -71,6 +71,14 @@ describe('renderReport', () => {
     expect(all).toContain('-# Transcription : vibe-pc');
   });
 
+  it('bouton « Corriger » sur le dernier message seulement, absent sans résumé', () => {
+    const out = renderReport({ ...base, correctMeetingId: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b' }, m);
+    const row = out.at(-1)!.components.at(-1) as { type: number; components: Array<{ custom_id: string }> };
+    expect(row.type).toBe(ComponentType.ActionRow);
+    expect(row.components[0]!.custom_id).toBe('v1:report:correct:3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b');
+    expect(renderReport(base, m).at(-1)!.components.some((c) => c.type === ComponentType.ActionRow)).toBe(false);
+  });
+
   it('transcription jointe au dernier message', () => {
     const last = out.at(-1)!;
     expect(last.components.at(-1)).toMatchObject({ type: ComponentType.File, file: { url: 'attachment://transcription.md' } });

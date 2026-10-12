@@ -176,6 +176,18 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect((await effectiveBackends(repos, config, g)).source).toBe('yaml');
   });
 
+  it('corrections : cumulées, et conservées quand le résumé est régénéré', async () => {
+    const m = await newMeeting();
+    expect(await repos.addCorrection(m.id, 'x')).toBe(false); // pas encore de résumé
+    const save = () =>
+      repos.saveSummary({ meetingId: m.id, content: { overview: 'v', topics: [] }, llmModel: 'q', llmDeployments: [], transcriptionBackends: [], passes: 1 });
+    await save();
+    await repos.addCorrection(m.id, 'Pol et non Paul');
+    await repos.addCorrection(m.id, 'Reporter à janvier');
+    await save(); // régénération
+    expect((await repos.getSummary(m.id))?.corrections).toEqual(['Pol et non Paul', 'Reporter à janvier']);
+  });
+
   it('suppression en cascade', async () => {
     const m = await newMeeting();
     await repos.setRsvp(m.id, 'u', 'yes');

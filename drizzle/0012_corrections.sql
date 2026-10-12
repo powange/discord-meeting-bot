@@ -1,0 +1,1 @@
+ALTER TABLE "summaries" ADD COLUMN "corrections" text[] DEFAULT '{}'::text[] NOT NULL;

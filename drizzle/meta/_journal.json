@@ -85,6 +85,13 @@
       "when": 1791833484193,
       "tag": "0011_capture_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791833832663,
+      "tag": "0012_corrections",
+      "breakpoints": true
     }
   ]
 }

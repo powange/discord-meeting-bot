@@ -1,4 +1,5 @@
-import { ContainerBuilder, SeparatorSpacingSize, type APIContainerComponent } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SeparatorSpacingSize, type APIContainerComponent } from 'discord.js';
+import { encode } from '../../domain/customId.js';
 import type { MeetingSummary, Topic } from '../../ai/llm/schema.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
@@ -22,6 +23,8 @@ export interface ReportInput {
   audioUrl?: string;
   /** Aucun LLM configuré : compte rendu réduit (audio et transcription). */
   summaryDisabled?: boolean;
+  /** Réunion dont le compte rendu peut être corrigé : bouton « Corriger » sur le dernier message. */
+  correctMeetingId?: string;
 }
 
 const normalize = (s: string) =>
@@ -122,6 +125,17 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
       container.addTextDisplayComponents((t) => t.setContent(text));
     });
     if (i === messages.length - 1 && input.transcriptFile) container.addFileComponents((f) => f.setURL(`attachment://${input.transcriptFile}`));
+    if (i === messages.length - 1 && input.correctMeetingId) {
+      container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(encode({ type: 'report.correct', meetingId: input.correctMeetingId! }))
+            .setLabel(r.correct)
+            .setEmoji('✏️')
+            .setStyle(ButtonStyle.Secondary),
+        ),
+      );
+    }
     return container.toJSON();
   });
 }

@@ -1,5 +1,9 @@
 import {
+  LabelBuilder,
   MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type ModalSubmitInteraction,
@@ -109,6 +113,34 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       const updated = await ctx.repos.updateMeeting(meeting.id, { agendaLocked: action.locked });
       await updateManager(ctx, interaction, { ...scope, meeting: updated ?? meeting }, null);
       ctx.cards.refresh(meeting.id, ['agenda']);
+      return;
+    }
+
+    case 'report.correct': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'report.correctSubmit', meetingId: meeting.id }))
+          .setTitle(m.report.correctModal)
+          .addLabelComponents(
+            new LabelBuilder()
+              .setLabel(m.report.correctField)
+              .setDescription(m.report.correctHint)
+              .setTextInputComponent(new TextInputBuilder().setCustomId('correction').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(true)),
+          ),
+      );
+      return;
+    }
+
+    case 'report.correctSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      requireManager(scope);
+      const correction = interaction.fields.getTextInputValue('correction').trim();
+      if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
+      if (!(await ctx.repos.addCorrection(meeting.id, correction))) throw new UserError(m.report.correctNoSummary);
+      await ctx.pipeline.regenerate(meeting.id, false);
+      await replyEphemeral(interaction, m.report.correctSaved);
       return;
     }
 

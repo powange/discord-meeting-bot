@@ -442,6 +442,16 @@ export class Repositories {
     await this.db.insert(summaries).values(values).onConflictDoUpdate({ target: summaries.meetingId, set: { ...rest, createdAt: new Date() } });
   }
 
+  /** Ajoute une consigne de correction ; faux s'il n'y a pas encore de résumé. */
+  async addCorrection(meetingId: string, correction: string): Promise<boolean> {
+    const rows = await this.db
+      .update(summaries)
+      .set({ corrections: sql`array_append(${summaries.corrections}, ${correction})` })
+      .where(eq(summaries.meetingId, meetingId))
+      .returning({ id: summaries.meetingId });
+    return rows.length > 0;
+  }
+
   async getSummary(meetingId: string): Promise<SummaryRow | undefined> {
     const [row] = await this.db.select().from(summaries).where(eq(summaries.meetingId, meetingId));
     return row;

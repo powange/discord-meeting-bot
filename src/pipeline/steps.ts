@@ -228,6 +228,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
 
   const llm = new LlmClient(cfg, config.ai.allowedHosts);
   const agenda = await repos.listAgenda(meeting.id);
+  const corrections = (await repos.getSummary(meeting.id))?.corrections ?? [];
   const result = await summarizeMeeting(
     llm,
     {
@@ -236,6 +237,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
       date: formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when),
       participants: [...new Set(names.values())],
       agenda: agenda.map((a) => ({ id: a.id, title: a.title, detail: a.detail })),
+      corrections,
     },
     lines.map((l) => formatLine(l, settings.timezone)),
     cfg.chunkTokens,
@@ -297,6 +299,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
         ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
         : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
       summaryDisabled,
+      ...(summaryDisabled ? {} : { correctMeetingId: meeting.id }),
       transcriptFile,
       ...(audioUrl ? { audioUrl } : {}),
     },

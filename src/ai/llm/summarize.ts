@@ -8,6 +8,8 @@ export interface SummaryContext {
   date: string;
   participants: readonly string[];
   agenda: ReadonlyArray<{ id: number; title: string; detail: string }>;
+  /** Consignes de correction de l'organisateur, prioritaires sur la transcription. */
+  corrections?: readonly string[];
 }
 
 export interface SummarizeResult {
@@ -37,6 +39,12 @@ const RULES = `Règles :
 - Rattache chaque sujet au point d'ordre du jour correspondant (agendaItemId) ; un point non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).
 - Listes vides si rien de tel n'a été dit.`;
+
+/** Consignes de l'organisateur, placées dans le prompt système (prioritaires). */
+export function correctionsBlock(corrections: readonly string[] | undefined): string {
+  if (!corrections?.length) return '';
+  return `\n\nConsignes de l'organisateur de la réunion, à appliquer en priorité (elles corrigent la transcription ou un précédent résumé) :\n${corrections.map((c) => `- ${c}`).join('\n')}`;
+}
 
 function contextBlock(ctx: SummaryContext): string {
   const agenda = ctx.agenda.length
@@ -68,7 +76,10 @@ export async function summarizeMeeting(
     models.add(r.deployment ? `${r.model} (${r.deployment})` : r.model);
     return r.value;
   };
-  const system: ChatMessage = { role: 'system', content: `Tu rédiges le compte rendu d'une réunion à partir de sa transcription.\n${RULES}\n\n${FORMAT}` };
+  const system: ChatMessage = {
+    role: 'system',
+    content: `Tu rédiges le compte rendu d'une réunion à partir de sa transcription.\n${RULES}${correctionsBlock(ctx.corrections)}\n\n${FORMAT}`,
+  };
 
   const chunks = chunkLines(lines, chunkTokens);
   // Passes : une par morceau, puis les fusions (estimées pour l'affichage).

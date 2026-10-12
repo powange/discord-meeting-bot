@@ -68,6 +68,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 | Résumé | **Facultatif** : sans modèle configuré, l'étape est sautée (⏭️) et le compte rendu se limite à l'audio et à la transcription. Avec un modèle, via LiteLLM, Ollama ou LM Studio. Structuré **par point d'ordre du jour** : synthèse, décisions, actions (qui / échéance), questions ouvertes, sujets hors ODJ, points non traités. Une réunion longue est résumée **en plusieurs passes** (morceaux, puis fusion). |
 | Publication | Compte rendu en Components V2, découpé sur plusieurs messages si besoin, avec la **transcription complète en `.md`** jointe. Les responsables d'actions reconnus sont mentionnés, donc notifiés. La trace des modèles utilisés est en pied de message. |
 | Échec | L'étape passe en ❌ avec l'erreur et un bouton **🔁 Relancer** (organisateur ou gestionnaire) : seule l'étape en échec et les suivantes sont refaites, les blocs déjà transcrits sont conservés. Un arrêt du bot reprend au démarrage. |
+| Corriger | Bouton **✏️ Corriger** sous le compte rendu (organisateur ou gestionnaire) : une consigne libre (« Pol et non Paul », « la décision était de reporter »). Elle est ajoutée aux consignes précédentes et transmise au modèle en priorité, puis le résumé est régénéré sans retranscrire. |
 | Régénérer | `/reunion compte-rendu` dans le post (résumé et publication), avec `retranscrire:True` pour tout refaire. L'ancien compte rendu est remplacé. |
 
 ### Mettre en place l'IA

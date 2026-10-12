@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { extractJson, LlmClient } from '../src/ai/llm/client.js';
 import { meetingSummarySchema } from '../src/ai/llm/schema.js';
-import { sanitize, summarizeMeeting, type SummaryContext } from '../src/ai/llm/summarize.js';
+import { correctionsBlock, sanitize, summarizeMeeting, type SummaryContext } from '../src/ai/llm/summarize.js';
 
 /** Serveur chat/completions simulé : `reply` décide du contenu selon la requête. */
 let reply: (body: { messages: Array<{ role: string; content: string }> }) => string = () => '{}';
@@ -124,6 +124,18 @@ describe('summarizeMeeting', () => {
     expect(calls.length).toBe(r.passes);
     expect(r.summary.overview).toBe('Fusion');
     expect(progress).toEqual(Array.from({ length: r.passes }, (_, i) => i + 1));
+  });
+});
+
+describe('corrections de l’organisateur', () => {
+  it('ajoutées au prompt système, en priorité', async () => {
+    expect(correctionsBlock([])).toBe('');
+    reply = () => JSON.stringify({ overview: 'ok', topics: [] });
+    await summarizeMeeting(llm(), { ...ctx, corrections: ['Pol et non Paul', 'La décision était de reporter'] }, ['[18:00:00] Alice : Paul dit oui.'], 6000);
+    const system = requests.at(-1)!.body.messages[0]!.content;
+    expect(system).toContain("Consignes de l'organisateur");
+    expect(system).toContain('- Pol et non Paul');
+    expect(system).toContain('- La décision était de reporter');
   });
 });
 

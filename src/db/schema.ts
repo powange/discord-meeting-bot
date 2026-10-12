@@ -298,6 +298,8 @@ export const summaries = pgTable('summaries', {
   llmDeployments: text().array().notNull(),
   transcriptionBackends: text().array().notNull(),
   passes: integer().notNull(),
+  /** Consignes de correction de l'organisateur, cumulées et rejouées à chaque régénération. */
+  corrections: text().array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
 });
 

@@ -17,6 +17,8 @@ export type Action =
   | { type: 'meeting.edit'; meetingId: string }
   | { type: 'meeting.editSubmit'; meetingId: string }
   | { type: 'report.retry'; meetingId: string }
+  | { type: 'report.correct'; meetingId: string }
+  | { type: 'report.correctSubmit'; meetingId: string }
   | { type: 'tx'; action: TxAction; backendId: number | null }
   | { type: 'cfg'; action: CfgAction }
   | { type: 'rec.start'; meetingId: string }
@@ -129,7 +131,11 @@ export function decode(customId: string): Action | null {
   }
 
   if (group === 'report') {
-    return verb === 'retry' && rest.length === 2 ? { type: 'report.retry', meetingId } : null;
+    if (rest.length !== 2) return null;
+    if (verb === 'retry') return { type: 'report.retry', meetingId };
+    if (verb === 'correct') return { type: 'report.correct', meetingId };
+    if (verb === 'correctSubmit') return { type: 'report.correctSubmit', meetingId };
+    return null;
   }
 
   if (group === 'rec') {
