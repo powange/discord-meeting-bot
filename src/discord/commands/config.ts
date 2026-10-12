@@ -47,6 +47,12 @@ const data = new SlashCommandBuilder()
   )
   .addSubcommand((s) =>
     s
+      .setName('vocal')
+      .setDescription('Imposer un salon vocal à toutes les réunions (sans option : choix libre)')
+      .addChannelOption((o) => o.setName('salon').setDescription('Salon vocal des réunions').addChannelTypes(ChannelType.GuildVoice)),
+  )
+  .addSubcommand((s) =>
+    s
       .setName('rappels')
       .setDescription('Délais des rappels avant la réunion')
       .addStringOption((o) => o.setName('delais').setDescription('ex. « 1j, 15min » ou « 1440, 15 » ; « aucun » pour désactiver').setRequired(true)),
@@ -85,6 +91,7 @@ export const config: Command = {
           .setTitle(c.title)
           .addFields(
             { name: c.forum, value: settings.forumChannelId ? `<#${settings.forumChannelId}>` : `*${c.none}*` },
+            { name: c.voice, value: settings.voiceChannelId ? `<#${settings.voiceChannelId}>` : `*${c.voiceFree}*` },
             { name: c.managerRole, value: role(settings.managerRoleId), inline: true },
             { name: c.optoutRole, value: role(settings.optoutRoleId), inline: true },
             { name: c.nudgeRole, value: role(settings.nudgeRoleId), inline: true },
@@ -121,6 +128,13 @@ export const config: Command = {
         if (clear) patch[ROLE_KEYS[clear]] = null;
         await ctx.repos.updateSettings(guildId, patch);
         await replyEphemeral(interaction, m.replies.configSaved);
+        return;
+      }
+
+      case 'vocal': {
+        const channel = interaction.options.getChannel('salon', false, [ChannelType.GuildVoice]);
+        await ctx.repos.updateSettings(guildId, { voiceChannelId: channel?.id ?? null });
+        await replyEphemeral(interaction, channel ? m.config.voiceSet(channel.id) : m.config.voiceCleared);
         return;
       }
 

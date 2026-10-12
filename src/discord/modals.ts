@@ -29,6 +29,8 @@ export interface MeetingModalOptions {
   timezone: string;
   locale: string;
   defaultDurationMin: number;
+  /** Salon vocal imposé par la configuration : le choix du salon n'est alors pas proposé. */
+  fixedVoiceChannelId: string | null;
   now?: Date;
   defaults: Partial<MeetingInput>;
 }
@@ -65,17 +67,18 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
       .setPlaceholder(m.modal.timePlaceholder);
     if (d.startsAt) time.setValue(formatTimeRange(d.startsAt, d.durationMin ?? o.defaultDurationMin, o.timezone));
 
-    const voice = new ChannelSelectMenuBuilder().setCustomId(F.voice).setChannelTypes(ChannelType.GuildVoice).setRequired(true);
-    if (d.voiceChannelId) voice.setDefaultChannels(d.voiceChannelId);
-
     modal.addLabelComponents(
       new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(day),
       new LabelBuilder()
         .setLabel(m.modal.time)
         .setDescription(m.modal.timeHint(m.card.minutes(d.durationMin ?? o.defaultDurationMin), o.timezone))
         .setTextInputComponent(time),
-      new LabelBuilder().setLabel(m.modal.voice).setChannelSelectMenuComponent(voice),
     );
+    if (!o.fixedVoiceChannelId) {
+      const voice = new ChannelSelectMenuBuilder().setCustomId(F.voice).setChannelTypes(ChannelType.GuildVoice).setRequired(true);
+      if (d.voiceChannelId) voice.setDefaultChannels(d.voiceChannelId);
+      modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.voice).setChannelSelectMenuComponent(voice));
+    }
   }
 
   const description = new TextInputBuilder()
@@ -106,7 +109,13 @@ function dayLabel(iso: string, today: string, zone: string, locale: string, m: M
 export function readMeetingModal(
   interaction: ModalSubmitInteraction<'cached'>,
   m: Messages,
-  options: { timezone: string; reschedulable: boolean; defaultDurationMin: number; current?: MeetingInput },
+  options: {
+    timezone: string;
+    reschedulable: boolean;
+    defaultDurationMin: number;
+    fixedVoiceChannelId: string | null;
+    current?: MeetingInput;
+  },
 ): MeetingInput {
   const title = interaction.fields.getTextInputValue(F.title).trim();
   if (!title) throw new UserError(m.errors.titleRequired);
@@ -126,15 +135,19 @@ export function readMeetingModal(
   const durationMin = range.durationMin ?? options.current?.durationMin ?? options.defaultDurationMin;
   if (!(durationMin >= DURATION_MIN && durationMin <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
 
-  const voice = interaction.fields.getSelectedChannels(F.voice, false, [ChannelType.GuildVoice])?.first();
-  if (!voice) throw new UserError(m.errors.voiceRequired);
-  if (voice.guildId !== interaction.guildId) throw new UserError(m.errors.voiceInvalid);
+  let voiceChannelId = options.fixedVoiceChannelId;
+  if (!voiceChannelId) {
+    const voice = interaction.fields.getSelectedChannels(F.voice, false, [ChannelType.GuildVoice])?.first();
+    if (!voice) throw new UserError(m.errors.voiceRequired);
+    if (voice.guildId !== interaction.guildId) throw new UserError(m.errors.voiceInvalid);
+    voiceChannelId = voice.id;
+  }
 
   // Une modification qui ne touche pas à la date ne doit pas échouer parce que la réunion approche.
   const unchanged = options.current && options.current.startsAt.getTime() === startsAt.getTime();
   if (!unchanged && startsAt.getTime() <= Date.now()) throw new UserError(m.errors.datePast);
 
-  return { title, description, startsAt, durationMin, voiceChannelId: voice.id };
+  return { title, description, startsAt, durationMin, voiceChannelId };
 }
 
 export function parseWhen(input: string, timezone: string, m: Messages, now: DateTime): Date {

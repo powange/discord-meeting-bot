@@ -50,6 +50,7 @@ export class MeetingService {
     const forum = await fetchForum(this.client, settings.forumChannelId);
     if (!forum) throw new UserError(m.errors.forumNotConfigured);
     if (!settings.tagIds) throw new UserError(m.errors.tagsMissing);
+    input = await this.applyFixedVoice(settings, input, m);
 
     let meeting = await this.repos.insertMeeting({
       guildId: guild.id,
@@ -91,6 +92,7 @@ export class MeetingService {
   async update(guild: Guild, meeting: MeetingRow, input: MeetingInput, by: string): Promise<MeetingRow> {
     const settings = await this.settings.get(guild.id);
     const m = messages(settings.locale);
+    if (canReschedule(meeting.status)) input = await this.applyFixedVoice(settings, input, m);
     const rescheduled =
       input.startsAt.getTime() !== meeting.startsAt.getTime() ||
       input.durationMin !== meeting.durationMin ||
@@ -197,6 +199,14 @@ export class MeetingService {
   }
 
   // ---------------------------------------------------------------- interne
+
+  /** Salon vocal imposé par `/config vocal` : il remplace celui saisi, et doit toujours exister. */
+  private async applyFixedVoice(settings: GuildSettingsRow, input: MeetingInput, m: Messages): Promise<MeetingInput> {
+    if (!settings.voiceChannelId) return input;
+    const channel = await this.client.channels.fetch(settings.voiceChannelId).catch(() => null);
+    if (!channel?.isVoiceBased()) throw new UserError(m.errors.fixedVoiceMissing);
+    return { ...input, voiceChannelId: settings.voiceChannelId };
+  }
 
   private async replan(meeting: MeetingRow, settings: GuildSettingsRow): Promise<void> {
     await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date()));

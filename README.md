@@ -18,7 +18,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |
 | Clôture auto | 2 h après la fin prévue si personne n'a clos la réunion. |
-| `/config` | `forum`, `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
+| `/config` | `forum`, `vocal` (impose un salon vocal à toutes les réunions ; sans option, choix libre), `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
 

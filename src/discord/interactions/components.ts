@@ -124,6 +124,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       const input = readMeetingModal(interaction, m, {
         timezone: scope.settings.timezone,
         defaultDurationMin: scope.settings.defaultDurationMin,
+        fixedVoiceChannelId: scope.settings.voiceChannelId,
         reschedulable: canReschedule(meeting.status),
         current: meeting,
       });
@@ -147,6 +148,7 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
       timezone: scope.settings.timezone,
       locale: scope.settings.locale,
       defaultDurationMin: scope.settings.defaultDurationMin,
+      fixedVoiceChannelId: scope.settings.voiceChannelId,
       defaults: meeting,
     }),
   );
@@ -170,6 +172,7 @@ export async function showCreateModal(
       timezone: settings.timezone,
       locale: settings.locale,
       defaultDurationMin: settings.defaultDurationMin,
+      fixedVoiceChannelId: settings.voiceChannelId,
       defaults: startsAt ? { startsAt } : {},
     }),
   );
@@ -182,6 +185,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     timezone: settings.timezone,
     reschedulable: true,
     defaultDurationMin: settings.defaultDurationMin,
+    fixedVoiceChannelId: settings.voiceChannelId,
   });
   const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
   await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
