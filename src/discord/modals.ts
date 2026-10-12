@@ -14,6 +14,7 @@ import { DESCRIPTION_MAX, DURATION_MAX, DURATION_MIN, TITLE_MAX } from '../domai
 import { combineDayTime, dayChoices, dayOf, formatTimeRange, OTHER_DAY, parseDatedRange, parseDateTime, parseTimeRange } from '../domain/time.js';
 import type { Messages } from '../i18n/index.js';
 import { UserError } from '../lib/errors.js';
+import { truncate } from '../lib/text.js';
 import type { MeetingInput } from '../services/meetings.js';
 
 const F = { title: 'title', day: 'day', time: 'time', voice: 'voice', description: 'description', detail: 'detail' } as const;
@@ -62,7 +63,7 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
       new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(day),
       new LabelBuilder()
         .setLabel(m.modal.time)
-        .setDescription(m.modal.timeHint(m.card.minutes(d.durationMin ?? o.defaultDurationMin), o.timezone))
+        .setDescription(truncate(m.modal.timeHint(m.card.minutes(d.durationMin ?? o.defaultDurationMin), o.timezone), 100))
         .setTextInputComponent(time),
     );
     if (!o.fixedVoiceChannelId && !o.autoVoice) {
@@ -138,7 +139,7 @@ export function duplicateModal(m: Messages, o: { customId: string; timezone: str
     .setTitle(m.manage.duplicateModal)
     .addLabelComponents(
       new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(dayMenu(m, o.timezone, o.locale, undefined, new Date())),
-      new LabelBuilder().setLabel(m.modal.time).setDescription(m.modal.timeHint(m.card.minutes(o.durationMin), o.timezone)).setTextInputComponent(time),
+      new LabelBuilder().setLabel(m.modal.time).setDescription(truncate(m.modal.timeHint(m.card.minutes(o.durationMin), o.timezone), 100)).setTextInputComponent(time),
       new LabelBuilder().setLabel(m.manage.copyAgenda).setStringSelectMenuComponent(copy),
     );
 }

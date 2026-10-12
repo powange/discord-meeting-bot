@@ -61,7 +61,8 @@ export const fr = {
     tomorrow: 'demain',
     time: 'Horaire',
     timePlaceholder: '18h ou 18h-19h30',
-    timeHint: (duration: string, tz: string) => `Début, ou début-fin. Sans heure de fin : ${duration}. Avec « Autre date » : 15/01/2027 18h-19h30. (${tz})`,
+    // Description de champ : 100 caractères au plus (Discord refuse sinon d'ouvrir le formulaire).
+    timeHint: (duration: string, tz: string) => `Début ou début-fin, ${tz}. Sans fin : ${duration}. Autre date : 15/01/2027 18h-19h30`,
     otherDay: 'Autre date…',
     otherDayHint: "Saisir la date dans l'horaire : 15/01/2027 18h-19h30",
     voice: 'Salon vocal',
