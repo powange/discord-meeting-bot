@@ -7,6 +7,7 @@ import type { Db } from './client.js';
 import {
   agendaItems,
   audioSegments,
+  captureStats,
   pipelineSteps,
   summaries,
   transcriptionBackends,
@@ -552,5 +553,17 @@ export class Repositories {
 
   async markMixPurged(meetingId: string, output: Record<string, unknown>, at: Date): Promise<void> {
     await this.updateStep(meetingId, 'mix', { output: { ...output, purgedAt: at.toISOString() } });
+  }
+
+  async saveCaptureStats(recordingId: string, rows: ReadonlyArray<{ userId: string; receivedPackets: number; writtenPackets: number; streamErrors: number }>): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .insert(captureStats)
+      .values(rows.map((r) => ({ recordingId, ...r })))
+      .onConflictDoNothing();
+  }
+
+  async listCaptureStats(recordingId: string) {
+    return this.db.select().from(captureStats).where(eq(captureStats.recordingId, recordingId));
   }
 }

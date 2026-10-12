@@ -143,7 +143,9 @@ export class RecordingService {
       selfDeaf: false, // indispensable pour recevoir l'audio
       selfMute: true,
       decryptionFailureTolerance: recCfg.decryptionFailureTolerance,
+      debug: recCfg.debugVoice,
     });
+    if (recCfg.debugVoice) connection.on('debug', (message) => this.log.debug({ guildId: guild.id, voice: message }, 'Voix'));
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, JOIN_TIMEOUT_MS);
     } catch {
@@ -225,6 +227,7 @@ export class RecordingService {
     this.active.delete(entry.guildId); // avant toute attente : un seul arrêt
 
     await entry.session.stop();
+    await this.repos.saveCaptureStats(entry.recordingId, entry.session.captureStats()).catch((err) => this.warn(meetingId, 'Statistiques de capture non enregistrées', err));
     const endedAt = new Date();
     await this.repos.closePresence(entry.recordingId, endedAt);
     const interrupted = reason === 'shutdown' || reason === 'disconnected';
@@ -405,11 +408,12 @@ export class RecordingService {
     if (!thread) return;
     const m = await this.settings.messages(meeting.guildId);
 
-    const [presence, segments, rsvps, recording] = await Promise.all([
+    const [presence, segments, rsvps, recording, capture] = await Promise.all([
       this.repos.listPresence(recordingId),
       this.repos.listSegments(recordingId),
       this.repos.listRsvps(meetingId),
       this.repos.getRecording(recordingId),
+      this.repos.listCaptureStats(recordingId),
     ]);
     if (!recording) return;
     const resumeButton =
@@ -428,6 +432,7 @@ export class RecordingService {
         segments,
         presence,
         rsvps,
+        capture,
       },
       { meetingTitle: meeting.title, interrupted, ...(resumeButton ? { resumeButton } : {}) },
       m,

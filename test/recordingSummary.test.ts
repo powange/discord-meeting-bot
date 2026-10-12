@@ -62,6 +62,17 @@ describe('renderRecordingSummary', () => {
     expect(all).toContain('### Inscrits absents\n<@d>');
   });
 
+  it('pertes d’audio : avertissement sous le participant concerné', () => {
+    const c = renderRecordingSummary(
+      { ...input, capture: [{ userId: 'a', receivedPackets: 1000, writtenPackets: 850, streamErrors: 1 }, { userId: 'b', receivedPackets: 1000, writtenPackets: 1000, streamErrors: 0 }] },
+      { meetingTitle: 'Bureau', interrupted: false },
+      m,
+    );
+    const t = texts(c).join('\n');
+    expect(t).toContain('≈ 15 %');
+    expect(t.match(/audio possiblement incomplet/g)).toHaveLength(1);
+  });
+
   it('interrompu : couleur orange, message et bouton de reprise', () => {
     const button = new ButtonBuilder().setCustomId('x').setLabel('Reprendre').setStyle(ButtonStyle.Primary);
     const c = renderRecordingSummary(input, { meetingTitle: 'Bureau', interrupted: true, resumeButton: button }, m);

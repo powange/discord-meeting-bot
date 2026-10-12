@@ -32,7 +32,7 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
 | Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
 | Fin | Bouton Arrêter, `/reunion terminer`, ou clôture automatique de la réunion (vocal vide depuis 5 min). |
-| Bilan | Message silencieux dans le post : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
+| Bilan | Message silencieux dans le post. Il signale « ⚠️ audio possiblement incomplet » quand une part notable des paquets d'une personne n'a pas pu être déchiffrée (DAVE) ; `recording.debugVoice: true` journalise les détails de la connexion vocale. Il indique aussi : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
 
 Contrainte Discord : un bot ne peut être que dans **un vocal par serveur** à la fois, donc un seul enregistrement par serveur.

@@ -153,6 +153,7 @@ export const fr = {
       `**${pct} %** ${bar} ${who} · 🗣️ ${speech} · ⏱️ ${presence} (${presencePct} %)`,
     notRecorded: (who: string, presence: string, presencePct: number) => `🔇 ${who} · non enregistré · ⏱️ ${presence} (${presencePct} %)`,
     unannounced: 'non inscrit',
+    lossWarning: (pct: number) => `⚠️ audio possiblement incomplet : ≈ ${pct} % des paquets n'ont pas pu être déchiffrés (chiffrement Discord). La transcription peut avoir des trous.`,
     noShow: '### Inscrits absents',
     nobody: "Personne n'a été enregistré.",
     footnote: '-# % : part du temps de parole total · 🗣️ temps de parole · ⏱️ présence dans le vocal (part de la durée).',

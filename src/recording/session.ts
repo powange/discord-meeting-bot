@@ -27,6 +27,13 @@ export interface SessionOptions {
   onSegment(segment: CapturedSegment): Promise<void>;
 }
 
+export interface UserCaptureStats {
+  userId: string;
+  receivedPackets: number;
+  writtenPackets: number;
+  streamErrors: number;
+}
+
 interface ActiveCapture {
   stream: AudioReceiveStream;
   done: Promise<void>;
@@ -40,13 +47,47 @@ interface ActiveCapture {
 export class RecordingSession {
   readonly startedAt = Date.now();
   private readonly active = new Map<string, ActiveCapture>();
+  private readonly counts = new Map<string, UserCaptureStats>();
   private stopped = false;
+  private readonly restorePacketHook: () => void;
 
   constructor(
     readonly connection: VoiceConnection,
     private readonly options: SessionOptions,
   ) {
     connection.receiver.speaking.on('start', this.onSpeaking);
+    // La bibliothèque signale chaque paquet reçu AVANT de le déchiffrer (SpeakingMap.onPacket) ;
+    // comparer à ce qui est réellement écrit révèle les paquets que DAVE a jetés en silence.
+    const speaking = connection.receiver.speaking;
+    const original = speaking.onPacket.bind(speaking);
+    speaking.onPacket = (userId: string) => {
+      if (!this.stopped && this.recordable(userId)) this.stats(userId).receivedPackets++;
+      original(userId);
+    };
+    this.restorePacketHook = () => {
+      speaking.onPacket = original;
+    };
+  }
+
+  /** Compteurs de qualité par personne (paquets reçus, écrits, flux interrompus). */
+  captureStats(): UserCaptureStats[] {
+    return [...this.counts.values()];
+  }
+
+  private stats(userId: string): UserCaptureStats {
+    let s = this.counts.get(userId);
+    if (!s) this.counts.set(userId, (s = { userId, receivedPackets: 0, writtenPackets: 0, streamErrors: 0 }));
+    return s;
+  }
+
+  /** Décision d'enregistrement mise en cache 5 s (appelée à chaque paquet). */
+  private readonly recordableCache = new Map<string, { value: boolean; at: number }>();
+  private recordable(userId: string): boolean {
+    const cached = this.recordableCache.get(userId);
+    if (cached && Date.now() - cached.at < 5000) return cached.value;
+    const value = this.options.shouldRecord(userId);
+    this.recordableCache.set(userId, { value, at: Date.now() });
+    return value;
   }
 
   get capturing(): number {
@@ -58,6 +99,7 @@ export class RecordingSession {
     if (this.stopped) return;
     this.stopped = true;
     this.connection.receiver.speaking.off('start', this.onSpeaking);
+    this.restorePacketHook();
     const pending = [...this.active.values()];
     for (const capture of pending) capture.stream.destroy();
     await Promise.allSettled(pending.map((c) => c.done));
@@ -86,8 +128,15 @@ export class RecordingSession {
       return;
     }
 
-    stream.on('data', (packet: Buffer) => writer.write(packet));
-    stream.on('error', (err) => log.warn({ err, userId }, 'Flux audio interrompu (le segment en cours est conservé)'));
+    const stats = this.stats(userId);
+    stream.on('data', (packet: Buffer) => {
+      stats.writtenPackets++;
+      writer.write(packet);
+    });
+    stream.on('error', (err) => {
+      stats.streamErrors++;
+      log.warn({ err, userId }, 'Flux audio interrompu (le segment en cours est conservé)');
+    });
 
     const done = new Promise<void>((resolve) => {
       stream.once('close', () => {

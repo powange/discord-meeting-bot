@@ -188,6 +188,24 @@ export const recordingPresence = pgTable(
   (t) => [index().on(t.recordingId)],
 );
 
+/**
+ * Qualité de capture par personne et par session : paquets reçus (avant déchiffrement DAVE),
+ * paquets effectivement écrits, flux interrompus. Révèle les pertes silencieuses de DAVE.
+ */
+export const captureStats = pgTable(
+  'capture_stats',
+  {
+    recordingId: uuid()
+      .notNull()
+      .references(() => recordings.id, { onDelete: 'cascade' }),
+    userId: text().notNull(),
+    receivedPackets: integer().notNull(),
+    writtenPackets: integer().notNull(),
+    streamErrors: integer().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.recordingId, t.userId] })],
+);
+
 /** Une prise de parole = un fichier OGG/Opus 48 kHz. Les temps sont relatifs au début de la session. */
 export const audioSegments = pgTable(
   'audio_segments',
@@ -284,6 +302,7 @@ export const summaries = pgTable('summaries', {
 });
 
 export type RecordingRow = typeof recordings.$inferSelect;
+export type CaptureStatsRow = typeof captureStats.$inferSelect;
 export type TranscriptionBackendRow = typeof transcriptionBackends.$inferSelect;
 export type PipelineStepRow = typeof pipelineSteps.$inferSelect;
 export type TranscriptionBlockRow = typeof transcriptionBlocks.$inferSelect;

@@ -26,6 +26,8 @@ const recordingSchema = z.strictObject({
   silenceMs: z.int().min(200).max(10_000).default(1500),
   /** Échecs de déchiffrement DAVE consécutifs tolérés avant réinitialisation de la session chiffrée. */
   decryptionFailureTolerance: z.int().min(1).max(1000).default(48),
+  /** Journalise les événements de la connexion vocale et de DAVE (niveau debug). */
+  debugVoice: z.boolean().default(false),
 });
 
 const backendSchema = z.strictObject({

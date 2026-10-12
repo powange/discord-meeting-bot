@@ -5,6 +5,7 @@ import {
   type APIContainerComponent,
   type ButtonBuilder,
 } from 'discord.js';
+import { captureWarning, type CaptureCounts } from '../../domain/capture.js';
 import { attendanceReport, type PresenceInterval } from '../../domain/recording.js';
 import { discordTimestamp } from '../../domain/time.js';
 import type { RsvpStatus } from '../../domain/types.js';
@@ -18,6 +19,8 @@ export interface SummaryInput {
   segments: ReadonlyArray<{ userId: string; startMs: number; endMs: number }>;
   presence: readonly PresenceInterval[];
   rsvps: ReadonlyArray<{ userId: string; status: RsvpStatus }>;
+  /** Qualité de capture par personne (optionnel). */
+  capture?: ReadonlyArray<{ userId: string } & CaptureCounts>;
 }
 
 export interface ParticipantStats {
@@ -30,6 +33,8 @@ export interface ParticipantStats {
   presencePct: number;
   recorded: boolean;
   registered: boolean;
+  /** Pourcentage d'audio perdu à signaler, ou null. */
+  lossPct: number | null;
 }
 
 const BAR_LENGTH = 5;
@@ -62,6 +67,10 @@ export function participantStats(input: SummaryInput): ParticipantStats[] {
         presencePct: Math.round((presenceMs / durationMs) * 100),
         recorded: !excluded.has(userId),
         registered: registered.has(userId),
+        lossPct: (() => {
+          const c = input.capture?.find((x) => x.userId === userId);
+          return c ? captureWarning(c) : null;
+        })(),
       };
     })
     .sort((a, b) => b.speechMs - a.speechMs || b.presenceMs - a.presenceMs);
@@ -109,9 +118,9 @@ export function renderRecordingSummary(input: SummaryInput, options: SummaryOpti
 
   const lines = stats.map((p, rank) => {
     const who = `<@${p.userId}>${p.registered ? '' : ` *(${s.unannounced})*`}`;
-    return p.recorded
-      ? s.participant(who, p.speechPct, bar(p.speechPct, rank), m.format.duration(p.speechMs), m.format.duration(p.presenceMs), p.presencePct)
-      : s.notRecorded(who, m.format.duration(p.presenceMs), p.presencePct);
+    if (!p.recorded) return s.notRecorded(who, m.format.duration(p.presenceMs), p.presencePct);
+    const line = s.participant(who, p.speechPct, bar(p.speechPct, rank), m.format.duration(p.speechMs), m.format.duration(p.presenceMs), p.presencePct);
+    return p.lossPct === null ? line : `${line}\n-# ${s.lossWarning(p.lossPct)}`;
   });
   container.addTextDisplayComponents((t) =>
     t.setContent(`${s.participation}\n${lines.length ? joinLinesWithin(lines, PARTICIPANTS_BUDGET, m.card.more) : s.nobody}`),

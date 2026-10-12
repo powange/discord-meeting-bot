@@ -78,6 +78,13 @@
       "when": 1791833262055,
       "tag": "0010_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791833484193,
+      "tag": "0011_capture_stats",
+      "breakpoints": true
     }
   ]
 }
