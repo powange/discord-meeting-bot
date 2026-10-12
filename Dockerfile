@@ -18,7 +18,8 @@ COPY --from=build /app/dist ./dist
 COPY drizzle ./drizzle
 COPY package.json ./
 USER node
-# Santé : connexion Discord et base (serveur interne 127.0.0.1:3000, non publié).
+# Santé : connexion Discord et base (serveur interne 127.0.0.1:$HEALTH_PORT, non publié).
+ENV HEALTH_PORT=3000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=60s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.HEALTH_PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "--enable-source-maps", "dist/index.js"]

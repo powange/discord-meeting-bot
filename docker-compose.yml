@@ -12,6 +12,8 @@ services:
       DATABASE_URL: postgres://bot:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@postgres:5432/meetingbot
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATA_DIR: /data
+      # Port interne du healthcheck (jamais publié) ; à changer seulement en cas de conflit.
+      HEALTH_PORT: ${HEALTH_PORT:-3000}
       # Résumés (phase 3) : LiteLLM de la stack, ou directement un Ollama (http://hôte:11434/v1)
       LLM_BASE_URL: ${LLM_BASE_URL:-http://litellm:4000/v1}
       LLM_API_KEY: ${LITELLM_MASTER_KEY:-}
