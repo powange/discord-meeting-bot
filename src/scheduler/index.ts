@@ -71,11 +71,9 @@ export class Scheduler {
       case 'record_start':
         await this.ctx.recordings.autoStart(job.meetingId);
         return;
-      case 'auto_end': {
-        const meeting = await this.ctx.repos.getMeeting(job.meetingId);
-        if (meeting?.status === 'live') await this.ctx.meetings.end(job.meetingId, null);
+      case 'auto_end':
+        // Ancienne clôture à heure fixe : remplacée par la clôture sur vocal vide (MeetingWatcher).
         return;
-      }
     }
   }
 

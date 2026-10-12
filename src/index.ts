@@ -10,6 +10,7 @@ import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
 import { MeetingService } from './services/meetings.js';
+import { MeetingWatcher } from './services/meetingWatcher.js';
 import { RecordingService } from './services/recordings.js';
 import { SettingsService } from './services/settings.js';
 
@@ -28,13 +29,13 @@ async function main(): Promise<void> {
   const hub = new HubService(client, repos, settings, log);
   const meetings = new MeetingService(config, client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
   const recordings = new RecordingService(client, repos, settings, cards, config, log);
-  recordings.setEndMeeting((meetingId) => meetings.end(meetingId, null));
   meetings.hooks = {
     afterStart: (meeting) => recordings.onMeetingStarted(meeting),
     beforeClose: (meetingId) => recordings.onMeetingClosing(meetingId),
   };
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings };
   const scheduler = new Scheduler(ctx);
+  const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
     }
     await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
     scheduler.start();
+    watcher.start();
     hub.startWatchdog();
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
     // des réunions ouvertes, sans notification (simple édition des messages existants).
@@ -75,6 +77,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'Arrêt en cours');
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
+    watcher.stop();
     await recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet'));
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);

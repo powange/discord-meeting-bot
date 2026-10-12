@@ -5,22 +5,6 @@ export function segmentRelativePath(userId: string, startMs: number): string {
   return `${userId}/${String(startMs).padStart(9, '0')}.ogg`;
 }
 
-/**
- * Vocal vide : faut-il arrêter ? Le délai ne court qu'à partir de l'heure de début (le bot arrive
- * en avance, seul) ou du départ du dernier participant.
- */
-export function shouldStopForEmpty(input: {
-  humansPresent: number;
-  lastHumanAt: Date | null;
-  meetingStartsAt: Date;
-  now: Date;
-  graceMin: number;
-}): boolean {
-  if (input.humansPresent > 0) return false;
-  const since = Math.max(input.meetingStartsAt.getTime(), input.lastHumanAt?.getTime() ?? 0);
-  return input.now.getTime() - since >= input.graceMin * 60_000;
-}
-
 export interface PresenceInterval {
   userId: string;
   joinedAt: Date;

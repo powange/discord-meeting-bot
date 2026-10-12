@@ -1,8 +1,5 @@
 import type { JobKind, MeetingStatus } from './types.js';
 
-/** Délai après la fin prévue au-delà duquel une réunion « en cours » est close automatiquement. */
-export const AUTO_END_GRACE_MIN = 120;
-
 export interface PlannedJob {
   kind: JobKind;
   offsetMin: number;
@@ -21,15 +18,9 @@ export function planJobs(
   /** Avance du démarrage auto de l'enregistrement (le bot arrive avant les participants). */
   recordLeadMin = 0,
 ): PlannedJob[] {
+  // La clôture n'est pas planifiée : elle dépend de la présence dans le vocal (MeetingWatcher).
   const jobs: PlannedJob[] = [];
   const start = meeting.startsAt.getTime();
-  const autoEnd: PlannedJob = {
-    kind: 'auto_end',
-    offsetMin: 0,
-    dueAt: new Date(start + (meeting.durationMin + AUTO_END_GRACE_MIN) * 60_000),
-  };
-
-  if (meeting.status === 'live') return [autoEnd];
   if (meeting.status !== 'scheduled') return [];
 
   for (const offset of [...new Set(reminderOffsetsMin)].filter((o) => o > 0).sort((a, b) => b - a)) {
@@ -40,7 +31,6 @@ export function planJobs(
     jobs.push({ kind: 'record_start', offsetMin: recordLeadMin, dueAt: new Date(Math.max(start - recordLeadMin * 60_000, now.getTime())) });
   }
   jobs.push({ kind: 'start', offsetMin: 0, dueAt: new Date(Math.max(start, now.getTime())) });
-  jobs.push(autoEnd);
   return jobs.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
 }
 

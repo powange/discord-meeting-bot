@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { attendanceReport, segmentRelativePath, shouldStopForEmpty } from '../src/domain/recording.js';
+import { shouldCloseForEmpty } from '../src/domain/meeting.js';
+import { attendanceReport, segmentRelativePath } from '../src/domain/recording.js';
 import { planJobs } from '../src/domain/reminders.js';
 
 const t = (hhmm: string) => new Date(`2026-10-15T${hhmm}:00Z`);
@@ -11,19 +12,20 @@ describe('segmentRelativePath', () => {
   });
 });
 
-describe('shouldStopForEmpty', () => {
-  const base = { meetingStartsAt: t('18:00'), graceMin: 5 };
-  it('bot arrivé en avance, seul : pas d’arrêt avant le début + délai', () => {
-    expect(shouldStopForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('17:59') })).toBe(false);
-    expect(shouldStopForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('18:04') })).toBe(false);
-    expect(shouldStopForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('18:05') })).toBe(true);
+describe('shouldCloseForEmpty', () => {
+  const base = { plannedEnd: t('19:00'), graceMin: 5 };
+  it('réunion qui déborde : jamais close tant que quelqu’un est là', () => {
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 2, lastHumanAt: t('19:30'), now: t('23:00') })).toBe(false);
   });
-  it('dernier participant parti : délai à partir de son départ', () => {
-    expect(shouldStopForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:44') })).toBe(false);
-    expect(shouldStopForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:45') })).toBe(true);
+  it('dernier participant parti : délai depuis son départ, même avant la fin prévue', () => {
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:44') })).toBe(false);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:45') })).toBe(true);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('19:40'), now: t('19:45') })).toBe(true);
   });
-  it('quelqu’un est là : jamais', () => {
-    expect(shouldStopForEmpty({ ...base, humansPresent: 1, lastHumanAt: t('10:00'), now: t('23:00') })).toBe(false);
+  it('personne n’est jamais venu : délai depuis la fin prévue (pas depuis le début)', () => {
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('18:10') })).toBe(false);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('19:04') })).toBe(false);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('19:05') })).toBe(true);
   });
 });
 
@@ -62,7 +64,6 @@ describe('planJobs + enregistrement auto', () => {
     expect(jobs.map((j) => [j.kind, j.dueAt.toISOString()])).toEqual([
       ['record_start', t('17:58').toISOString()],
       ['start', t('18:00').toISOString()],
-      ['auto_end', t('21:00').toISOString()],
     ]);
   });
   it('sans enregistrement auto : pas d’échéance', () => {

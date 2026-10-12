@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_END_GRACE_MIN, formatOffset, isNudgeReminder, isReminderStale, parseOffsets, planJobs } from '../src/domain/reminders.js';
+import { formatOffset, isNudgeReminder, isReminderStale, parseOffsets, planJobs } from '../src/domain/reminders.js';
 
 const startsAt = new Date('2026-10-15T16:00:00Z');
 const meeting = { startsAt, durationMin: 60, status: 'scheduled' as const };
 const at = (iso: string) => new Date(iso);
 
 describe('planJobs', () => {
-  it('rappels + début + clôture auto', () => {
+  it('rappels + début (pas de clôture à heure fixe)', () => {
     const jobs = planJobs(meeting, [15, 1440], at('2026-10-12T10:00:00Z'));
     expect(jobs.map((j) => [j.kind, j.offsetMin, j.dueAt.toISOString()])).toEqual([
       ['reminder', 1440, '2026-10-14T16:00:00.000Z'],
       ['reminder', 15, '2026-10-15T15:45:00.000Z'],
       ['start', 0, '2026-10-15T16:00:00.000Z'],
-      ['auto_end', 0, new Date(startsAt.getTime() + (60 + AUTO_END_GRACE_MIN) * 60_000).toISOString()],
     ]);
   });
 
@@ -31,8 +30,8 @@ describe('planJobs', () => {
     expect(planJobs(meeting, [], now).find((j) => j.kind === 'start')?.dueAt).toEqual(now);
   });
 
-  it('réunion en cours : seulement la clôture auto', () => {
-    expect(planJobs({ ...meeting, status: 'live' }, [15], at('2026-10-15T16:10:00Z')).map((j) => j.kind)).toEqual(['auto_end']);
+  it('réunion en cours : plus rien de planifié (clôture sur vocal vide)', () => {
+    expect(planJobs({ ...meeting, status: 'live' }, [15], at('2026-10-15T16:10:00Z'))).toEqual([]);
   });
 
   it('réunion close ou annulée : rien', () => {

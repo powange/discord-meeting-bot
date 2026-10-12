@@ -33,7 +33,7 @@ defaults:
   # Enregistrement (phase 2)
   recording:
     autoJoinLeadMin: 2 # en auto, le bot rejoint le vocal 2 min avant l'heure
-    endWhenEmptyMin: 5 # vocal vide 5 min (après l'heure de début) : fin de l'enregistrement et de la réunion
+    endWhenEmptyMin: 5 # vocal vide depuis 5 min : clôture de la réunion (et de l'enregistrement), jamais sur l'heure de fin
     silenceMs: 1500 # silence qui clôt une prise de parole
     decryptionFailureTolerance: 48 # DAVE : échecs de déchiffrement tolérés avant réinitialisation
 

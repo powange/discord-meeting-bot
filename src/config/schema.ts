@@ -20,7 +20,7 @@ const guildSeedSchema = z.strictObject({
 const recordingSchema = z.strictObject({
   /** Le bot rejoint le vocal N minutes avant l'heure (démarrage auto) : avant l'arrivée des participants. */
   autoJoinLeadMin: z.int().min(0).max(30).default(2),
-  /** Vocal vide depuis N minutes (après l'heure de début) : fin de l'enregistrement et de la réunion. */
+  /** Vocal vide depuis N minutes : clôture de la réunion (et donc de l'enregistrement). Jamais sur l'heure de fin. */
   endWhenEmptyMin: z.int().min(1).max(120).default(5),
   /** Silence qui clôt une prise de parole (un fichier par prise de parole). */
   silenceMs: z.int().min(200).max(10_000).default(1500),

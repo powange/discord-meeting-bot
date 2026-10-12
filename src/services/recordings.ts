@@ -21,7 +21,7 @@ import { displayName } from '../discord/notify.js';
 import { fetchThread } from '../discord/threads.js';
 import { encode } from '../domain/customId.js';
 import { isOpen } from '../domain/meeting.js';
-import { attendanceReport, shouldStopForEmpty } from '../domain/recording.js';
+import { attendanceReport } from '../domain/recording.js';
 import type { StopReason } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
@@ -33,7 +33,6 @@ import type { SettingsService } from './settings.js';
 
 const JOIN_TIMEOUT_MS = 20_000;
 const RECONNECT_GRACE_MS = 5_000;
-const WATCH_INTERVAL_MS = 15_000;
 
 const VOICE_PERMISSIONS = {
   ViewChannel: PermissionFlagsBits.ViewChannel,
@@ -45,23 +44,17 @@ interface ActiveRecording {
   meetingId: string;
   guildId: string;
   channelId: string;
-  meetingStartsAt: Date;
   session: RecordingSession;
-  lastHumanAt: Date | null;
-  watch: NodeJS.Timeout;
 }
-
-/** Fin de réunion déclenchée par l'enregistrement (vocal vide). Fourni par le service des réunions. */
-export type EndMeeting = (meetingId: string) => Promise<unknown>;
 
 /**
  * Enregistrement des réunions : le bot rejoint le vocal (un seul vocal par serveur à la fois,
  * contrainte Discord), capture une piste par participant et note les présences réelles.
+ * La fin sur vocal vide est gérée par MeetingWatcher (clôture de la réunion → arrêt ici).
  */
 export class RecordingService {
   /** Par serveur. Une entrée `null` = démarrage en cours (évite deux démarrages simultanés). */
   private readonly active = new Map<string, ActiveRecording | null>();
-  private endMeeting: EndMeeting = async () => undefined;
   /** Mises à jour du message de contrôle, sérialisées par réunion (pas de double publication). */
   private readonly controlQueue = new Map<string, Promise<void>>();
 
@@ -73,10 +66,6 @@ export class RecordingService {
     private readonly config: AppConfig,
     private readonly log: Logger,
   ) {}
-
-  setEndMeeting(fn: EndMeeting): void {
-    this.endMeeting = fn;
-  }
 
   /**
    * Démarrage automatique (échéance « record_start » ou passage « En cours ») : sans effet si
@@ -179,10 +168,7 @@ export class RecordingService {
       meetingId: meeting.id,
       guildId: guild.id,
       channelId: channel.id,
-      meetingStartsAt: meeting.startsAt,
       session,
-      lastHumanAt: null,
-      watch: setInterval(() => void this.watch(guild.id), WATCH_INTERVAL_MS),
     };
     this.active.set(guild.id, entry);
     this.watchConnection(entry, connection);
@@ -190,7 +176,6 @@ export class RecordingService {
     // Présences au démarrage.
     for (const member of channel.members.values()) {
       if (member.user.bot) continue;
-      entry.lastHumanAt = now;
       await this.repos.insertPresence({
         recordingId,
         userId: member.id,
@@ -228,7 +213,6 @@ export class RecordingService {
     const entry = [...this.active.values()].find((a) => a?.meetingId === meetingId);
     if (!entry) return false;
     this.active.delete(entry.guildId); // avant toute attente : un seul arrêt
-    clearInterval(entry.watch);
 
     await entry.session.stop();
     const endedAt = new Date();
@@ -284,7 +268,6 @@ export class RecordingService {
     const joined = oldState.channelId !== entry.channelId && newState.channelId === entry.channelId;
     const left = oldState.channelId === entry.channelId && newState.channelId !== entry.channelId;
     const now = new Date();
-    if (joined || left) entry.lastHumanAt = now;
 
     void (async () => {
       if (joined) {
@@ -300,22 +283,6 @@ export class RecordingService {
         await this.repos.closePresence(entry.recordingId, now, member.id);
       }
     })().catch((err) => this.warn(entry.meetingId, 'Mise à jour de présence impossible', err));
-  }
-
-  /** Vocal vide depuis trop longtemps : fin de l'enregistrement et de la réunion. */
-  private async watch(guildId: string): Promise<void> {
-    const entry = this.active.get(guildId);
-    if (!entry) return;
-    const channel = this.client.channels.cache.get(entry.channelId);
-    const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
-    const now = new Date();
-    if (humans > 0) entry.lastHumanAt = now;
-    const graceMin = this.config.guild(guildId).recording.endWhenEmptyMin;
-    if (!shouldStopForEmpty({ humansPresent: humans, lastHumanAt: entry.lastHumanAt, meetingStartsAt: entry.meetingStartsAt, now, graceMin })) return;
-
-    this.log.info({ meetingId: entry.meetingId, graceMin }, 'Vocal vide : fin de la réunion');
-    await this.stop(entry.meetingId, 'empty');
-    await this.endMeeting(entry.meetingId).catch((err) => this.warn(entry.meetingId, 'Clôture de la réunion impossible', err));
   }
 
   /** Coupure réseau : on laisse quelques secondes à la reconnexion, sinon arrêt (reprise possible). */

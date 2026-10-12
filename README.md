@@ -17,7 +17,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Tags | `À venir` → `En cours` (à l'heure prévue) → `Terminée` / `Annulée`. |
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |
-| Clôture auto | 2 h après la fin prévue si personne n'a clos la réunion. |
+| Clôture auto | **Uniquement quand le vocal est vide** depuis 5 min, compté depuis le départ de la dernière personne (ou depuis la fin prévue si personne n'est venu). Une réunion qui déborde n'est jamais coupée tant qu'il reste quelqu'un. |
 | `/config` | `forum`, `vocal` (impose un salon vocal à toutes les réunions ; sans option, choix libre), `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
@@ -26,12 +26,12 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 
 | Fonction | Détail |
 |---|---|
-| Démarrer | Bouton **🔴 Enregistrer** sur la carte (organisateur ou gestionnaire). Enregistrer avant l'heure fait passer la réunion « En cours ». |
+| Démarrer | Message **🎙️ Enregistrement** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). Il devient **⏹️ Arrêter** pendant l'enregistrement. |
 | Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur avec `/config general enregistrement-auto:True`. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
-| Pendant | Le bot est dans le vocal, micro coupé. Avertissement dans le post et dans le chat du vocal. La carte affiche « Enregistrement en cours » et le bouton **⏹️ Arrêter l'enregistrement**. |
+| Pendant | Le bot est dans le vocal, micro coupé. Avertissement dans le post et dans le chat du vocal. La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
 | Opt-out | Rôle « ne pas m'enregistrer » (`/config roles ne-pas-enregistrer:`). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
-| Fin | Bouton Arrêter, `/reunion terminer`, clôture automatique, ou **vocal vide depuis 5 min** après l'heure de début, ce qui clôt aussi la réunion. |
+| Fin | Bouton Arrêter, `/reunion terminer`, ou clôture automatique de la réunion (vocal vide depuis 5 min). |
 | Bilan | Message silencieux dans le post : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
 
@@ -45,11 +45,11 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 1. Activer **Server Members Intent** (déjà requis), et vérifier que le bot voit le salon vocal et peut s'y connecter.
 2. Optionnel : `/config roles ne-pas-enregistrer:@NePasEnregistrer`, puis placer ce rôle sous celui du bot.
-3. Créer une réunion dans quelques minutes, rejoindre le vocal à deux, puis cliquer **🔴 Enregistrer**.
+3. Créer une réunion dans quelques minutes et rejoindre le vocal à deux. À l'heure prévue, le message **🎙️ Enregistrement** apparaît : cliquer **🔴 Enregistrer**.
 4. Parler à tour de rôle, faire `/enregistrement refuser` avec un compte et vérifier que sa voix n'est plus captée.
-5. **⏹️ Arrêter l'enregistrement** : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
+5. **⏹️ Arrêter l'enregistrement** dans ce message : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
 6. Tester l'automatique : `/reunion enregistrement-auto actif:True` sur une réunion dans 5 min. Le bot arrive à H-2.
-7. Quitter le vocal : 5 min après, l'enregistrement s'arrête et la réunion est close.
+7. Rester au-delà de l'heure de fin : rien ne se coupe. Puis quitter le vocal : 5 min après, la réunion est close et l'enregistrement s'arrête.
 
 ## 1. Créer l'application Discord
 

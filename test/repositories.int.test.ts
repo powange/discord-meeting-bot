@@ -98,7 +98,7 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     const m = await newMeeting(new Date(Date.now() + 60_000));
     await repos.replaceJobs(m.id, [{ kind: 'start', offsetMin: 0, dueAt: new Date(Date.now() - 1000) }]);
     const [job] = (await repos.claimDueJobs(new Date(), 10, 5)).filter((j) => j.meetingId === m.id);
-    // Le passage « En cours » replanifie : seule la clôture auto reste à venir.
+    // Le passage « En cours » replanifie (ici : une échéance quelconque à venir).
     await repos.replaceJobs(m.id, [{ kind: 'auto_end', offsetMin: 0, dueAt: new Date(Date.now() + 3_600_000) }]);
     await repos.completeJob(job!.id);
     const rows = await db.execute<{ kind: string; done: boolean }>(
