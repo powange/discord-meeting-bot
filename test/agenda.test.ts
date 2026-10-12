@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENDA_MAX_ITEMS, checkAddItem, moveItem, reindex, sortAgenda } from '../src/domain/agenda.js';
+import { AGENDA_MAX_ITEMS, canEditItem, checkAddItem, moveItem, reindex, sortAgenda } from '../src/domain/agenda.js';
 
 const base = { title: 'Budget', detail: '', count: 0, locked: false, meetingOpen: true, actorIsManager: false };
 
@@ -59,5 +59,19 @@ describe('reindex / sortAgenda', () => {
       { id: 1, position: 1 },
     ];
     expect(sortAgenda(items).map((i) => i.id)).toEqual([2, 1, 3]);
+  });
+});
+
+describe('canEditItem', () => {
+  const base = { actorIsManager: false, isAuthor: false, locked: false, meetingOpen: true };
+  it.each([
+    [{ actorIsManager: true }, true],
+    [{ actorIsManager: true, locked: true }, true],
+    [{ isAuthor: true }, true],
+    [{ isAuthor: true, locked: true }, false],
+    [{}, false],
+    [{ actorIsManager: true, meetingOpen: false }, false],
+  ])('%o → %s', (over, expected) => {
+    expect(canEditItem({ ...base, ...over })).toBe(expected);
   });
 });

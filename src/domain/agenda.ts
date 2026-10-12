@@ -47,3 +47,9 @@ export function reindex(orderedIds: readonly number[]): Array<{ id: number; posi
 export function sortAgenda<T extends Pick<AgendaItem, 'position' | 'id'>>(items: readonly T[]): T[] {
   return [...items].sort((a, b) => a.position - b.position || a.id - b.id);
 }
+
+/** Modifier un point : organisateur et gestionnaires toujours ; son auteur tant que l'ODJ n'est pas verrouillé. */
+export function canEditItem(input: { actorIsManager: boolean; isAuthor: boolean; locked: boolean; meetingOpen: boolean }): boolean {
+  if (!input.meetingOpen) return false;
+  return input.actorIsManager || (input.isAuthor && !input.locked);
+}

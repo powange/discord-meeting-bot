@@ -150,6 +150,8 @@ export function renderAgendaManager(
   agenda: readonly AgendaItem[],
   selectedId: number | null,
   m: Messages,
+  /** « author » : un participant qui ne voit que ses propres points et ne peut que les modifier. */
+  mode: 'manager' | 'author' = 'manager',
 ): { content: string; components: APIActionRowComponent<APIComponentInMessageActionRow>[] } {
   const rows: APIActionRowComponent<APIComponentInMessageActionRow>[] = [];
   const selectedIndex = selectedId === null ? -1 : agenda.findIndex((i) => i.id === selectedId);
@@ -171,8 +173,20 @@ export function renderAgendaManager(
   }
 
   const buttons = new ActionRowBuilder<ButtonBuilder>();
+  const editButton = (item: AgendaItem) =>
+    new ButtonBuilder()
+      .setCustomId(encode({ type: 'agenda.edit', meetingId: meeting.id, itemId: item.id }))
+      .setLabel(m.buttons.editItem)
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Primary);
+  if (mode === 'author') {
+    if (selected) rows.push(buttons.addComponents(editButton(selected)).toJSON());
+    const content = [`**${m.agendaManager.titleAuthor}**`, selected ? m.agendaManager.selected(selected.title) : m.agendaManager.pickOwn].join('\n');
+    return { content, components: rows };
+  }
   if (selected) {
     buttons.addComponents(
+      editButton(selected),
       new ButtonBuilder()
         .setCustomId(encode({ type: 'agenda.move', meetingId: meeting.id, itemId: selected.id, direction: 'up' }))
         .setLabel(m.buttons.moveUp)

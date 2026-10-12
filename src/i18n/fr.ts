@@ -41,6 +41,7 @@ export const fr = {
     remove: 'Retirer',
     lock: "Verrouiller l'ODJ",
     unlock: "Déverrouiller l'ODJ",
+    editItem: 'Modifier',
     joinVoice: 'Rejoindre le vocal',
     record: 'Enregistrer',
     stopRecording: "Arrêter l'enregistrement",
@@ -62,6 +63,7 @@ export const fr = {
     description: 'Description',
     descriptionHint: 'Optionnel : contexte, documents à lire…',
     agendaTitle: "Ajouter un point à l'ordre du jour",
+    agendaEditTitle: 'Modifier le point',
     itemTitle: 'Titre du point',
     itemDetail: 'Détail',
     itemDetailHint: 'Optionnel',
@@ -81,6 +83,9 @@ export const fr = {
 
   agendaManager: {
     title: "Gestion de l'ordre du jour",
+    titleAuthor: 'Mes points à l’ordre du jour',
+    pickOwn: 'Choisissez un de vos points pour le modifier.',
+    noOwnItems: "Vous n'avez proposé aucun point à cet ordre du jour.",
     pick: 'Choisir un point…',
     empty: "L'ordre du jour est vide.",
     selected: (title: string) => `Point sélectionné : **${title}**`,
@@ -93,6 +98,7 @@ export const fr = {
     ended: 'Réunion close.',
     duplicated: (threadId: string) => `Nouvelle réunion créée : <#${threadId}>`,
     itemAdded: (title: string) => `Point ajouté : **${title}**`,
+    itemUpdated: (title: string) => `Point modifié : **${title}**`,
     rsvpSaved: (label: string) => `Réponse enregistrée : **${label}**`,
     configSaved: 'Configuration enregistrée.',
   },

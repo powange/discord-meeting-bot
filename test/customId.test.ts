@@ -13,6 +13,8 @@ describe('customId', () => {
     { type: 'agenda.select', meetingId: id },
     { type: 'agenda.move', meetingId: id, itemId: 42, direction: 'down' },
     { type: 'agenda.remove', meetingId: id, itemId: 7 },
+    { type: 'agenda.edit', meetingId: id, itemId: 8 },
+    { type: 'agenda.editSubmit', meetingId: id, itemId: 8 },
     { type: 'agenda.lock', meetingId: id, locked: true },
     { type: 'agenda.lock', meetingId: id, locked: false },
     { type: 'meeting.edit', meetingId: id },

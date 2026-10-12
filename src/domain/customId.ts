@@ -13,6 +13,8 @@ export type Action =
   | { type: 'agenda.select'; meetingId: string }
   | { type: 'agenda.move'; meetingId: string; itemId: number; direction: 'up' | 'down' }
   | { type: 'agenda.remove'; meetingId: string; itemId: number }
+  | { type: 'agenda.edit'; meetingId: string; itemId: number }
+  | { type: 'agenda.editSubmit'; meetingId: string; itemId: number }
   | { type: 'agenda.lock'; meetingId: string; locked: boolean }
   | { type: 'meeting.edit'; meetingId: string }
   | { type: 'meeting.editSubmit'; meetingId: string }
@@ -66,7 +68,9 @@ export function encode(action: Action): string {
       parts.push('agenda', 'move', action.meetingId, action.itemId, action.direction);
       break;
     case 'agenda.remove':
-      parts.push('agenda', 'remove', action.meetingId, action.itemId);
+    case 'agenda.edit':
+    case 'agenda.editSubmit':
+      parts.push('agenda', action.type.split('.')[1]!, action.meetingId, action.itemId);
       break;
     case 'agenda.lock':
       parts.push('agenda', 'lock', action.meetingId, action.locked ? 1 : 0);
@@ -160,9 +164,11 @@ export function decode(customId: string): Action | null {
         if (itemId === null || (b !== 'up' && b !== 'down') || rest.length !== 4) return null;
         return { type: 'agenda.move', meetingId, itemId, direction: b };
       }
-      case 'remove': {
+      case 'remove':
+      case 'edit':
+      case 'editSubmit': {
         const itemId = toId(a);
-        return itemId !== null && rest.length === 3 ? { type: 'agenda.remove', meetingId, itemId } : null;
+        return itemId !== null && rest.length === 3 ? { type: `agenda.${verb}`, meetingId, itemId } : null;
       }
       case 'lock':
         return (a === '1' || a === '0') && rest.length === 3 ? { type: 'agenda.lock', meetingId, locked: a === '1' } : null;

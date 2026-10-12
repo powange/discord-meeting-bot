@@ -13,7 +13,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
 | Réponses | Boutons Présent / Peut-être / Absent, modifiables à tout moment. |
-| Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ODJ** (organisateur ou gestionnaire) : monter, descendre, retirer, verrouiller. |
+| Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ODJ** : l'organisateur ou un gestionnaire peut modifier, monter, descendre, retirer et verrouiller. Chaque participant peut modifier ses propres points tant que l'ODJ n'est pas verrouillé. |
 | Tags | `À venir` → `En cours` (à l'heure prévue) → `Terminée` / `Annulée`. |
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |

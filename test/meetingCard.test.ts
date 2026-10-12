@@ -119,9 +119,17 @@ describe('renderAgendaManager', () => {
 
   it('premier point sélectionné : « Monter » désactivé', () => {
     const view = renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda, 10, m);
-    const [up, down, remove] = view.components[1]!.components as APIButtonComponentWithCustomId[];
+    const [edit, up, down, remove] = view.components[1]!.components as APIButtonComponentWithCustomId[];
+    expect(decode(edit!.custom_id)).toEqual({ type: 'agenda.edit', meetingId: meeting.id, itemId: 10 });
     expect([up!.disabled, down!.disabled, remove!.disabled ?? false]).toEqual([true, false, false]);
     expect(view.content).toContain('**A**');
+  });
+
+  it('mode auteur : seulement « Modifier », ni déplacement, ni retrait, ni verrou', () => {
+    const view = renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda.slice(0, 1), 10, m, 'author');
+    const labels = view.components.flatMap((r) => r.components).filter((c) => c.type === ComponentType.Button).map((c) => (c as APIButtonComponentWithCustomId).label);
+    expect(labels).toEqual(['Modifier']);
+    expect(view.content).toContain(m.agendaManager.titleAuthor);
   });
 
   it('ODJ vide', () => {

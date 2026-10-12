@@ -189,6 +189,15 @@ export class Repositories {
     });
   }
 
+  async updateAgendaItem(meetingId: string, itemId: number, patch: { title: string; detail: string }): Promise<boolean> {
+    const rows = await this.db
+      .update(agendaItems)
+      .set(patch)
+      .where(and(eq(agendaItems.meetingId, meetingId), eq(agendaItems.id, itemId)))
+      .returning({ id: agendaItems.id });
+    return rows.length > 0;
+  }
+
   /** Applique un nouvel ordre (liste complète des ids) et retire les points absents de la liste. */
   async reorderAgenda(meetingId: string, orderedIds: readonly number[]): Promise<void> {
     await this.db.transaction(async (tx) => {

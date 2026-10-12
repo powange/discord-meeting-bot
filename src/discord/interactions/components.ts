@@ -10,7 +10,7 @@ import {
   type StringSelectMenuInteraction,
 } from 'discord.js';
 import type { AppContext } from '../../context.js';
-import { checkAddItem, moveItem } from '../../domain/agenda.js';
+import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX, canEditItem, checkAddItem, moveItem } from '../../domain/agenda.js';
 import { encode, type Action } from '../../domain/customId.js';
 import { canReschedule, isOpen } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
@@ -70,8 +70,15 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
     }
 
     case 'agenda.manage': {
-      requireManager(scope);
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
+      // Gestionnaires : tout l'ODJ. Les autres : leurs propres points, tant que l'ODJ est ouvert.
+      if (!scope.canManage) {
+        if (meeting.agendaLocked) throw new UserError(m.errors.agendaLocked);
+        const own = (await ctx.repos.listAgenda(meeting.id)).filter((i) => i.authorId === interaction.user.id);
+        if (own.length === 0) throw new UserError(m.agendaManager.noOwnItems);
+        await interaction.reply({ ...renderAgendaManager(meeting, own, null, m, 'author'), flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+        return;
+      }
       const agenda = await ctx.repos.listAgenda(meeting.id);
       await interaction.reply({ ...renderAgendaManager(meeting, agenda, null, m), flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
       return;
@@ -79,9 +86,33 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
 
     case 'agenda.select': {
       if (!interaction.isStringSelectMenu()) return;
-      requireManager(scope);
       const selected = Number(interaction.values[0]);
       await updateManager(ctx, interaction, scope, Number.isInteger(selected) ? selected : null);
+      return;
+    }
+
+    case 'agenda.edit': {
+      if (!interaction.isButton()) return;
+      const item = (await ctx.repos.listAgenda(meeting.id)).find((i) => i.id === action.itemId);
+      if (!item) throw new UserError(m.errors.agendaItemGone);
+      const allowed = canEditItem({ actorIsManager: scope.canManage, isAuthor: item.authorId === interaction.user.id, locked: meeting.agendaLocked, meetingOpen: isOpen(meeting.status) });
+      if (!allowed) throw new UserError(meeting.agendaLocked ? m.errors.agendaLocked : m.errors.forbidden);
+      await interaction.showModal(agendaItemModal(m, encode({ type: 'agenda.editSubmit', meetingId: meeting.id, itemId: item.id }), item));
+      return;
+    }
+
+    case 'agenda.editSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      const item = (await ctx.repos.listAgenda(meeting.id)).find((i) => i.id === action.itemId);
+      if (!item) throw new UserError(m.errors.agendaItemGone);
+      const allowed = canEditItem({ actorIsManager: scope.canManage, isAuthor: item.authorId === interaction.user.id, locked: meeting.agendaLocked, meetingOpen: isOpen(meeting.status) });
+      if (!allowed) throw new UserError(meeting.agendaLocked ? m.errors.agendaLocked : m.errors.forbidden);
+      const input = readAgendaItemModal(interaction);
+      const title = input.title.trim().slice(0, AGENDA_TITLE_MAX);
+      if (!title) throw new UserError(m.errors.agendaEmptyTitle);
+      await ctx.repos.updateAgendaItem(meeting.id, item.id, { title, detail: input.detail.trim().slice(0, AGENDA_DETAIL_MAX) });
+      ctx.cards.refresh(meeting.id, ['agenda']);
+      await replyEphemeral(interaction, m.replies.itemUpdated(title));
       return;
     }
 
@@ -255,8 +286,9 @@ async function updateManager(
   scope: MeetingScope,
   selectedId: number | null,
 ): Promise<void> {
-  const agenda = await ctx.repos.listAgenda(scope.meeting.id);
-  await interaction.update({ ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m), allowedMentions: { parse: [] } });
+  const all = await ctx.repos.listAgenda(scope.meeting.id);
+  const agenda = scope.canManage ? all : all.filter((i) => i.authorId === interaction.user.id);
+  await interaction.update({ ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m, scope.canManage ? 'manager' : 'author'), allowedMentions: { parse: [] } });
 }
 
 function agendaError(scope: MeetingScope, error: 'locked' | 'full' | 'empty' | 'closed'): string {

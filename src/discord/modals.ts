@@ -156,20 +156,19 @@ export function parseWhen(input: string, timezone: string, m: Messages, now: Dat
   return parsed.value.toJSDate();
 }
 
-export function agendaItemModal(m: Messages, customId: string): ModalBuilder {
+export function agendaItemModal(m: Messages, customId: string, current?: { title: string; detail: string }): ModalBuilder {
+  const title = new TextInputBuilder().setCustomId(F.title).setStyle(TextInputStyle.Short).setMaxLength(AGENDA_TITLE_MAX).setRequired(true);
+  const detail = new TextInputBuilder().setCustomId(F.detail).setStyle(TextInputStyle.Paragraph).setMaxLength(AGENDA_DETAIL_MAX).setRequired(false);
+  if (current) {
+    title.setValue(current.title);
+    if (current.detail) detail.setValue(current.detail);
+  }
   return new ModalBuilder()
     .setCustomId(customId)
-    .setTitle(m.modal.agendaTitle)
+    .setTitle(current ? m.modal.agendaEditTitle : m.modal.agendaTitle)
     .addLabelComponents(
-      new LabelBuilder()
-        .setLabel(m.modal.itemTitle)
-        .setTextInputComponent(new TextInputBuilder().setCustomId(F.title).setStyle(TextInputStyle.Short).setMaxLength(AGENDA_TITLE_MAX).setRequired(true)),
-      new LabelBuilder()
-        .setLabel(m.modal.itemDetail)
-        .setDescription(m.modal.itemDetailHint)
-        .setTextInputComponent(
-          new TextInputBuilder().setCustomId(F.detail).setStyle(TextInputStyle.Paragraph).setMaxLength(AGENDA_DETAIL_MAX).setRequired(false),
-        ),
+      new LabelBuilder().setLabel(m.modal.itemTitle).setTextInputComponent(title),
+      new LabelBuilder().setLabel(m.modal.itemDetail).setDescription(m.modal.itemDetailHint).setTextInputComponent(detail),
     );
 }
 
