@@ -99,7 +99,7 @@ describe('HttpTranscriptionBackend (serveur simulé)', () => {
   beforeAll(async () => {
     server = createServer(async (req, res) => {
       const path = req.url ?? '';
-      if (path === '/ready') return res.writeHead(mode === 'notready' ? 503 : 200).end('{}');
+      if (path === '/ready') return res.writeHead(mode === 'notready' ? 503 : 200).end('{"status":"ready","model":"ggml-large-v3-turbo.bin"}');
       if (path === '/v1/models') return res.writeHead(200).end('{"data":[]}');
       if (path === '/v1/audio/transcriptions') {
         const { fields, file } = await readForm(req);
@@ -128,6 +128,13 @@ describe('HttpTranscriptionBackend (serveur simulé)', () => {
     const last = received.at(-1)!;
     expect(last.file).toBe('bloc.wav');
     expect(last.fields).toMatchObject({ language: 'fr', response_format: 'verbose_json', prompt: 'ODJ, CA' });
+  });
+
+  it('vibe : modèle chargé (annoncé par /ready) repris dans le résultat', async () => {
+    mode = 'ok';
+    const backend = vibe();
+    await backend.health();
+    expect((await backend.transcribe(audio, 'b.wav', opts)).model).toBe('ggml-large-v3-turbo.bin');
   });
 
   it('vibe : health sur /ready (503 sans modèle chargé)', async () => {

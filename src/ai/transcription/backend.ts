@@ -48,6 +48,8 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
   readonly name: string;
   readonly concurrency: number;
   private readonly base: string;
+  /** Modèle chargé annoncé par vibe-server (/ready), qui ne le renvoie pas dans ses transcriptions. */
+  private loadedModel: string | undefined;
 
   constructor(private readonly config: BackendConfig) {
     this.name = config.name;
@@ -60,7 +62,12 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     const url = this.config.type === 'vibe' ? `${trimSlash(this.config.url)}/ready` : `${this.base}/models`;
     try {
       const res = await fetchWithTimeout(url, { headers: this.headers() }, this.config.healthTimeoutSec * 1000, signal);
-      await res.body?.cancel();
+      if (this.config.type === 'vibe' && res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { model?: unknown };
+        if (typeof body.model === 'string') this.loadedModel = body.model;
+      } else {
+        await res.body?.cancel();
+      }
       return res.ok;
     } catch {
       return false;
@@ -102,7 +109,7 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
       : json.text
         ? [{ start: 0, end: 0, text: json.text }]
         : [];
-    return { segments, model: json.model ?? this.config.model };
+    return { segments, model: json.model ?? this.loadedModel ?? this.config.model };
   }
 
   private headers(): Record<string, string> {
