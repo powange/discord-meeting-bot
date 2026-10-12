@@ -58,7 +58,7 @@ export class MeetingService {
     let thread: ThreadChannel | null = null;
     try {
       if (options.copyAgendaFrom) await this.repos.copyAgenda(options.copyAgendaFrom, meeting.id);
-      const card = await this.cards.render(meeting);
+      const card = await this.cards.renderCard(meeting);
       thread = await forum.threads.create({
         name: threadName(input.title, input.startsAt, settings.timezone, settings.locale),
         autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
@@ -66,7 +66,8 @@ export class MeetingService {
         message: { ...card, allowedMentions: { parse: [] } },
         reason: `Réunion créée par ${organizerId}`,
       });
-      meeting = (await this.repos.updateMeeting(meeting.id, { threadId: thread.id }))!;
+      const agenda = await thread.send({ ...(await this.cards.renderAgenda(meeting)), allowedMentions: { parse: [] } });
+      meeting = (await this.repos.updateMeeting(meeting.id, { threadId: thread.id, agendaMessageId: agenda.id }))!;
     } catch (err) {
       await this.repos.deleteMeeting(meeting.id);
       await thread?.delete().catch(() => undefined);

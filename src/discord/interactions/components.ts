@@ -40,7 +40,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
       await ctx.repos.setRsvp(meeting.id, interaction.user.id, action.status);
       await interaction.deferUpdate();
-      ctx.cards.refresh(meeting.id);
+      ctx.cards.refresh(meeting.id, ['card']);
       return;
     }
 
@@ -60,7 +60,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
         if (!check.ok) throw new UserError(agendaError(scope, check.error));
         return { title: check.title, detail: check.detail };
       });
-      ctx.cards.refresh(meeting.id);
+      ctx.cards.refresh(meeting.id, ['agenda']);
       await replyEphemeral(interaction, m.replies.itemAdded(item.title));
       return;
     }
@@ -99,7 +99,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
         );
         await updateManager(ctx, interaction, scope, null);
       }
-      ctx.cards.refresh(meeting.id);
+      ctx.cards.refresh(meeting.id, ['agenda']);
       return;
     }
 
@@ -108,7 +108,7 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       requireManager(scope);
       const updated = await ctx.repos.updateMeeting(meeting.id, { agendaLocked: action.locked });
       await updateManager(ctx, interaction, { ...scope, meeting: updated ?? meeting }, null);
-      ctx.cards.refresh(meeting.id);
+      ctx.cards.refresh(meeting.id, ['agenda']);
       return;
     }
 

@@ -42,6 +42,8 @@ export const meetings = pgTable(
     guildId: text().notNull(),
     /** Post du forum ; null le temps de la création. Son id est aussi celui du premier message (la carte). */
     threadId: text().unique(),
+    /** Second message du post, dédié à l'ordre du jour. */
+    agendaMessageId: text(),
     scheduledEventId: text(),
     voiceChannelId: text().notNull(),
     title: text().notNull(),

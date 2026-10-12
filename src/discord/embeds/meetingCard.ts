@@ -42,13 +42,13 @@ const COLORS: Record<MeetingStatus, number> = {
 };
 
 // Budget de caractères par zone, pour rester sous les 6000 caractères par message.
-const DESCRIPTION_BUDGET = 1500;
-const RSVP_FIELD_BUDGET = 800;
-const FIELD_MAX = 1024;
-const AGENDA_DETAIL_PREVIEW = 160;
+const DESCRIPTION_BUDGET = 2000;
+const RSVP_FIELD_BUDGET = 1000;
+const AGENDA_BUDGET = 4000;
+const AGENDA_DETAIL_PREVIEW = 300;
 
-/** Carte de la réunion (premier message du post), entièrement reconstruite à partir de la BDD. */
-export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], agenda: readonly AgendaItem[], m: Messages): RenderedMessage {
+/** Carte de la réunion (premier message du post) : infos et présences, reconstruite depuis la BDD. */
+export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], m: Messages): RenderedMessage {
   const groups = groupRsvps(rsvps);
   const mentions = (ids: string[]) =>
     ids.length === 0 ? m.card.nobody : joinLinesWithin(ids.map((id) => `<@${id}>`), RSVP_FIELD_BUDGET, m.card.more, ' ');
@@ -68,19 +68,41 @@ export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], 
       { name: `✅ ${m.rsvp.yes} (${groups.yes.length})`, value: mentions(groups.yes), inline: false },
       { name: `❔ ${m.rsvp.maybe} (${groups.maybe.length})`, value: mentions(groups.maybe), inline: true },
       { name: `❌ ${m.rsvp.no} (${groups.no.length})`, value: mentions(groups.no), inline: true },
-      { name: meeting.agendaLocked ? m.card.agendaLocked : m.card.agenda, value: renderAgenda(agenda, m), inline: false },
     )
     .setFooter({ text: m.card.footer(m.status[meeting.status]) })
     .setTimestamp(meeting.startsAt);
   if (description) embed.setDescription(description);
 
   const open = isOpen(meeting.status);
-  const rsvpRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     rsvpButton(meeting.id, 'yes', `${m.rsvp.yes} (${groups.yes.length})`, ButtonStyle.Success, '✅', open),
     rsvpButton(meeting.id, 'maybe', `${m.rsvp.maybe} (${groups.maybe.length})`, ButtonStyle.Secondary, '❔', open),
     rsvpButton(meeting.id, 'no', `${m.rsvp.no} (${groups.no.length})`, ButtonStyle.Secondary, '❌', open),
+    new ButtonBuilder()
+      .setCustomId(encode({ type: 'meeting.edit', meetingId: meeting.id }))
+      .setLabel(m.buttons.edit)
+      .setEmoji('✏️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!open),
   );
-  const toolsRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+
+  return { embeds: [embed.toJSON()], components: [row.toJSON()] };
+}
+
+/** Second message du post : l'ordre du jour et ses boutons. */
+export function renderAgendaMessage(
+  meeting: Pick<CardMeeting, 'id' | 'status' | 'agendaLocked'>,
+  agenda: readonly AgendaItem[],
+  m: Messages,
+): RenderedMessage {
+  const open = isOpen(meeting.status);
+  const embed = new EmbedBuilder()
+    .setTitle(`📋 ${meeting.agendaLocked ? m.card.agendaLocked : m.card.agenda}`)
+    .setColor(COLORS[meeting.status])
+    .setDescription(renderAgenda(agenda, m));
+  if (open && !meeting.agendaLocked) embed.setFooter({ text: m.card.agendaHint });
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(encode({ type: 'agenda.add', meetingId: meeting.id }))
       .setLabel(m.buttons.addItem)
@@ -93,15 +115,8 @@ export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], 
       .setEmoji('🗂️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!open),
-    new ButtonBuilder()
-      .setCustomId(encode({ type: 'meeting.edit', meetingId: meeting.id }))
-      .setLabel(m.buttons.edit)
-      .setEmoji('✏️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!open),
   );
-
-  return { embeds: [embed.toJSON()], components: [rsvpRow.toJSON(), toolsRow.toJSON()] };
+  return { embeds: [embed.toJSON()], components: [row.toJSON()] };
 }
 
 function rsvpButton(meetingId: string, status: 'yes' | 'maybe' | 'no', label: string, style: ButtonStyle, emoji: string, enabled: boolean) {
@@ -119,7 +134,7 @@ export function renderAgenda(agenda: readonly AgendaItem[], m: Messages): string
     const head = `**${i + 1}. ${truncate(item.title, 100)}** — ${m.card.agendaBy(item.authorId)}`;
     return item.detail ? `${head}\n> ${truncate(item.detail.replace(/\s*\n\s*/g, ' '), AGENDA_DETAIL_PREVIEW)}` : head;
   });
-  return joinLinesWithin(lines, FIELD_MAX, m.card.more);
+  return joinLinesWithin(lines, AGENDA_BUDGET, m.card.more, '\n\n');
 }
 
 /** Vue éphémère de gestion de l'ODJ (réservée aux gestionnaires). */

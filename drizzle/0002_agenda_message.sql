@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "agenda_message_id" text;

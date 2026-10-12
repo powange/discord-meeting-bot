@@ -1,6 +1,6 @@
 import { ComponentType, type APIButtonComponentWithCustomId, type APIEmbed } from 'discord.js';
 import { describe, expect, it } from 'vitest';
-import { renderAgendaManager, renderMeetingCard, type CardMeeting } from '../src/discord/embeds/meetingCard.js';
+import { renderAgendaManager, renderAgendaMessage, renderMeetingCard, type CardMeeting } from '../src/discord/embeds/meetingCard.js';
 import type { AgendaItem, Rsvp } from '../src/domain/types.js';
 import { messages } from '../src/i18n/index.js';
 
@@ -28,51 +28,73 @@ const buttons = (card: ReturnType<typeof renderMeetingCard>) =>
   card.components.flatMap((row) => row.components).filter((c): c is APIButtonComponentWithCustomId => c.type === ComponentType.Button);
 
 describe('renderMeetingCard', () => {
-  it('affiche date (timestamps Discord), durée, salon et réponses', () => {
+  it('affiche date (timestamps Discord), durée, salon et réponses, sans ODJ', () => {
     const rsvps: Rsvp[] = [
       { userId: '1', status: 'yes', updatedAt: new Date(1) },
       { userId: '2', status: 'maybe', updatedAt: new Date(2) },
     ];
-    const card = renderMeetingCard(meeting, rsvps, [], m);
+    const card = renderMeetingCard(meeting, rsvps, m);
     const fields = card.embeds[0]!.fields!;
     expect(fields[0]!.value).toBe(`<t:${meeting.startsAt.getTime() / 1000}:F>\n<t:${meeting.startsAt.getTime() / 1000}:R>`);
     expect(fields[1]!.value).toBe('1 h 30');
     expect(fields[2]!.value).toBe('<#200000000000000000>');
     expect(fields.find((f) => f.name.startsWith('✅'))!.value).toBe('<@1>');
     expect(fields.find((f) => f.name.startsWith('❌'))!.value).toBe(m.card.nobody);
-    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Ajouter un point', "Gérer l'ODJ", 'Modifier']);
+    expect(fields.some((f) => f.name.includes(m.card.agenda))).toBe(false);
+    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier']);
   });
 
-  it('reste sous les limites Discord même avec beaucoup de monde et un ODJ plein', () => {
+  it('reste sous les limites Discord même avec beaucoup de monde', () => {
     const rsvps: Rsvp[] = Array.from({ length: 300 }, (_, i) => ({
       userId: String(100000000000000000n + BigInt(i)),
       status: (['yes', 'maybe', 'no'] as const)[i % 3]!,
       updatedAt: new Date(i),
     }));
-    const agenda: AgendaItem[] = Array.from({ length: 25 }, (_, i) => ({
-      id: i + 1,
-      position: i,
-      title: 'T'.repeat(100),
-      detail: 'D'.repeat(1000),
-      authorId: '100000000000000000',
-    }));
-    const card = renderMeetingCard({ ...meeting, title: 'x'.repeat(100), description: 'y'.repeat(2000) }, rsvps, agenda, m);
+    const card = renderMeetingCard({ ...meeting, title: 'x'.repeat(100), description: 'y'.repeat(2000) }, rsvps, m);
     const embed = card.embeds[0]!;
     expect(embedLength(embed)).toBeLessThanOrEqual(6000);
-    expect(embed.description!.length).toBeLessThanOrEqual(4096);
     for (const f of embed.fields!) expect(f.value.length).toBeLessThanOrEqual(1024);
     expect(embed.fields!.find((f) => f.name.startsWith('✅'))!.value).toMatch(/… et \d+ de plus$/);
   });
 
   it('désactive les boutons quand la réunion est close', () => {
-    const card = renderMeetingCard({ ...meeting, status: 'ended' }, [], [], m);
-    expect(buttons(card).every((b) => b.disabled)).toBe(true);
+    expect(buttons(renderMeetingCard({ ...meeting, status: 'ended' }, [], m)).every((b) => b.disabled)).toBe(true);
+    expect(buttons(renderAgendaMessage({ ...meeting, status: 'cancelled' }, [], m)).every((b) => b.disabled)).toBe(true);
+  });
+});
+
+describe('renderAgendaMessage', () => {
+  const item = (i: number, detail = ''): AgendaItem => ({ id: i, position: i, title: `Point ${i}`, detail, authorId: '100000000000000000' });
+
+  it('liste numérotée avec auteur et aperçu du détail', () => {
+    const out = renderAgendaMessage(meeting, [item(1), item(2, 'ligne 1\nligne 2')], m);
+    const embed = out.embeds[0]!;
+    expect(embed.title).toBe(`📋 ${m.card.agenda}`);
+    expect(embed.description).toContain('**1. Point 1**');
+    expect(embed.description).toContain('> ligne 1 ligne 2');
+    expect(buttons(out).map((b) => [b.label, b.disabled ?? false])).toEqual([
+      ['Ajouter un point', false],
+      ["Gérer l'ODJ", false],
+    ]);
   });
 
-  it("verrou : bouton d'ajout désactivé, titre de l'ODJ marqué", () => {
-    const card = renderMeetingCard({ ...meeting, agendaLocked: true }, [], [], m);
-    expect(buttons(card).find((b) => b.label === 'Ajouter un point')!.disabled).toBe(true);
-    expect(card.embeds[0]!.fields!.some((f) => f.name === m.card.agendaLocked)).toBe(true);
+  it('vide', () => {
+    expect(renderAgendaMessage(meeting, [], m).embeds[0]!.description).toBe(m.card.agendaEmpty);
+  });
+
+  it("verrou : ajout désactivé, titre marqué, pas d'invitation", () => {
+    const out = renderAgendaMessage({ ...meeting, agendaLocked: true }, [], m);
+    expect(out.embeds[0]!.title).toBe(`📋 ${m.card.agendaLocked}`);
+    expect(out.embeds[0]!.footer).toBeUndefined();
+    expect(buttons(out).find((b) => b.label === 'Ajouter un point')!.disabled).toBe(true);
+  });
+
+  it('25 points longs : sous les limites Discord', () => {
+    const agenda = Array.from({ length: 25 }, (_, i) => ({ ...item(i, 'D'.repeat(1000)), title: 'T'.repeat(100) }));
+    const embed = renderAgendaMessage(meeting, agenda, m).embeds[0]!;
+    expect(embed.description!.length).toBeLessThanOrEqual(4096);
+    expect(embedLength(embed)).toBeLessThanOrEqual(6000);
+    expect(embed.description).toMatch(/… et \d+ de plus$/);
   });
 });
 
