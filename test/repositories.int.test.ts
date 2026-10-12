@@ -94,6 +94,23 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect(again.map((j) => j.kind)).toEqual(['reminder']);
   });
 
+  it("replanifier pendant l'exécution conserve l'échéance en cours", async () => {
+    const m = await newMeeting(new Date(Date.now() + 60_000));
+    await repos.replaceJobs(m.id, [{ kind: 'start', offsetMin: 0, dueAt: new Date(Date.now() - 1000) }]);
+    const [job] = (await repos.claimDueJobs(new Date(), 10, 5)).filter((j) => j.meetingId === m.id);
+    // Le passage « En cours » replanifie : seule la clôture auto reste à venir.
+    await repos.replaceJobs(m.id, [{ kind: 'auto_end', offsetMin: 0, dueAt: new Date(Date.now() + 3_600_000) }]);
+    await repos.completeJob(job!.id);
+    const rows = await db.execute<{ kind: string; done: boolean }>(
+      `select kind, done_at is not null as done from scheduled_jobs where meeting_id = '${m.id}' order by kind`,
+    );
+    // Tri par ordre de déclaration de l'enum : reminder, start, auto_end.
+    expect(rows.rows).toEqual([
+      { kind: 'start', done: true },
+      { kind: 'auto_end', done: false },
+    ]);
+  });
+
   it('échec : backoff puis nouvelle tentative', async () => {
     const m = await newMeeting(new Date(Date.now() + 60_000));
     await repos.replaceJobs(m.id, [{ kind: 'start', offsetMin: 0, dueAt: new Date(Date.now() - 1000) }]);

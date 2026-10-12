@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { GuildSeed } from '../config/index.js';
 import { reindex } from '../domain/agenda.js';
 import type { PlannedJob } from '../domain/reminders.js';
@@ -185,10 +185,23 @@ export class Repositories {
 
   // ---------------------------------------------------------------- scheduled_jobs
 
-  /** Remplace les échéances en attente d'une réunion par `planned` (réarme aussi celles déjà exécutées). */
+  /**
+   * Remplace les échéances en attente d'une réunion par `planned` (réarme aussi celles déjà
+   * exécutées). Une échéance en cours d'exécution (réservée par le scheduler) est conservée :
+   * c'est souvent elle qui déclenche la replanification (passage « En cours »).
+   */
   async replaceJobs(meetingId: string, planned: readonly PlannedJob[]): Promise<void> {
+    const now = new Date();
     await this.db.transaction(async (tx) => {
-      await tx.delete(scheduledJobs).where(and(eq(scheduledJobs.meetingId, meetingId), isNull(scheduledJobs.doneAt)));
+      await tx
+        .delete(scheduledJobs)
+        .where(
+          and(
+            eq(scheduledJobs.meetingId, meetingId),
+            isNull(scheduledJobs.doneAt),
+            or(isNull(scheduledJobs.lockedUntil), lt(scheduledJobs.lockedUntil, now)),
+          ),
+        );
       if (planned.length === 0) return;
       await tx
         .insert(scheduledJobs)
