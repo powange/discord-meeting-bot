@@ -19,7 +19,9 @@ import { DURATION_MAX, DURATION_MIN } from '../../domain/meeting.js';
 import { formatOffset, parseOffsets } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
+import { effectiveLlm, listModels, testLlm } from '../../services/llmSettings.js';
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
+import { assertUrlAllowed } from '../../lib/hosts.js';
 import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, type ConfigContext, type ConfigSection } from '../embeds/configPanel.js';
 import { ensureStatusTags, missingForumPermissions } from '../forum.js';
 import { openBackendPanelInPlace } from './backendPanel.js';
@@ -31,7 +33,7 @@ type Section = Exclude<ConfigSection, 'transcription'>;
 export async function openConfigPanel(ctx: AppContext, interaction: ChatInputCommandInteraction<'cached'>): Promise<void> {
   const m = await ctx.settings.messages(interaction.guildId);
   await interaction.reply({
-    components: [renderConfigHome(await context(ctx, interaction.guildId, m), m)],
+    components: [renderConfigHome(await context(ctx, interaction.guildId, m, undefined, interaction.user.id), m)],
     flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   });
@@ -55,12 +57,19 @@ function channelsOf(guild: Guild, type: ChannelType): ChannelInfo[] {
     }));
 }
 
-async function context(ctx: AppContext, guildId: string, m: Messages, notice?: string): Promise<ConfigContext> {
+async function context(ctx: AppContext, guildId: string, m: Messages, notice?: string, userId?: string): Promise<ConfigContext> {
   const settings = await ctx.settings.get(guildId);
+  const llm = effectiveLlm(settings, ctx.config);
   const { source, backends } = await effectiveBackends(ctx.repos, ctx.config, guildId);
   const names = backends.map((b) => b.name).join(', ');
   const transcription = source === 'yaml' && backends.length ? m.config.fromYamlSummary(names) : m.config.transcriptionSummary(backends.length, names);
-  return { settings, transcription, notice };
+  return {
+    settings,
+    transcription,
+    notice,
+    llm: { source: llm.source, enabled: llm.enabled, baseUrl: llm.config.baseUrl, model: llm.config.model, hasKey: Boolean(llm.config.apiKey) },
+    canEditAi: userId ? ctx.owners.isOwner(userId) : false,
+  };
 }
 
 /** Actions du panneau. Réservé à « Gérer le serveur » (ou aux propriétaires du bot). */
@@ -68,12 +77,14 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
   const guildId = interaction.guildId;
   const m = await ctx.settings.messages(guildId);
   const t = m.config;
-  if (!ctx.owners.isOwner(interaction.user.id) && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+  const isOwner = ctx.owners.isOwner(interaction.user.id);
+  if (!isOwner && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
     throw new UserError(m.backendPanel.forbidden);
   }
 
-  const show = async (section: Section | 'home', notice?: string, page?: number) => {
-    const c = await context(ctx, guildId, m, notice);
+  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[]) => {
+    const c = await context(ctx, guildId, m, notice, interaction.user.id);
+    if (models) c.models = models;
     const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
     if (type !== undefined) {
       const list = channelsOf(interaction.guild, type);
@@ -219,6 +230,79 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!channel?.isSendable()) return show('alerts', `❌ ${m.errors.alertChannel}`);
       await channel.send({ content: `🚨 ${t.alertsTestMessage}`, allowedMentions: { parse: [] } });
       return show('alerts', t.alertsTestSent(channelId));
+    }
+
+    case 'llmEdit': {
+      if (!interaction.isButton()) return;
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const current = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;
+      const url = new TextInputBuilder().setCustomId('url').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(true).setPlaceholder('http://pc-main.tailnet:1234/v1');
+      if (current.baseUrl) url.setValue(current.baseUrl);
+      const model = new TextInputBuilder().setCustomId('model').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(current.model);
+      const key = new TextInputBuilder().setCustomId('key').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'cfg', action: 'llmSubmit' }))
+          .setTitle(t.llmModal)
+          .addLabelComponents(
+            new LabelBuilder().setLabel(t.llmUrlField).setDescription(t.llmUrlHint).setTextInputComponent(url),
+            new LabelBuilder().setLabel(t.llmModelField).setDescription(t.llmModelHint).setTextInputComponent(model),
+            new LabelBuilder().setLabel(t.llmKeyField).setDescription(t.llmKeyHint).setTextInputComponent(key),
+          ),
+      );
+      return;
+    }
+    case 'llmSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const url = interaction.fields.getTextInputValue('url').trim().replace(/\/+$/, '');
+      const model = interaction.fields.getTextInputValue('model').trim();
+      const keyInput = interaction.fields.getTextInputValue('key').trim();
+      if (!/^https?:\/\/[^\s/]+/.test(url)) return show('summary', `❌ ${m.transcriptionConfig.badUrl}`);
+      try {
+        await assertUrlAllowed(url, ctx.config.ai.allowedHosts);
+      } catch (err) {
+        return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
+      }
+      const settings = await ctx.settings.get(guildId);
+      const apiKey = keyInput === '-' ? null : keyInput || settings.llmApiKey;
+      await interaction.deferUpdate();
+      await ctx.repos.updateSettings(guildId, { llmBaseUrl: url, llmModel: model || null, llmApiKey: apiKey });
+      const result = await testLlm(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
+      return show('summary', `${t.saved}\n${result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!)}`);
+    }
+    case 'llmModels': {
+      if (!interaction.isButton()) return;
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      await interaction.deferUpdate();
+      try {
+        const models = await listModels(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
+        return show('summary', models.length ? undefined : t.noModels, undefined, models);
+      } catch (err) {
+        return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    case 'llmModel': {
+      if (!interaction.isStringSelectMenu()) return;
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      await ctx.repos.updateSettings(guildId, { llmModel: interaction.values[0] ?? null });
+      return show('summary', t.saved);
+    }
+    case 'llmTest': {
+      if (!interaction.isButton()) return;
+      await interaction.deferUpdate();
+      const result = await testLlm(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
+      return show('summary', result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!));
+    }
+    case 'llmToggle': {
+      const settings = await ctx.settings.get(guildId);
+      await ctx.repos.updateSettings(guildId, { llmEnabled: !settings.llmEnabled });
+      return show('summary', t.saved);
+    }
+    case 'llmReset': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      await ctx.repos.updateSettings(guildId, { llmBaseUrl: null, llmModel: null, llmApiKey: null });
+      return show('summary', t.saved);
     }
 
     case 'toggleAutoRecord': {

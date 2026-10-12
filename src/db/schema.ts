@@ -24,6 +24,12 @@ export const guildSettings = pgTable('guild_settings', {
   forumChannelId: text(),
   /** Post épinglé du forum : bouton « Nouvelle réunion » et liste des prochaines réunions. */
   hubThreadId: text(),
+  /** LLM des résumés réglé depuis Discord (/config → Résumé) ; null = valeurs du YAML. */
+  llmBaseUrl: text(),
+  llmModel: text(),
+  llmApiKey: text(),
+  /** Résumé désactivé pour ce serveur (transcription et audio seulement). */
+  llmEnabled: boolean().notNull().default(true),
   /** Salon où le bot signale les problèmes qui demandent une action (traitement en échec, disque…). */
   alertChannelId: text(),
   /** Si renseigné, toutes les réunions se tiennent dans ce salon vocal (pas de choix à la création). */

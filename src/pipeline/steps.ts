@@ -14,6 +14,7 @@ import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeT
 import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
+import { effectiveLlm } from '../services/llmSettings.js';
 import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
@@ -212,7 +213,8 @@ async function loadTranscript(deps: PipelineDeps, meeting: MeetingRow): Promise<
 async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, config } = deps;
   const { meeting, settings, m } = ctx;
-  const cfg = config.guild(meeting.guildId).llm;
+  const llmSettings = effectiveLlm(settings, config);
+  const cfg = llmSettings.config;
   const { lines, names } = await loadTranscript(deps, meeting);
   const backends = [...new Set((await repos.upsertBlocks(meeting.id, [])).filter((b) => b.backend).map((b) => `${b.backend} (${b.model})`))];
 
@@ -220,8 +222,8 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
     await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });
     return { passes: 0 };
   }
-  // Résumé facultatif : sans LLM configuré, l'étape est sautée et la transcription publiée seule.
-  if (!cfg.baseUrl) {
+  // Résumé facultatif : sans LLM configuré (ou désactivé), l'étape est sautée et la transcription publiée seule.
+  if (!cfg.baseUrl || !llmSettings.enabled) {
     await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });
     return { skipped: true };
   }

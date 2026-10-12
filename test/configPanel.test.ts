@@ -10,6 +10,10 @@ const settings: GuildSettingsRow = {
   guildId: 'g',
   forumChannelId: '111',
   alertChannelId: null,
+  llmBaseUrl: null,
+  llmModel: null,
+  llmApiKey: null,
+  llmEnabled: true,
   hubThreadId: null,
   voiceChannelId: null,
   tagIds: null,
@@ -99,6 +103,24 @@ describe('panneau /config', () => {
     const selects = flatten(renderConfigSection('roles', c, m)).filter((x) => x.type === ComponentType.RoleSelect);
     expect(selects.map((s) => s.min_values)).toEqual([0, 0, 0]);
     expect(selects[0]!.default_values).toEqual([{ id: '222', type: 'role' }]);
+  });
+
+  it('résumé : propriétaire → modifier, choisir le modèle, tester, désactiver ; admin → tester et désactiver', () => {
+    const llm = { source: 'discord' as const, enabled: true, baseUrl: 'http://127.0.0.1:1234/v1', model: 'qwen2.5-14b-instruct', hasKey: false };
+    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: true }, m))).toEqual(['llmEdit', 'llmModels', 'llmTest', 'llmToggle', 'llmReset', 'home']);
+    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: false }, m))).toEqual(['llmTest', 'llmToggle', 'home']);
+    expect(texts(renderConfigHome({ ...c, llm }, m))).toContain('**Résumé** · qwen2.5-14b-instruct');
+    expect(texts(renderConfigHome({ ...c, llm: { ...llm, enabled: false } }, m))).toContain('**Résumé** · désactivé');
+  });
+
+  it('résumé : liste des modèles proposée après « Choisir le modèle »', () => {
+    const llm = { source: 'yaml' as const, enabled: true, baseUrl: 'http://x/v1', model: 'b', hasKey: false };
+    const view = renderConfigSection('summary', { ...c, llm, canEditAi: true, models: ['a', 'b'] }, m);
+    const select = flatten(view).find((x) => x.type === ComponentType.StringSelect)!;
+    expect((select.options as Array<{ value: string; default?: boolean }>).map((o) => [o.value, o.default ?? false])).toEqual([
+      ['a', false],
+      ['b', true],
+    ]);
   });
 
   it('message de résultat affiché en haut de la section', () => {

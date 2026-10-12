@@ -14,7 +14,7 @@ import { encode, type CfgAction } from '../../domain/customId.js';
 import { formatOffset } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
 
-export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'alerts'] as const;
+export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'summary', 'alerts'] as const;
 export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
 export interface ConfigContext {
@@ -23,6 +23,12 @@ export interface ConfigContext {
   channels?: { list: readonly ChannelInfo[]; page: number };
   /** Résumé des serveurs de transcription (« 2 actifs : vibe-pc, speaches »). */
   transcription: string;
+  /** LLM des résumés effectivement utilisé. */
+  llm?: { source: 'discord' | 'yaml'; enabled: boolean; baseUrl: string | undefined; model: string; hasKey: boolean };
+  /** Modèles proposés par le serveur LLM (après « Choisir le modèle »). */
+  models?: readonly string[];
+  /** Propriétaire du bot : peut modifier les adresses appelées par le bot. */
+  canEditAi?: boolean;
   notice?: string | undefined;
 }
 
@@ -55,6 +61,12 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
       return c.transcription;
     case 'alerts':
       return s.alertChannelId ? `<#${s.alertChannelId}>` : `*${t.none}*`;
+    case 'summary': {
+      const l = c.llm;
+      if (!l || !l.enabled) return t.summaryOff;
+      if (!l.baseUrl) return t.summaryNone;
+      return `${l.model} · \`${l.baseUrl}\`${l.source === 'yaml' ? ` *(${t.fromYaml})*` : ''}`;
+    }
   }
 }
 
@@ -149,6 +161,28 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       if (s.alertChannelId) {
         rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('alertsTest', t.alertsTest, '🧪'), btn('alertsClear', t.alertsClear, '🔕')));
       }
+      break;
+    }
+    case 'summary': {
+      const l = c.llm;
+      const canEdit = c.canEditAi ?? false;
+      if (c.models?.length) {
+        rows.push(
+          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(cfg('llmModel'))
+              .setPlaceholder(t.pickModel)
+              .addOptions(c.models.slice(0, 25).map((id) => ({ label: id.slice(0, 100), value: id.slice(0, 100), default: id === l?.model }))),
+          ),
+        );
+      }
+      const actions = new ActionRowBuilder<ButtonBuilder>();
+      if (canEdit) actions.addComponents(btn('llmEdit', t.llmEdit, '✏️', ButtonStyle.Primary));
+      if (canEdit && l?.baseUrl) actions.addComponents(btn('llmModels', t.llmModels, '📋'));
+      if (l?.baseUrl) actions.addComponents(btn('llmTest', t.llmTest, '🧪'));
+      actions.addComponents(btn('llmToggle', l?.enabled === false ? t.llmEnable : t.llmDisable, l?.enabled === false ? '▶️' : '⏸️'));
+      if (canEdit && l?.source === 'discord') actions.addComponents(btn('llmReset', t.llmReset, '↩️'));
+      rows.push(actions);
       break;
     }
     case 'recording':

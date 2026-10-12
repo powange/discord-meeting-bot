@@ -52,6 +52,13 @@ export const CFG_ACTIONS = [
   'alertsClear',
   'alertsTest',
   'page',
+  'llmEdit',
+  'llmSubmit',
+  'llmModels',
+  'llmModel',
+  'llmTest',
+  'llmReset',
+  'llmToggle',
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 
