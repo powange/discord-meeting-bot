@@ -46,7 +46,8 @@ const backendSchema = z.strictObject({
 });
 
 const transcriptionSchema = z.strictObject({
-  language: z.string().min(2).max(5).default('fr'),
+  /** Code ISO (fr, en…) ou « auto » pour laisser Whisper détecter la langue (réunions bilingues). */
+  language: z.union([z.literal('auto'), z.string().regex(/^[a-z]{2,3}$/, 'code langue ISO (fr, en…) ou « auto »')]).default('fr'),
   /** Vocabulaire propre au groupe (noms, sigles) : améliore la reconnaissance. */
   prompt: z.string().max(800).optional(),
   /** Backends par ordre de priorité ; bascule au suivant en cas d'erreur ou de délai dépassé. */

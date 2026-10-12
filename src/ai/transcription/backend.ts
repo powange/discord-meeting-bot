@@ -84,7 +84,9 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     const form = new FormData();
     form.append('file', audio, filename);
     form.append('model', this.config.model);
-    form.append('language', options.language);
+    // « auto » : aucune langue imposée, Whisper la détecte. (Pas de detect_language chez vibe-server :
+    // ce champ ne renvoie que la langue détectée, sans transcription.)
+    if (options.language !== 'auto') form.append('language', options.language);
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'segment');
     if (options.prompt) form.append('prompt', options.prompt);

@@ -131,6 +131,13 @@ describe('HttpTranscriptionBackend (serveur simulé)', () => {
     expect(last.fields).toMatchObject({ language: 'fr', response_format: 'verbose_json', prompt: 'ODJ, CA' });
   });
 
+  it('langue « auto » : aucun champ language envoyé (Whisper détecte)', async () => {
+    mode = 'ok';
+    await vibe().transcribe(audio, 'b.wav', { language: 'auto' });
+    expect(received.at(-1)!.fields.language).toBeUndefined();
+    expect(received.at(-1)!.fields.detect_language).toBeUndefined();
+  });
+
   it('vibe : modèle chargé (annoncé par /ready) repris dans le résultat', async () => {
     mode = 'ok';
     const backend = vibe();

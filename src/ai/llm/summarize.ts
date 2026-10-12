@@ -34,7 +34,7 @@ const FORMAT = `Réponds uniquement avec un objet JSON de la forme :
 }`;
 
 const RULES = `Règles :
-- Écris en français, de façon factuelle et concise.
+- Écris en français, de façon factuelle et concise, même si la réunion s'est tenue dans une autre langue ou en plusieurs langues.
 - N'invente rien : uniquement ce qui figure dans la transcription. Une transcription automatique contient des erreurs : corrige les mots manifestement mal reconnus, sans changer le sens.
 - Rattache chaque sujet au point d'ordre du jour correspondant (agendaItemId) ; un point non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).

@@ -54,6 +54,11 @@ describe('buildConfig', () => {
     expect(c.guild('222222222222222222').seed).toMatchObject({ timezone: 'Europe/Brussels', defaultDurationMin: 90 });
   });
 
+  it('langue de transcription : code ISO ou « auto »', () => {
+    expect(buildConfig({ ...minimal, defaults: { transcription: { language: 'auto' } } }, env).guild(G1).transcription.language).toBe('auto');
+    expect(() => buildConfig({ ...minimal, defaults: { transcription: { language: 'français' } } }, env)).toThrow(ConfigError);
+  });
+
   it('signale toutes les variables manquantes', () => {
     expect(() => buildConfig(minimal, {})).toThrow(/DISCORD_TOKEN.*DATABASE_URL/);
   });

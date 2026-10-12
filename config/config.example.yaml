@@ -60,7 +60,7 @@ defaults:
   # Transcription (phase 3) : backends par ordre de priorité, bascule au suivant en cas d'erreur,
   # de délai dépassé ou de serveur occupé. Vibe : https://github.com/thewh1teagle/vibe (vibe-server).
   transcription:
-    language: fr
+    language: fr # ou « auto » pour détecter la langue (réunions bilingues)
     # prompt: "Vocabulaire du groupe : CA, AG, trésorerie…" # aide la reconnaissance des noms propres
     backends:
       - name: vibe-pc-main
