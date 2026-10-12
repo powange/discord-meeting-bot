@@ -34,7 +34,7 @@ export async function routeInteraction(ctx: AppContext, interaction: Interaction
       }
       log.debug({ action: action.type }, 'Interaction');
       if (action.type === 'cfg') {
-        await handleConfigPanel(ctx, interaction, action.action);
+        await handleConfigPanel(ctx, interaction, action.action, action.arg);
         return;
       }
       if (action.type === 'tx') {

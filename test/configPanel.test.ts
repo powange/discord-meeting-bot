@@ -26,6 +26,9 @@ const settings: GuildSettingsRow = {
   updatedAt: new Date(),
 };
 const c: ConfigContext = { settings, transcription: '1 actif : vibe-pc' };
+const chans = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: String(100 + i), name: 'commands', position: i, category: { name: `Catégorie ${i}`, position: i } }));
+const withChannels = (n: number, page = 0): ConfigContext => ({ ...c, channels: { list: chans(n), page } });
 
 function flatten(x: { type: number; components?: unknown[]; accessory?: unknown }): Array<Record<string, unknown> & { type: number }> {
   return [x as never, ...[...((x.components as never[]) ?? []), ...(x.accessory ? [x.accessory as never] : [])].flatMap((y) => flatten(y))];
@@ -56,22 +59,40 @@ describe('panneau /config', () => {
   it.each([
     ['forum', ['forum', 'home']],
     ['voice', ['voice', 'home']],
+    ['alerts', ['alerts', 'home']],
     ['roles', ['roleManager', 'roleOptout', 'roleNudge', 'home']],
     ['reminders', ['remindersEdit', 'home']],
     ['general', ['generalEdit', 'toggleCreators', 'home']],
     ['recording', ['toggleAutoRecord', 'home']],
-    ['alerts', ['alerts', 'home']],
   ] as const)('section %s : ses contrôles et le retour', (section, expected) => {
-    const view = renderConfigSection(section, c, m);
+    const view = renderConfigSection(section, withChannels(3), m);
     expect(ids(view)).toEqual(expected);
     expect(flatten(view).length).toBeLessThanOrEqual(40);
   });
 
-  it('vocal imposé : bouton pour rendre le choix libre ; valeurs actuelles pré-sélectionnées', () => {
-    const view = renderConfigSection('voice', { ...c, settings: { ...settings, voiceChannelId: '333' } }, m);
+  it('salons homonymes : précédés de leur catégorie ; valeur actuelle présélectionnée', () => {
+    const view = renderConfigSection('alerts', { ...withChannels(3), settings: { ...settings, alertChannelId: '101' } }, m);
+    const select = flatten(view).find((x) => x.type === ComponentType.StringSelect)!;
+    const options = select.options as Array<{ label: string; value: string; default?: boolean }>;
+    expect(options.map((o) => o.label)).toEqual(['Catégorie 0 › #commands', 'Catégorie 1 › #commands', 'Catégorie 2 › #commands']);
+    expect(options.find((o) => o.default)?.value).toBe('101');
+    expect(ids(view)).toEqual(['alerts', 'alertsTest', 'alertsClear', 'home']);
+  });
+
+  it('plus de 25 salons : pagination', () => {
+    const view = renderConfigSection('alerts', withChannels(60, 1), m);
+    const select = flatten(view).find((x) => x.type === ComponentType.StringSelect)!;
+    expect((select.options as unknown[]).length).toBe(25);
+    expect(select.placeholder).toContain('page 2/3');
+    const pageButtons = flatten(view)
+      .filter((x) => x.type === ComponentType.Button && typeof x.custom_id === 'string' && (x.custom_id as string).includes(':page:'))
+      .map((x) => x.custom_id);
+    expect(pageButtons).toEqual(['v1:cfg:page:alerts.0', 'v1:cfg:page:alerts.2']);
+  });
+
+  it('vocal imposé : bouton pour rendre le choix libre', () => {
+    const view = renderConfigSection('voice', { ...withChannels(2), settings: { ...settings, voiceChannelId: '100' } }, m);
     expect(ids(view)).toEqual(['voice', 'voiceClear', 'home']);
-    const select = flatten(view).find((x) => x.type === ComponentType.ChannelSelect)!;
-    expect(select.default_values).toEqual([{ id: '333', type: 'channel' }]);
   });
 
   it('rôles : chaque sélecteur peut être vidé pour retirer le rôle', () => {

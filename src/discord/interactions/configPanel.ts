@@ -8,10 +8,12 @@ import {
   TextInputStyle,
   type ChatInputCommandInteraction,
   type ForumChannel,
+  type Guild,
   type Interaction,
 } from 'discord.js';
 import { IANAZone } from 'luxon';
 import type { AppContext } from '../../context.js';
+import { pageOf, type ChannelInfo } from '../../domain/channelChoices.js';
 import { encode, type CfgAction } from '../../domain/customId.js';
 import { DURATION_MAX, DURATION_MIN } from '../../domain/meeting.js';
 import { formatOffset, parseOffsets } from '../../domain/reminders.js';
@@ -35,6 +37,24 @@ export async function openConfigPanel(ctx: AppContext, interaction: ChatInputCom
   });
 }
 
+/** Types de salon proposés par section. */
+const CHANNEL_TYPES: Partial<Record<ConfigSection, ChannelType>> = {
+  forum: ChannelType.GuildForum,
+  voice: ChannelType.GuildVoice,
+  alerts: ChannelType.GuildText,
+};
+
+function channelsOf(guild: Guild, type: ChannelType): ChannelInfo[] {
+  return [...guild.channels.cache.values()]
+    .filter((c) => c.type === type)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      position: 'rawPosition' in c ? c.rawPosition : 0,
+      category: c.parent ? { name: c.parent.name, position: c.parent.rawPosition } : null,
+    }));
+}
+
 async function context(ctx: AppContext, guildId: string, m: Messages, notice?: string): Promise<ConfigContext> {
   const settings = await ctx.settings.get(guildId);
   const { source, backends } = await effectiveBackends(ctx.repos, ctx.config, guildId);
@@ -44,7 +64,7 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
 }
 
 /** Actions du panneau. Réservé à « Gérer le serveur » (ou aux propriétaires du bot). */
-export async function handleConfigPanel(ctx: AppContext, interaction: CfgInteraction, action: CfgAction): Promise<void> {
+export async function handleConfigPanel(ctx: AppContext, interaction: CfgInteraction, action: CfgAction, arg?: string): Promise<void> {
   const guildId = interaction.guildId;
   const m = await ctx.settings.messages(guildId);
   const t = m.config;
@@ -52,8 +72,15 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     throw new UserError(m.backendPanel.forbidden);
   }
 
-  const show = async (section: Section | 'home', notice?: string) => {
+  const show = async (section: Section | 'home', notice?: string, page?: number) => {
     const c = await context(ctx, guildId, m, notice);
+    const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
+    if (type !== undefined) {
+      const list = channelsOf(interaction.guild, type);
+      const current = { forum: c.settings.forumChannelId, voice: c.settings.voiceChannelId, alerts: c.settings.alertChannelId }[section as 'forum' | 'voice' | 'alerts'];
+      c.channels = { list, page: page ?? pageOf(list, current) };
+      if (list.length === 0) c.notice = [notice, t.noChannel].filter(Boolean).join('\n');
+    }
     const payload = { components: [section === 'home' ? renderConfigHome(c, m) : renderConfigSection(section, c, m)], allowedMentions: { parse: [] } };
     if (interaction.isRepliable() && (interaction.deferred || interaction.replied)) await interaction.editReply(payload);
     else if (interaction.isMessageComponent()) await interaction.update(payload);
@@ -72,9 +99,15 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show(section);
     }
 
+    case 'page': {
+      const [section, page] = (arg ?? '').split('.');
+      if (section !== 'forum' && section !== 'voice' && section !== 'alerts') return;
+      return show(section, undefined, Number(page));
+    }
+
     case 'forum': {
-      if (!interaction.isChannelSelectMenu()) return;
-      const forum = interaction.channels.first();
+      if (!interaction.isStringSelectMenu()) return;
+      const forum = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
       if (!forum || forum.type !== ChannelType.GuildForum) return show('forum');
       const missing = missingForumPermissions(forum as ForumChannel);
       if (missing.length > 0) return show('forum', `❌ ${m.errors.forumPermissions(missing.join(', '))}`);
@@ -87,8 +120,10 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     }
 
     case 'voice': {
-      if (!interaction.isChannelSelectMenu()) return;
-      await ctx.repos.updateSettings(guildId, { voiceChannelId: interaction.channels.first()?.id ?? null });
+      if (!interaction.isStringSelectMenu()) return;
+      const voice = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
+      if (!voice || voice.type !== ChannelType.GuildVoice) return show('voice');
+      await ctx.repos.updateSettings(guildId, { voiceChannelId: voice.id });
       return show('voice', t.saved);
     }
     case 'voiceClear':
@@ -168,8 +203,10 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     }
 
     case 'alerts': {
-      if (!interaction.isChannelSelectMenu()) return;
-      await ctx.repos.updateSettings(guildId, { alertChannelId: interaction.channels.first()?.id ?? null });
+      if (!interaction.isStringSelectMenu()) return;
+      const channel = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
+      if (!channel || channel.type !== ChannelType.GuildText) return show('alerts');
+      await ctx.repos.updateSettings(guildId, { alertChannelId: channel.id });
       return show('alerts', t.saved);
     }
     case 'alertsClear':

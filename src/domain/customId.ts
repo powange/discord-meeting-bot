@@ -20,7 +20,7 @@ export type Action =
   | { type: 'report.correct'; meetingId: string }
   | { type: 'report.correctSubmit'; meetingId: string }
   | { type: 'tx'; action: TxAction; backendId: number | null }
-  | { type: 'cfg'; action: CfgAction }
+  | { type: 'cfg'; action: CfgAction; arg?: string }
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
   | { type: 'meeting.create' }
@@ -49,6 +49,7 @@ export const CFG_ACTIONS = [
   'alerts',
   'alertsClear',
   'alertsTest',
+  'page',
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 
@@ -77,7 +78,7 @@ export function encode(action: Action): string {
       parts.push('tx', action.action, action.backendId ?? '-');
       break;
     case 'cfg':
-      parts.push('cfg', action.action);
+      parts.push('cfg', action.action, ...(action.arg !== undefined ? [action.arg] : []));
       break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
@@ -104,8 +105,10 @@ export function decode(customId: string): Action | null {
   }
 
   if (group === 'cfg') {
-    const [action] = rest;
-    return rest.length === 1 && CFG_ACTIONS.includes(action as CfgAction) ? { type: 'cfg', action: action as CfgAction } : null;
+    const [action, arg] = rest;
+    if (rest.length > 2 || !CFG_ACTIONS.includes(action as CfgAction)) return null;
+    if (arg !== undefined && !/^[a-z]+\.\d{1,3}$/.test(arg)) return null;
+    return arg === undefined ? { type: 'cfg', action: action as CfgAction } : { type: 'cfg', action: action as CfgAction, arg };
   }
 
   if (group === 'tx') {

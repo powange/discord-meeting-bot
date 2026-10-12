@@ -2,8 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
   ContainerBuilder,
   RoleSelectMenuBuilder,
   SeparatorSpacingSize,
@@ -11,6 +9,7 @@ import {
   type APIContainerComponent,
 } from 'discord.js';
 import type { GuildSettingsRow } from '../../db/schema.js';
+import { channelPage, type ChannelInfo } from '../../domain/channelChoices.js';
 import { encode, type CfgAction } from '../../domain/customId.js';
 import { formatOffset } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
@@ -20,12 +19,14 @@ export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
 export interface ConfigContext {
   settings: GuildSettingsRow;
+  /** Salons proposés dans la section ouverte (forum, vocal ou alertes) et page affichée. */
+  channels?: { list: readonly ChannelInfo[]; page: number };
   /** Résumé des serveurs de transcription (« 2 actifs : vibe-pc, speaches »). */
   transcription: string;
   notice?: string | undefined;
 }
 
-const cfg = (action: CfgAction) => encode({ type: 'cfg', action });
+const cfg = (action: CfgAction, arg?: string) => encode(arg === undefined ? { type: 'cfg', action } : { type: 'cfg', action, arg });
 const btn = (action: CfgAction, label: string, emoji: string, style = ButtonStyle.Secondary) =>
   new ButtonBuilder().setCustomId(cfg(action)).setLabel(label).setEmoji(emoji).setStyle(style);
 
@@ -86,21 +87,39 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
     )
     .addSeparatorComponents((x) => x.setSpacing(SeparatorSpacingSize.Small));
 
-  const rows: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<ChannelSelectMenuBuilder> | ActionRowBuilder<RoleSelectMenuBuilder>> = [];
-  switch (section) {
-    case 'forum': {
-      const select = new ChannelSelectMenuBuilder().setCustomId(cfg('forum')).setChannelTypes(ChannelType.GuildForum).setPlaceholder(t.pickForum);
-      if (s.forumChannelId) select.setDefaultChannels(s.forumChannelId);
-      rows.push(new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select));
-      break;
+  const rows: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<RoleSelectMenuBuilder>> = [];
+
+  /** Liste « Catégorie › #salon » (les homonymes se distinguent), paginée par 25. */
+  function channelRows(action: 'forum' | 'voice' | 'alerts', current: string | null, placeholder: string, prefix: string) {
+    const page = channelPage(c.channels?.list ?? [], c.channels?.page ?? 0, prefix);
+    const out: Array<ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<ButtonBuilder>> = [];
+    if (page.options.length === 0) return out;
+    out.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(cfg(action))
+          .setPlaceholder(page.pages > 1 ? `${placeholder} (${t.page(page.page + 1, page.pages)})` : placeholder)
+          .addOptions(page.options.map((o) => ({ ...o, default: o.value === current }))),
+      ),
+    );
+    if (page.pages > 1) {
+      out.push(
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          btn('page', t.previous, '◀️').setCustomId(cfg('page', `${action}.${Math.max(0, page.page - 1)}`)).setDisabled(page.page === 0),
+          btn('page', t.next, '▶️').setCustomId(cfg('page', `${action}.${Math.min(page.pages - 1, page.page + 1)}`)).setDisabled(page.page >= page.pages - 1),
+        ),
+      );
     }
-    case 'voice': {
-      const select = new ChannelSelectMenuBuilder().setCustomId(cfg('voice')).setChannelTypes(ChannelType.GuildVoice).setPlaceholder(t.pickVoice);
-      if (s.voiceChannelId) select.setDefaultChannels(s.voiceChannelId);
-      rows.push(new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select));
+    return out;
+  }
+  switch (section) {
+    case 'forum':
+      rows.push(...channelRows('forum', s.forumChannelId, t.pickForum, '#'));
+      break;
+    case 'voice':
+      rows.push(...channelRows('voice', s.voiceChannelId, t.pickVoice, '🔊 '));
       if (s.voiceChannelId) rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('voiceClear', t.voiceFreeButton, '🔓')));
       break;
-    }
     case 'roles': {
       const roleSelect = (action: CfgAction, current: string | null, placeholder: string) => {
         const select = new RoleSelectMenuBuilder().setCustomId(cfg(action)).setPlaceholder(placeholder).setMinValues(0).setMaxValues(1);
@@ -126,12 +145,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       );
       break;
     case 'alerts': {
-      const select = new ChannelSelectMenuBuilder()
-        .setCustomId(cfg('alerts'))
-        .setChannelTypes(ChannelType.GuildText)
-        .setPlaceholder(t.pickAlerts);
-      if (s.alertChannelId) select.setDefaultChannels(s.alertChannelId);
-      rows.push(new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(select));
+      rows.push(...channelRows('alerts', s.alertChannelId, t.pickAlerts, '#'));
       if (s.alertChannelId) {
         rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('alertsTest', t.alertsTest, '🧪'), btn('alertsClear', t.alertsClear, '🔕')));
       }
