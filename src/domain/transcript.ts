@@ -143,3 +143,55 @@ export function chunkLines(lines: readonly string[], maxTokens: number): string[
   if (current.length > 0) chunks.push(current);
   return chunks;
 }
+
+// ---------------------------------------------------------------- écho
+
+export interface TimedLine {
+  userId: string;
+  startAt: Date;
+  endAt: Date;
+  text: string;
+}
+
+const MIN_ECHO_CHARS = 15;
+
+function trigrams(text: string): Set<string> {
+  const t = ` ${normalize(text)} `;
+  const out = new Set<string>();
+  for (let i = 0; i + 3 <= t.length; i++) out.add(t.slice(i, i + 3));
+  return out;
+}
+
+/** Part des trigrammes du texte le plus court présents dans l'autre (couvre l'écho partiel). */
+export function textContainment(a: string, b: string): number {
+  const ta = trigrams(a);
+  const tb = trigrams(b);
+  const [small, big] = ta.size <= tb.size ? [ta, tb] : [tb, ta];
+  if (small.size === 0) return 0;
+  let common = 0;
+  for (const g of small) if (big.has(g)) common++;
+  return common / small.size;
+}
+
+/**
+ * Retire les échos : sans casque, le micro d'une personne capte les autres, et la même phrase
+ * est transcrite sous deux noms. Deux répliques de personnes différentes qui se chevauchent (à
+ * `toleranceMs` près) avec des textes quasi identiques sont un écho : on garde celle qui
+ * commence en premier (à égalité, la plus longue). Les phrases courtes ne sont jamais touchées.
+ */
+export function dropEchoes<T extends TimedLine>(lines: readonly T[], toleranceMs = 1500, threshold = 0.8): T[] {
+  const sorted = [...lines].sort((a, b) => a.startAt.getTime() - b.startAt.getTime() || b.text.length - a.text.length);
+  const dropped = new Set<T>();
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i]!;
+    if (dropped.has(a) || normalize(a.text).length < MIN_ECHO_CHARS) continue;
+    for (let j = i + 1; j < sorted.length; j++) {
+      const b = sorted[j]!;
+      if (b.startAt.getTime() > a.endAt.getTime() + toleranceMs) break;
+      if (dropped.has(b) || b.userId === a.userId || normalize(b.text).length < MIN_ECHO_CHARS) continue;
+      const overlap = b.startAt.getTime() <= a.endAt.getTime() + toleranceMs && a.startAt.getTime() <= b.endAt.getTime() + toleranceMs;
+      if (overlap && textContainment(a.text, b.text) >= threshold) dropped.add(b);
+    }
+  }
+  return lines.filter((l) => !dropped.has(l));
+}

@@ -55,6 +55,8 @@ const transcriptionSchema = z.strictObject({
   maxGapSec: z.int().min(0).max(60).default(4),
   /** Durée maximale d'un bloc envoyé à la transcription. */
   maxBlockMin: z.int().min(1).max(30).default(5),
+  /** Retire les échos (même phrase captée par le micro d'un voisin sans casque). */
+  dropEchoes: z.boolean().default(true),
 });
 
 const llmSchema = z.strictObject({

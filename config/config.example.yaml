@@ -74,6 +74,7 @@ defaults:
         # apiKey: ${SPEACHES_KEY}
     maxGapSec: 4 # prises de parole d'une même personne à moins de 4 s : transcrites ensemble
     maxBlockMin: 5
+    dropEchoes: true # retire les phrases captées en double par le micro d'un voisin sans casque
 
   # Résumé (phase 3) : LiteLLM (recommandé) ou Ollama directement (http://hôte:11434/v1).
   llm:

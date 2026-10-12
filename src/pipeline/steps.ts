@@ -10,7 +10,7 @@ import { renderReport, renderTranscriptMarkdown, resolvePerson } from '../discor
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { formatWhen } from '../domain/time.js';
-import { buildBlocks, cleanSegments, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
+import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
 import type { PipelineStep } from '../domain/types.js';
 import { bitrateForLimit, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, type PlacedInput } from '../lib/ffmpeg.js';
@@ -171,7 +171,8 @@ interface Transcript {
 
 async function loadTranscript(deps: PipelineDeps, meeting: MeetingRow): Promise<Transcript> {
   const names = await deps.repos.displayNamesForMeeting(meeting.id);
-  const rows = await deps.repos.listTranscript(meeting.id);
+  const all = await deps.repos.listTranscript(meeting.id);
+  const rows = deps.config.guild(meeting.guildId).transcription.dropEchoes ? dropEchoes(all) : all;
   const lines = mergeTranscript(rows.map((r) => ({ userId: r.userId, name: names.get(r.userId) ?? r.userId, startAt: r.startAt, text: r.text })));
   return { lines, names };
 }
