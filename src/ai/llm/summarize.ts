@@ -8,6 +8,8 @@ export interface SummaryContext {
   date: string;
   participants: readonly string[];
   agenda: ReadonlyArray<{ id: number; title: string; detail: string }>;
+  /** Vocabulaire du serveur : orthographe de référence des noms propres et du jargon. */
+  vocabulary?: readonly string[];
   /** Consignes de correction de l'organisateur, prioritaires sur la transcription. */
   corrections?: readonly string[];
 }
@@ -54,7 +56,7 @@ function contextBlock(ctx: SummaryContext): string {
     : '(aucun ordre du jour)';
   return `Réunion : ${ctx.title}${ctx.description ? `\nDescription : ${ctx.description}` : ''}
 Date : ${ctx.date}
-Participants : ${ctx.participants.join(', ') || '(inconnus)'}
+Participants : ${ctx.participants.join(', ') || '(inconnus)'}${ctx.vocabulary?.length ? `\nVocabulaire (orthographe correcte des noms et termes) : ${ctx.vocabulary.join(', ')}` : ''}
 Ordre du jour :
 ${agenda}`;
 }

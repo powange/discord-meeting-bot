@@ -20,8 +20,10 @@ export interface PanelState {
   confirmDeleteId?: number | null;
   /** Serveurs du YAML, affichés tant qu'aucun serveur n'est géré depuis Discord. */
   yamlFallback?: ReadonlyArray<{ name: string; type: string; url: string }>;
-  /** Faux pour un administrateur qui n'est pas propriétaire du bot : consultation et tests seulement. */
+  /** Faux pour un administrateur qui n'est pas propriétaire du bot : consultation, tests et vocabulaire seulement. */
   canEdit?: boolean;
+  /** Vocabulaire du serveur (aide à la reconnaissance des noms propres et du jargon). */
+  vocabulary?: readonly string[];
 }
 
 const tx = (action: TxAction, backendId: number | null = null) => encode({ type: 'tx', action, backendId });
@@ -35,7 +37,9 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
   const container = new ContainerBuilder()
     .setAccentColor(0x5865f2)
     .addTextDisplayComponents((t) =>
-      t.setContent(`## ${p.title}\n-# ${p.footer}${canEdit ? '' : `\n-# 🔒 ${p.readOnly}`}${state.notice ? `\n\n${state.notice}` : ''}`),
+      t.setContent(
+        `## ${p.title}\n-# ${p.footer}${canEdit ? '' : `\n-# 🔒 ${p.readOnly}`}\n📖 ${p.vocabularySummary(state.vocabulary ?? [])}${state.notice ? `\n\n${state.notice}` : ''}`,
+      ),
     );
 
   if (rows.length === 0) {
@@ -82,6 +86,7 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
   container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => {
     if (canEdit) row.addComponents(button('add', null, '➕', p.add, ButtonStyle.Success).setDisabled(rows.length >= MAX_BACKENDS));
     if (canTestAll) row.addComponents(button('testAll', null, '🧪', p.testAll));
+    row.addComponents(button('vocab', null, '📖', p.vocabulary));
     // Retour à l'accueil du panneau /config.
     row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'cfg', action: 'home' })).setEmoji('↩️').setLabel(m.config.back).setStyle(ButtonStyle.Secondary));
     return row;

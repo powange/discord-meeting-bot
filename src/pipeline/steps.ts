@@ -10,6 +10,7 @@ import { renderReport, renderTranscriptMarkdown, resolvePerson } from '../discor
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { formatWhen } from '../domain/time.js';
+import { whisperPrompt } from '../domain/vocabulary.js';
 import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
 import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
@@ -145,10 +146,15 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   ctx.progress(ctx.m.pipeline.progressTranscribe(done, blocks.length));
   if (pending.length === 0) return { blocks: blocks.length };
 
-  // Vocabulaire : noms des participants et points d'ODJ, pour aider la reconnaissance.
-  const names = [...(await repos.displayNamesForMeeting(meeting.id)).values()];
-  const agenda = (await repos.listAgenda(meeting.id)).map((a) => a.title);
-  const prompt = [cfg.prompt, [...names, ...agenda].join(', ')].filter(Boolean).join(' ').slice(0, 800) || undefined;
+  // Vocabulaire pour aider la reconnaissance : celui du serveur, les noms propres des consignes de
+  // correction (utile quand on refait la transcription), les participants et les points d'ODJ.
+  const prompt = whisperPrompt({
+    base: cfg.prompt,
+    vocabulary: ctx.settings.vocabulary,
+    corrections: (await repos.getSummary(meeting.id))?.corrections ?? [],
+    names: [...(await repos.displayNamesForMeeting(meeting.id)).values()],
+    agenda: (await repos.listAgenda(meeting.id)).map((a) => a.title),
+  });
 
   const { backends } = await effectiveBackends(repos, config, meeting.guildId);
   const pool = new TranscriptionPool(
@@ -239,6 +245,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
       date: formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when),
       participants: [...new Set(names.values())],
       agenda: agenda.map((a) => ({ id: a.id, title: a.title, detail: a.detail })),
+      vocabulary: settings.vocabulary,
       corrections,
     },
     lines.map((l) => formatLine(l, settings.timezone)),

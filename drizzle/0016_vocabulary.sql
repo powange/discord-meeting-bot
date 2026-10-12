@@ -1,0 +1,1 @@
+ALTER TABLE "guild_settings" ADD COLUMN "vocabulary" text[] DEFAULT '{}'::text[] NOT NULL;

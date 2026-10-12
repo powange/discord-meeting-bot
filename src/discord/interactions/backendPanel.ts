@@ -15,6 +15,7 @@ import type { TranscriptionBackendRow } from '../../db/schema.js';
 import { encode, type TxAction } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
+import { parseVocabulary, VOCABULARY_MAX_TERMS } from '../../domain/vocabulary.js';
 import { assertUrlAllowed } from '../../lib/hosts.js';
 import { moveTo, rowToConfig, testBackend, type BackendTest } from '../../services/transcriptionBackends.js';
 import { MAX_BACKENDS, renderBackendPanel, type PanelState } from '../embeds/backendPanel.js';
@@ -30,8 +31,8 @@ export async function openBackendPanelInPlace(ctx: AppContext, interaction: Stri
   await interaction.update(await panel(ctx, interaction.guildId, { canEdit }, m));
 }
 
-/** Actions de consultation, permises aux administrateurs ; tout le reste est réservé aux propriétaires du bot. */
-const READ_ONLY_ACTIONS: readonly TxAction[] = ['select', 'test', 'testAll'];
+/** Actions permises aux administrateurs (consultation, tests, vocabulaire) ; le reste (adresses appelées par le bot) est réservé aux propriétaires. */
+const READ_ONLY_ACTIONS: readonly TxAction[] = ['select', 'test', 'testAll', 'vocab', 'vocabSubmit'];
 
 /** Boutons et formulaires du panneau. Chaque action revérifie la permission « Gérer le serveur ». */
 export async function handleBackendPanel(ctx: AppContext, interaction: PanelInteraction, action: TxAction, backendId: number | null): Promise<void> {
@@ -104,6 +105,26 @@ export async function handleBackendPanel(ctx: AppContext, interaction: PanelInte
       return refresh({ notice: left.length ? p.deleted(t.name) : `${p.deleted(t.name)}\n${m.transcriptionConfig.backToYaml}` });
     }
 
+    case 'vocab': {
+      if (!interaction.isButton()) return;
+      const current = (await ctx.settings.get(guildId)).vocabulary;
+      const input = new TextInputBuilder().setCustomId('vocabulary').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setRequired(false).setPlaceholder('Pol, Apothicaire, LiteLLM');
+      if (current.length) input.setValue(current.join(', '));
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'tx', action: 'vocabSubmit', backendId: null }))
+          .setTitle(p.vocabularyModal)
+          .addLabelComponents(new LabelBuilder().setLabel(p.vocabularyField).setDescription(p.vocabularyHint(VOCABULARY_MAX_TERMS)).setTextInputComponent(input)),
+      );
+      return;
+    }
+    case 'vocabSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      const vocabulary = parseVocabulary(interaction.fields.getTextInputValue('vocabulary'));
+      await ctx.repos.updateSettings(guildId, { vocabulary });
+      return refresh({ notice: p.vocabularySaved(vocabulary.length) });
+    }
+
     case 'add': {
       if (!interaction.isButton()) return;
       if (rows.length >= MAX_BACKENDS) return refresh({ notice: p.full(MAX_BACKENDS) });
@@ -147,7 +168,8 @@ export async function handleBackendPanel(ctx: AppContext, interaction: PanelInte
 async function panel(ctx: AppContext, guildId: string, state: PanelState, m: Messages) {
   const rows = await ctx.repos.listBackends(guildId);
   const yamlFallback = rows.length === 0 ? ctx.config.guild(guildId).transcription.backends : [];
-  return { components: [renderBackendPanel(rows, { ...state, yamlFallback }, m)], allowedMentions: { parse: [] } };
+  const { vocabulary } = await ctx.settings.get(guildId);
+  return { components: [renderBackendPanel(rows, { ...state, yamlFallback, vocabulary }, m)], allowedMentions: { parse: [] } };
 }
 
 /** Verdict d'un test, affiché sous le serveur concerné. */

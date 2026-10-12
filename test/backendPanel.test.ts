@@ -40,7 +40,7 @@ describe('renderBackendPanel', () => {
     expect(buttons(panel).map(action)).toEqual([
       'edit:1', 'up:1', 'toggle:1', 'test:1', 'delete:1',
       'edit:2', 'up:2', 'toggle:2', 'test:2', 'delete:2',
-      'add:-', 'testAll:-', 'cfg:home',
+      'add:-', 'testAll:-', 'vocab:-', 'cfg:home',
     ]);
     const texts = flatten(panel).filter((x) => x.type === ComponentType.TextDisplay).map((x) => x.content).join('\n');
     expect(texts).toContain('🟢 **2. speaches** · openai');
@@ -61,7 +61,7 @@ describe('renderBackendPanel', () => {
 
   it('suppression : confirmation à la place des actions du serveur', () => {
     const panel = renderBackendPanel([row(1, 'a'), row(2, 'b')], { confirmDeleteId: 2 }, m);
-    expect(buttons(panel).map(action)).toEqual(['edit:1', 'up:1', 'toggle:1', 'test:1', 'delete:1', 'edit:2', 'confirmDelete:2', 'select:-', 'add:-', 'testAll:-', 'cfg:home']);
+    expect(buttons(panel).map(action)).toEqual(['edit:1', 'up:1', 'toggle:1', 'test:1', 'delete:1', 'edit:2', 'confirmDelete:2', 'select:-', 'add:-', 'testAll:-', 'vocab:-', 'cfg:home']);
   });
 
   it('désactivé : ⚪ et bouton Activer ; résultat de test sous le serveur', () => {
@@ -75,7 +75,7 @@ describe('renderBackendPanel', () => {
 
   it('administrateur non propriétaire : consultation et tests seulement', () => {
     const panel = renderBackendPanel([row(1, 'a'), row(2, 'b', { enabled: false })], { canEdit: false }, m);
-    expect(buttons(panel).map(action)).toEqual(['test:1', 'test:2', 'testAll:-', 'cfg:home']);
+    expect(buttons(panel).map(action)).toEqual(['test:1', 'test:2', 'testAll:-', 'vocab:-', 'cfg:home']);
     const texts = flatten(panel).filter((x) => x.type === ComponentType.TextDisplay).map((x) => x.content).join('\n');
     expect(texts).toContain(m.backendPanel.readOnly);
   });
@@ -84,6 +84,6 @@ describe('renderBackendPanel', () => {
     const panel = renderBackendPanel([], { yamlFallback: [{ name: 'yaml-vibe', type: 'vibe', url: 'http://y:8080' }] }, m);
     const texts = flatten(panel).filter((x) => x.type === ComponentType.TextDisplay).map((x) => x.content).join('\n');
     expect(texts).toContain('yaml-vibe');
-    expect(buttons(panel).map(action)).toEqual(['add:-', 'testAll:-', 'cfg:home']);
+    expect(buttons(panel).map(action)).toEqual(['add:-', 'testAll:-', 'vocab:-', 'cfg:home']);
   });
 });

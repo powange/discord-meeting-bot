@@ -19,6 +19,7 @@ const settings: GuildSettingsRow = {
   autoVoice: false,
   autoVoiceCategoryId: null,
   autoVoiceLeadMin: 15,
+  vocabulary: [],
   tagIds: null,
   managerRoleId: '222',
   optoutRoleId: null,

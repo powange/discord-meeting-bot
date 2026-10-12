@@ -39,6 +39,8 @@ export const guildSettings = pgTable('guild_settings', {
   /** Catégorie des salons temporaires ; null = celle du forum. */
   autoVoiceCategoryId: text(),
   autoVoiceLeadMin: integer().notNull().default(15),
+  /** Vocabulaire du serveur (pseudos, noms de projets, jargon) : aide la transcription et le résumé. */
+  vocabulary: text().array().notNull().default(sql`'{}'::text[]`),
   tagIds: jsonb().$type<StatusTagIds>(),
   managerRoleId: text(),
   /** Ancien rôle « ne pas m'enregistrer » : ses membres sont repris dans recording_optouts, puis il est oublié. */

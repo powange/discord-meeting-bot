@@ -32,7 +32,7 @@ export type Action =
   | { type: 'meeting.createSubmit' };
 
 /** Actions du panneau des serveurs de transcription (`backendId` : serveur visé, sinon null). */
-export const TX_ACTIONS = ['select', 'up', 'down', 'toggle', 'test', 'delete', 'confirmDelete', 'edit', 'editSubmit', 'add', 'addSubmit', 'testAll'] as const;
+export const TX_ACTIONS = ['select', 'up', 'down', 'toggle', 'test', 'delete', 'confirmDelete', 'edit', 'editSubmit', 'add', 'addSubmit', 'testAll', 'vocab', 'vocabSubmit'] as const;
 export type TxAction = (typeof TX_ACTIONS)[number];
 
 /** Actions du panneau /config (navigation et réglages). */

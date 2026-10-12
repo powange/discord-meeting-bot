@@ -189,6 +189,13 @@ export const fr = {
     add: 'Ajouter',
     edit: 'Modifier',
     testAll: 'Tout tester',
+    vocabulary: 'Vocabulaire',
+    vocabularySummary: (terms: readonly string[]) =>
+      terms.length ? `Vocabulaire (${terms.length}) : ${terms.slice(0, 12).join(', ')}${terms.length > 12 ? '…' : ''}` : 'Vocabulaire : aucun mot ajouté',
+    vocabularyModal: 'Vocabulaire du serveur',
+    vocabularyField: 'Mots à bien reconnaître',
+    vocabularyHint: (max: number) => `Pseudos, noms de projets, jargon. Séparés par des virgules ou des retours à la ligne (${max} au plus).`,
+    vocabularySaved: (n: number) => (n ? `✅ Vocabulaire enregistré (${n} mot${n > 1 ? 's' : ''}) : utilisé pour les prochaines transcriptions et résumés.` : '✅ Vocabulaire vidé.'),
     testing: '🧪 Test en cours…',
     forbidden: "Réservé aux membres ayant la permission « Gérer le serveur ».",
     ownersOnly: 'Seuls les propriétaires du bot peuvent modifier les serveurs de transcription (ce sont des adresses que le bot appelle sur leur réseau).',
