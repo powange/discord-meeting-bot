@@ -3,6 +3,7 @@ import type { AppContext } from './context.js';
 import { createDb, runMigrations } from './db/client.js';
 import { Repositories } from './db/repositories.js';
 import { createClient, Events } from './discord/client.js';
+import { restoreSuppressedEmbeds } from './discord/embedGuard.js';
 import { routeInteraction } from './discord/interactions/router.js';
 import { registerCommands } from './discord/registerCommands.js';
 import { startHealthServer } from './lib/health.js';
@@ -89,6 +90,9 @@ async function main(): Promise<void> {
     }
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
+  client.on(Events.MessageUpdate, (_old, message) => {
+    void restoreSuppressedEmbeds(client, message, log);
+  });
   client.on(Events.MessageCreate, (message) => {
     hub.onMessage(message).catch((err) => log.warn({ err }, 'Filtrage du post épinglé impossible'));
   });
