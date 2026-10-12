@@ -21,6 +21,7 @@ import { displayName } from '../discord/notify.js';
 import { fetchThread } from '../discord/threads.js';
 import { encode } from '../domain/customId.js';
 import { isOpen } from '../domain/meeting.js';
+import { ArrivalNotices, RECORDING_NICKNAME } from '../domain/greeting.js';
 import type { StopReason } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
@@ -43,6 +44,10 @@ interface ActiveRecording {
   guildId: string;
   channelId: string;
   session: RecordingSession;
+  /** Arrivants prévenus de l'enregistrement (une fois par personne et par session). */
+  notices: ArrivalNotices;
+  /** Pseudo du bot avant l'enregistrement, restauré à l'arrêt (null = nom par défaut). */
+  previousNickname: string | null;
 }
 
 /**
@@ -181,8 +186,11 @@ export class RecordingService {
       guildId: guild.id,
       channelId: channel.id,
       session,
+      notices: new ArrivalNotices(channel.members.keys()),
+      previousNickname: guild.members.me?.nickname ?? null,
     };
     this.active.set(guild.id, entry);
+    await this.setNickname(guild, RECORDING_NICKNAME);
     this.watchConnection(entry, connection);
 
     // Présences au démarrage.
@@ -227,6 +235,8 @@ export class RecordingService {
     this.active.delete(entry.guildId); // avant toute attente : un seul arrêt
 
     await entry.session.stop();
+    const guildForNick = this.client.guilds.cache.get(entry.guildId);
+    if (guildForNick) await this.setNickname(guildForNick, entry.previousNickname);
     await this.repos.saveCaptureStats(entry.recordingId, entry.session.captureStats()).catch((err) => this.warn(meetingId, 'Statistiques de capture non enregistrées', err));
     const endedAt = new Date();
     await this.repos.closePresence(entry.recordingId, endedAt);
@@ -254,8 +264,19 @@ export class RecordingService {
     await Promise.allSettled(meetingIds.map((id) => this.stop(id, 'shutdown')));
   }
 
+  /** Pseudo du bot sur le serveur ; sans la permission « Changer le pseudo », on continue sans. */
+  private async setNickname(guild: Guild, nickname: string | null): Promise<void> {
+    const me = guild.members.me;
+    if (!me || me.nickname === nickname) return;
+    await me.setNickname(nickname, 'Indicateur d’enregistrement').catch((err) => this.log.debug({ guildId: guild.id, err: errorMessage(err) }, 'Pseudo du bot non modifiable'));
+  }
+
   /** Au démarrage : sessions restées « en cours » après un arrêt brutal du bot. */
   async recoverInterrupted(): Promise<void> {
+    // Après un arrêt brutal, le pseudo « 🔴 Enregistrement » a pu rester : on le retire.
+    for (const guild of this.client.guilds.cache.values()) {
+      if (guild.members.me?.nickname === RECORDING_NICKNAME) await this.setNickname(guild, null);
+    }
     for (const rec of await this.repos.listRecordingsByStatus('recording')) {
       const at = new Date();
       await this.repos.closePresence(rec.id, at);
@@ -288,13 +309,23 @@ export class RecordingService {
     void (async () => {
       if (joined) {
         const settings = await this.settings.get(entry.guildId);
+        const excluded = this.isOptedOut(settings, member.roles.cache.keys());
         await this.repos.insertPresence({
           recordingId: entry.recordingId,
           userId: member.id,
           displayName: member.displayName,
           joinedAt: now,
-          excluded: this.isOptedOut(settings, member.roles.cache.keys()),
+          excluded,
         });
+        if (entry.notices.shouldNotify(member.id, !excluded)) {
+          const channel = newState.channel;
+          const m = messages(settings.locale);
+          if (channel?.isTextBased()) {
+            await channel
+              .send({ content: m.recording.arrival(member.id), allowedMentions: { users: [member.id] } })
+              .catch((err) => this.warn(entry.meetingId, 'Avertissement de l’arrivant impossible', err));
+          }
+        }
       } else if (left) {
         await this.repos.closePresence(entry.recordingId, now, member.id);
       }

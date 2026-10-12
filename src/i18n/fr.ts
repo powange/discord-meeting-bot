@@ -125,6 +125,8 @@ export const fr = {
         ? `\nPour ne pas être enregistré : \`/enregistrement refuser\` (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
         : ''),
     started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
+    arrival: (userId: string) =>
+      `🔴 <@${userId}>, cette réunion est **enregistrée** (une piste audio par participant, pour le compte rendu). Pour ne pas l'être : \`/enregistrement refuser\`.`,
     reasons: {
       manual: 'arrêt manuel',
       empty: 'vocal vide',

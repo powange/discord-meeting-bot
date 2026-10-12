@@ -28,7 +28,7 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 |---|---|
 | Démarrer | Message **🎙️ Enregistrement** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). Il devient **⏹️ Arrêter** pendant l'enregistrement. |
 | Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
-| Pendant | Le bot est dans le vocal, micro coupé. Avertissement dans le post et dans le chat du vocal. La carte affiche « Enregistrement en cours ». |
+| Pendant | Le bot est dans le vocal, micro coupé, et **renommé « 🔴 Enregistrement »** (pseudo restauré à l'arrêt). Avertissement dans le post et dans le chat du vocal au démarrage, puis à **chaque personne qui arrive en cours de route** (une fois par session). La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
 | Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
 | Fin | Bouton Arrêter, `/reunion terminer`, ou clôture automatique de la réunion (vocal vide depuis 5 min). |
@@ -101,7 +101,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
-   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17893103332368
+   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17893170441232
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
@@ -109,6 +109,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Voir l'historique
    - Créer et gérer les événements
    - Se connecter (enregistrement)
+   - Changer le pseudo : le bot s'appelle « 🔴 Enregistrement » pendant une capture
    - Gérer les rôles : uniquement pour `/enregistrement refuser|accepter`. Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
 5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions.
 
