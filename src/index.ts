@@ -29,13 +29,21 @@ async function main(): Promise<void> {
   log.info('Migrations appliquées');
 
   const client = createClient();
-  const health = startHealthServer(Number(process.env.HEALTH_PORT ?? 3000), async () => ({
-    discord: client.isReady(),
-    database: await pool
-      .query('select 1')
-      .then(() => true)
-      .catch(() => false),
-  }));
+  // Serveur de santé : pour le HEALTHCHECK Docker (production) ; en dev, seulement si HEALTH_PORT est défini.
+  const healthPort = process.env.HEALTH_PORT ?? (process.env.NODE_ENV === 'production' ? '3000' : undefined);
+  const health = healthPort
+    ? startHealthServer(
+        Number(healthPort),
+        async () => ({
+          discord: client.isReady(),
+          database: await pool
+            .query('select 1')
+            .then(() => true)
+            .catch(() => false),
+        }),
+        (err) => log.warn({ err: err.message, port: healthPort }, 'Serveur de santé indisponible (le bot continue)'),
+      )
+    : null;
   const repos = new Repositories(db);
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
@@ -109,7 +117,7 @@ async function main(): Promise<void> {
     await cards.flush().catch(() => undefined);
     await hub.flush().catch(() => undefined);
     await client.destroy();
-    health.close();
+    health?.close();
     await pool.end();
     clearTimeout(force);
     log.info('Arrêté');
