@@ -163,6 +163,46 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(out.sizeBytes as number).toBeGreaterThan(0);
   }, 60_000);
 
+  it('arrêt d’enregistrement : mise à jour enchaînée si un traitement tourne ; clôture sans doublon', async () => {
+    const meeting = await seedMeeting();
+    const calls: string[] = [];
+    let release!: () => void;
+    let gate: Promise<void> | null = new Promise((r) => (release = r));
+    const engine = new PipelineService(deps(), {
+      mix: async () => {
+        calls.push('mix');
+        if (gate) {
+          const g = gate;
+          gate = null;
+          await g; // le premier traitement reste bloqué ici
+        }
+        return {};
+      },
+      transcribe: async () => (calls.push('transcribe'), {}),
+      summarize: async () => (calls.push('summarize'), {}),
+      publish: async () => (calls.push('publish'), {}),
+    });
+
+    await engine.refresh(meeting.id); // 1er arrêt d'enregistrement
+    await new Promise((r) => setTimeout(r, 50));
+    await engine.refresh(meeting.id); // 2e arrêt pendant le traitement → mise à jour après
+    release();
+    await waitIdle(engine, meeting.id);
+    expect(calls).toEqual(['mix', 'transcribe', 'summarize', 'publish', 'mix', 'transcribe', 'summarize', 'publish']);
+
+    // Clôture de la réunion : tout est déjà traité → rien de plus.
+    await repos.updateRecording((await repos.listRecordingsForMeeting(meeting.id))[0]!.id, { endedAt: new Date(Date.now() - 60_000) });
+    await engine.processIfNeeded(meeting.id);
+    await waitIdle(engine, meeting.id);
+    expect(calls).toHaveLength(8);
+
+    // Une session terminée après le dernier traitement (ex. interrompue) est rattrapée à la clôture.
+    await repos.updateRecording((await repos.listRecordingsForMeeting(meeting.id))[0]!.id, { endedAt: new Date(Date.now() + 60_000) });
+    await engine.processIfNeeded(meeting.id);
+    await waitIdle(engine, meeting.id);
+    expect(calls).toHaveLength(12);
+  }, 30_000);
+
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];

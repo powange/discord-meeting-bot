@@ -42,6 +42,8 @@ const STATUS_THROTTLE_MS = 3000;
  */
 export class PipelineService {
   private readonly queue: string[] = [];
+  /** Réunions à retraiter dès la fin du traitement en cours (nouvel enregistrement entre-temps). */
+  private readonly refreshAfterRun = new Set<string>();
   private worker: Promise<void> | null = null;
   private readonly abort = new AbortController();
   private stopping = false;
@@ -51,13 +53,37 @@ export class PipelineService {
     private readonly steps: Record<PipelineStep, StepFn>,
   ) {}
 
-  /** À la clôture d'une réunion : traitement s'il y a de la parole enregistrée. */
-  async scheduleIfRecorded(meetingId: string): Promise<boolean> {
+  /**
+   * Fin d'un enregistrement : traitement complet, ou mise à jour s'il a déjà eu lieu (audio
+   * refait avec toutes les sessions, seuls les nouveaux passages transcrits, compte rendu
+   * remplacé). Si la réunion est en cours de traitement, la mise à jour suit immédiatement.
+   */
+  async refresh(meetingId: string): Promise<void> {
+    if (!(await this.hasSpeech(meetingId))) return;
+    if (this.queue[0] === meetingId) {
+      this.refreshAfterRun.add(meetingId);
+      return;
+    }
+    await this.deps.repos.ensurePipeline(meetingId);
+    await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]);
+    this.enqueue(meetingId);
+  }
+
+  /**
+   * Clôture de la réunion : traite ce qui ne l'a pas encore été (par exemple une session
+   * interrompue par une coupure, qui ne déclenche rien pour laisser la place à une reprise).
+   */
+  async processIfNeeded(meetingId: string): Promise<void> {
+    if (this.isQueued(meetingId) || !(await this.hasSpeech(meetingId))) return;
+    const mix = (await this.deps.repos.listPipeline(meetingId)).find((r) => r.step === 'mix');
+    const lastEnd = Math.max(0, ...(await this.deps.repos.listRecordingsForMeeting(meetingId)).map((r) => r.endedAt?.getTime() ?? 0));
+    const covered = mix?.status === 'done' && mix.finishedAt !== null && mix.finishedAt.getTime() >= lastEnd;
+    if (!covered) await this.refresh(meetingId);
+  }
+
+  private async hasSpeech(meetingId: string): Promise<boolean> {
     for (const rec of await this.deps.repos.listRecordingsForMeeting(meetingId)) {
-      if ((await this.deps.repos.listSegments(rec.id)).length > 0) {
-        await this.schedule(meetingId);
-        return true;
-      }
+      if ((await this.deps.repos.listSegments(rec.id)).length > 0) return true;
     }
     return false;
   }
@@ -121,6 +147,10 @@ export class PipelineService {
         this.deps.log.error({ meetingId, err }, 'Traitement post-réunion en échec');
       } finally {
         this.queue.shift();
+      }
+      if (this.refreshAfterRun.delete(meetingId) && !this.stopping) {
+        await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]);
+        this.queue.push(meetingId);
       }
     }
   }

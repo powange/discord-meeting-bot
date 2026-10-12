@@ -36,8 +36,9 @@ async function main(): Promise<void> {
   meetings.hooks = {
     afterStart: (meeting) => recordings.onMeetingStarted(meeting),
     beforeClose: (meetingId) => recordings.onMeetingClosing(meetingId),
-    afterEnd: (meetingId) => pipeline.scheduleIfRecorded(meetingId),
+    afterEnd: (meetingId) => pipeline.processIfNeeded(meetingId),
   };
+  recordings.setOnStopped((meetingId) => pipeline.refresh(meetingId));
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);

@@ -53,6 +53,8 @@ interface ActiveRecording {
 export class RecordingService {
   /** Par serveur. Une entrée `null` = démarrage en cours (évite deux démarrages simultanés). */
   private readonly active = new Map<string, ActiveRecording | null>();
+  /** Appelé à la fin d'un enregistrement (pas après une coupure : une reprise est probable). */
+  private onStopped: (meetingId: string) => Promise<unknown> = async () => undefined;
   /** Mises à jour du message de contrôle, sérialisées par réunion (pas de double publication). */
   private readonly controlQueue = new Map<string, Promise<void>>();
 
@@ -84,6 +86,10 @@ export class RecordingService {
         await thread.send({ content: m.recording.autoStartFailed(reason), allowedMentions: { parse: [] } });
       }
     }
+  }
+
+  setOnStopped(fn: (meetingId: string) => Promise<unknown>): void {
+    this.onStopped = fn;
   }
 
   isRecording(meetingId: string): boolean {
@@ -228,6 +234,7 @@ export class RecordingService {
       this.cards.refresh(meetingId, ['card']);
       await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Mise à jour du contrôle impossible', err));
     }
+    if (!interrupted) await this.onStopped(meetingId).catch((err) => this.warn(meetingId, 'Lancement du compte rendu impossible', err));
     return true;
   }
 
