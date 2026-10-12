@@ -106,6 +106,7 @@ export const config: Command = {
         const tagIds = await ensureStatusTags(forum, m);
         await ctx.repos.updateSettings(guildId, { forumChannelId: forum.id, tagIds });
         const hubId = await ctx.hub.ensure(forum, m);
+        await ctx.hub.refreshNow(guildId);
         await replyEphemeral(interaction, m.config.forumReady(forum.id, hubId));
         return;
       }

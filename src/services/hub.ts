@@ -1,8 +1,9 @@
+import { schedule, type ScheduledTask } from 'node-cron';
 import { ChannelFlags, type Client, type ForumChannel, type Message, type ThreadChannel } from 'discord.js';
 import type { Repositories } from '../db/repositories.js';
 import { renderHub } from '../discord/embeds/hub.js';
 import { ensureUnarchived } from '../discord/forum.js';
-import { fetchThread } from '../discord/threads.js';
+import { fetchForum, fetchThread, isUnknownMessage } from '../discord/threads.js';
 import type { Messages } from '../i18n/index.js';
 import { messages } from '../i18n/index.js';
 import type { Logger } from '../lib/logger.js';
@@ -13,12 +14,15 @@ const MAX_LISTED = 20;
 
 /**
  * Post épinglé du forum (« hub ») : bouton « Nouvelle réunion » et liste des réunions à venir,
- * régénérée à chaque création ou changement de statut.
+ * régénérée à chaque création ou changement de statut. Le bot le surveille et le recrée
+ * s'il disparaît (suppression, message effacé) ou le rétablit s'il est désépinglé/déverrouillé.
  */
 export class HubService {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   /** Ids des posts épinglés, pour filtrer les messages sans requête BDD. */
   private readonly hubThreadIds = new Set<string>();
+  private readonly ensuring = new Map<string, Promise<string>>();
+  private watchdog: ScheduledTask | null = null;
 
   constructor(
     private readonly client: Client,
@@ -41,14 +45,77 @@ export class HubService {
     await message.delete().catch((err) => this.log.warn({ threadId: message.channelId, err }, 'Suppression impossible dans le post épinglé'));
   }
 
-  /** Crée le post épinglé dans `forum` (ou réutilise celui existant s'il y est encore). Renvoie son id. */
-  async ensure(forum: ForumChannel, m: Messages): Promise<string> {
+  /**
+   * Garantit que le forum du serveur a son post épinglé, complet (message présent, épinglé,
+   * verrouillé) ; le (re)crée sinon. Sérialisé par serveur : une suppression et la
+   * vérification périodique ne peuvent pas créer deux posts. Renvoie l'id du post.
+   */
+  ensure(forum: ForumChannel, m: Messages): Promise<string> {
+    const running = this.ensuring.get(forum.guildId);
+    if (running) return running;
+    const task = this.doEnsure(forum, m).finally(() => this.ensuring.delete(forum.guildId));
+    this.ensuring.set(forum.guildId, task);
+    return task;
+  }
+
+  /** Comme `ensure`, à partir des réglages du serveur ; ne fait rien si aucun forum n'est configuré. */
+  async ensureForGuild(guildId: string): Promise<void> {
+    const settings = await this.settings.get(guildId);
+    const forum = await fetchForum(this.client, settings.forumChannelId);
+    if (!forum) {
+      if (settings.forumChannelId) this.log.warn({ guildId, forumId: settings.forumChannelId }, 'Forum des réunions introuvable');
+      return;
+    }
+    await this.ensure(forum, messages(settings.locale));
+  }
+
+  /** Vérifie tous les serveurs configurés (démarrage + toutes les 15 min). */
+  async ensureAll(): Promise<void> {
+    for (const guildId of await this.repos.listConfiguredGuildIds()) {
+      if (!this.client.guilds.cache.has(guildId)) continue;
+      await this.ensureForGuild(guildId).catch((err) => this.log.warn({ guildId, err }, 'Vérification du post épinglé impossible'));
+    }
+  }
+
+  startWatchdog(): void {
+    this.watchdog = schedule('*/15 * * * *', () => this.ensureAll(), { name: 'hub-watchdog', noOverlap: true });
+    void this.ensureAll();
+  }
+
+  async stopWatchdog(): Promise<void> {
+    await this.watchdog?.stop();
+  }
+
+  /** Post épinglé supprimé : on le recrée aussitôt. */
+  async onThreadDelete(threadId: string, guildId: string): Promise<void> {
+    if (!this.hubThreadIds.delete(threadId)) return;
+    this.log.info({ guildId, threadId }, 'Post épinglé supprimé : recréation');
+    await this.ensureForGuild(guildId);
+  }
+
+  /** Post épinglé désépinglé ou déverrouillé : on rétablit. */
+  async onThreadUpdate(thread: ThreadChannel): Promise<void> {
+    if (!this.hubThreadIds.has(thread.id)) return;
+    if (!thread.flags.has(ChannelFlags.Pinned) || !thread.locked) await this.pinAndLock(thread);
+  }
+
+  private async doEnsure(forum: ForumChannel, m: Messages): Promise<string> {
     const settings = await this.settings.get(forum.guildId);
     const existing = await fetchThread(this.client, settings.hubThreadId);
     if (existing && existing.parentId === forum.id) {
-      await this.pinAndLock(existing);
-      await this.refreshNow(forum.guildId);
-      return existing.id;
+      const message = await existing.messages.fetch(existing.id).catch((err) => {
+        if (isUnknownMessage(err)) return null;
+        throw err;
+      });
+      if (message) {
+        this.hubThreadIds.add(existing.id);
+        await this.pinAndLock(existing);
+        return existing.id;
+      }
+      // Message du post supprimé : le post est inutilisable, on le remplace.
+      this.log.info({ guildId: forum.guildId, threadId: existing.id }, 'Message du post épinglé supprimé : remplacement');
+      this.hubThreadIds.delete(existing.id);
+      await existing.delete('Post épinglé incomplet, remplacé').catch(() => undefined);
     }
 
     const payload = renderHub(await this.upcoming(forum.guildId), m);
@@ -57,10 +124,11 @@ export class HubService {
       message: { ...payload, allowedMentions: { parse: [] } },
       reason: 'Post de création des réunions',
     });
-    await this.pinAndLock(thread);
-    await this.repos.updateSettings(forum.guildId, { hubThreadId: thread.id });
     if (settings.hubThreadId) this.hubThreadIds.delete(settings.hubThreadId);
     this.hubThreadIds.add(thread.id);
+    await this.repos.updateSettings(forum.guildId, { hubThreadId: thread.id });
+    await this.pinAndLock(thread);
+    this.log.info({ guildId: forum.guildId, threadId: thread.id }, 'Post épinglé créé');
     return thread.id;
   }
 
@@ -77,12 +145,15 @@ export class HubService {
 
   async refreshNow(guildId: string): Promise<void> {
     const settings = await this.settings.get(guildId);
+    if (!settings.forumChannelId) return;
     const thread = await fetchThread(this.client, settings.hubThreadId);
-    if (!thread) return;
-    const payload = renderHub(await this.upcoming(guildId), messages(settings.locale));
+    const message = thread ? await thread.messages.fetch(thread.id).catch(() => null) : null;
+    if (!thread || !message) {
+      await this.ensureForGuild(guildId); // absent ou incomplet : recréé (avec la liste à jour)
+      return;
+    }
     await ensureUnarchived(thread);
-    const message = await thread.messages.fetch(thread.id);
-    await message.edit({ ...payload, allowedMentions: { parse: [] } });
+    await message.edit({ ...renderHub(await this.upcoming(guildId), messages(settings.locale)), allowedMentions: { parse: [] } });
   }
 
   async flush(): Promise<void> {
@@ -102,6 +173,7 @@ export class HubService {
 
   /** Épinglé en tête du forum, et verrouillé : seuls les modérateurs peuvent y répondre. */
   private async pinAndLock(thread: ThreadChannel): Promise<void> {
+    if (thread.flags.has(ChannelFlags.Pinned) && thread.locked) return;
     try {
       await ensureUnarchived(thread);
       if (!thread.flags.has(ChannelFlags.Pinned)) await thread.pin('Post de création des réunions');

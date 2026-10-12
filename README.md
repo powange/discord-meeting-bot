@@ -8,7 +8,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 
 | Fonction | Détail |
 |---|---|
-| Post épinglé | Créé par `/config forum` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire. |
+| Post épinglé | Créé par `/config forum` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire. Le bot le surveille : supprimé (ou son message effacé), il est recréé aussitôt ; désépinglé ou déverrouillé, il est rétabli ; vérification complète au démarrage puis toutes les 15 min. |
 | `/reunion creer` | Même formulaire que le bouton : titre, jour (25 prochains jours), horaire (`18h` ou `18h-19h30`), salon vocal, description. Pour une date plus lointaine : `/reunion creer quand:15/01/2027 18h`. |
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |

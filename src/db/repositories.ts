@@ -36,6 +36,12 @@ export class Repositories {
     return created!;
   }
 
+  /** Serveurs dont le forum des réunions est configuré. */
+  async listConfiguredGuildIds(): Promise<string[]> {
+    const rows = await this.db.select({ id: guildSettings.guildId }).from(guildSettings).where(isNotNull(guildSettings.forumChannelId));
+    return rows.map((r) => r.id);
+  }
+
   async listHubThreadIds(): Promise<string[]> {
     const rows = await this.db.select({ id: guildSettings.hubThreadId }).from(guildSettings).where(isNotNull(guildSettings.hubThreadId));
     return rows.map((r) => r.id!);

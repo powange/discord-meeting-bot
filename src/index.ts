@@ -38,6 +38,7 @@ async function main(): Promise<void> {
       log.error({ err }, 'Enregistrement des commandes impossible');
     }
     scheduler.start();
+    hub.startWatchdog();
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
   client.on(Events.MessageCreate, (message) => {
@@ -45,6 +46,10 @@ async function main(): Promise<void> {
   });
   client.on(Events.ThreadDelete, (thread) => {
     meetings.onThreadDeleted(thread.id).catch((err) => log.error({ err, threadId: thread.id }, 'Suppression de post non traitée'));
+    hub.onThreadDelete(thread.id, thread.guildId).catch((err) => log.error({ err, threadId: thread.id }, 'Recréation du post épinglé impossible'));
+  });
+  client.on(Events.ThreadUpdate, (_old, thread) => {
+    hub.onThreadUpdate(thread).catch((err) => log.warn({ err, threadId: thread.id }, 'Rétablissement du post épinglé impossible'));
   });
   client.on(Events.Error, (err) => log.error({ err }, 'Erreur du client Discord'));
 
@@ -55,6 +60,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'Arrêt en cours');
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
+    await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);
     await hub.flush().catch(() => undefined);
     await client.destroy();
