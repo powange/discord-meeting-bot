@@ -32,7 +32,10 @@ export interface ParticipantStats {
   registered: boolean;
 }
 
-const BAR_LENGTH = 10;
+const BAR_LENGTH = 5;
+/** Une couleur par participant (dans l'ordre du classement), comme des tuiles. */
+const BAR_COLORS = ['🟦', '🟩', '🟨', '🟪', '🟧', '🟥', '🟫'];
+const BAR_EMPTY = '⬛';
 /** Les Components V2 limitent le texte total d'un message à 4000 caractères. */
 const PARTICIPANTS_BUDGET = 3000;
 
@@ -64,10 +67,10 @@ export function participantStats(input: SummaryInput): ParticipantStats[] {
     .sort((a, b) => b.speechMs - a.speechMs || b.presenceMs - a.presenceMs);
 }
 
-/** `▰▰▰▱▱▱▱▱▱▱` proportionnel à `pct`. */
-export function bar(pct: number, length = BAR_LENGTH): string {
+/** Barre de carrés emoji proportionnelle à `pct` (ex. 🟦🟦🟦⬛⬛), couleur selon le rang. */
+export function bar(pct: number, rank = 0, length = BAR_LENGTH): string {
   const filled = Math.max(0, Math.min(length, Math.round((pct / 100) * length)));
-  return '▰'.repeat(filled) + '▱'.repeat(length - filled);
+  return BAR_COLORS[rank % BAR_COLORS.length]!.repeat(filled) + BAR_EMPTY.repeat(length - filled);
 }
 
 export interface SummaryOptions {
@@ -104,10 +107,10 @@ export function renderRecordingSummary(input: SummaryInput, options: SummaryOpti
     )
     .addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
 
-  const lines = stats.map((p) => {
+  const lines = stats.map((p, rank) => {
     const who = `<@${p.userId}>${p.registered ? '' : ` *(${s.unannounced})*`}`;
     return p.recorded
-      ? s.participant(who, p.speechPct, bar(p.speechPct), m.format.duration(p.speechMs), m.format.duration(p.presenceMs), p.presencePct)
+      ? s.participant(who, p.speechPct, bar(p.speechPct, rank), m.format.duration(p.speechMs), m.format.duration(p.presenceMs), p.presencePct)
       : s.notRecorded(who, m.format.duration(p.presenceMs), p.presencePct);
   });
   container.addTextDisplayComponents((t) =>

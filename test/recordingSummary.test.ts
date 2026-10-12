@@ -56,9 +56,9 @@ describe('renderRecordingSummary', () => {
   });
 
   it('participation par personne, non inscrits et opt-out signalés, absents à part', () => {
-    expect(all).toContain('<@a> · **80 %**');
-    expect(all).toContain('<@b> *(non inscrit)* · **20 %**');
-    expect(all).toContain('<@c> · 🔇 non enregistré');
+    expect(all).toContain('**80 %** 🟦🟦🟦🟦⬛ <@a> · 🗣️ 8 min · ⏱️ 40 min (100 %)');
+    expect(all).toContain('**20 %** 🟩⬛⬛⬛⬛ <@b> *(non inscrit)*');
+    expect(all).toContain('🔇 <@c> · non enregistré');
     expect(all).toContain('### Inscrits absents\n<@d>');
   });
 
@@ -87,10 +87,11 @@ describe('renderRecordingSummary', () => {
 });
 
 describe('formats', () => {
-  it('barre proportionnelle', () => {
-    expect(bar(0)).toBe('▱▱▱▱▱▱▱▱▱▱');
-    expect(bar(80)).toBe('▰▰▰▰▰▰▰▰▱▱');
-    expect(bar(100)).toBe('▰▰▰▰▰▰▰▰▰▰');
+  it('barre proportionnelle, couleur selon le rang', () => {
+    expect(bar(0)).toBe('⬛⬛⬛⬛⬛');
+    expect(bar(80)).toBe('🟦🟦🟦🟦⬛');
+    expect(bar(100, 1)).toBe('🟩🟩🟩🟩🟩');
+    expect(bar(31, 7)).toBe('🟦🟦⬛⬛⬛');
   });
   it.each([
     [12_000, '12 s'],

@@ -150,12 +150,12 @@ export const fr = {
       `-# ${status} · ${reason} · ${from} → ${to} · ${duration} · ${people} participant${people > 1 ? 's' : ''} · ${segments} prise${segments > 1 ? 's' : ''} de parole`,
     participation: '### Participation',
     participant: (who: string, pct: number, bar: string, speech: string, presence: string, presencePct: number) =>
-      `${who} · **${pct} %**\n\`${bar}\` 🗣️ ${speech} · présent ${presence} (${presencePct} %)`,
-    notRecorded: (who: string, presence: string, presencePct: number) => `${who} · 🔇 non enregistré\n-# présent ${presence} (${presencePct} %)`,
+      `**${pct} %** ${bar} ${who} · 🗣️ ${speech} · ⏱️ ${presence} (${presencePct} %)`,
+    notRecorded: (who: string, presence: string, presencePct: number) => `🔇 ${who} · non enregistré · ⏱️ ${presence} (${presencePct} %)`,
     unannounced: 'non inscrit',
     noShow: '### Inscrits absents',
     nobody: "Personne n'a été enregistré.",
-    footnote: '-# Pourcentage : part du temps de parole total. Présence : part de la durée de l’enregistrement.',
+    footnote: '-# % : part du temps de parole total · 🗣️ temps de parole · ⏱️ présence dans le vocal (part de la durée).',
   },
 
   format: {
