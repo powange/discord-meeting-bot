@@ -75,7 +75,7 @@ Commandes utiles :
 
 L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/discord-meeting-bot` (tags `latest`, `sha-…` et versions `vX.Y.Z`). La stack se contente de la récupérer.
 
-1. **Une seule fois** : après le premier build, ouvrir GitHub → *Packages* → `discord-meeting-bot` → *Package settings* et passer la visibilité en **Public**. Sinon, Portainer devra s'authentifier sur ghcr.io.
+1. L'image est publique (elle hérite de la visibilité du dépôt) : Portainer la récupère sans identifiants.
 2. Dans Portainer : *Stacks* → *Add stack* → **Repository**.
    - Repository URL : `https://github.com/powange/discord-meeting-bot`
    - Compose path : `docker-compose.yml`
