@@ -1,0 +1,17 @@
+# Développement local : seulement PostgreSQL, le bot tourne sur l'hôte (npm run dev).
+name: meeting-bot-dev
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: meetingbot
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+
+volumes:
+  pgdata-dev:

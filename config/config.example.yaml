@@ -1,0 +1,35 @@
+# Configuration du bot. Les secrets ne sont jamais écrits ici : ${VAR} ou ${VAR:-défaut}
+# sont remplacés par les variables d'environnement au démarrage. Le fichier est validé
+# au démarrage ; toute clé inconnue est refusée.
+#
+# Sans fichier, le bot fonctionne avec DISCORD_TOKEN et DATABASE_URL seuls.
+
+discord:
+  token: ${DISCORD_TOKEN}
+  # Serveurs de test : commandes enregistrées instantanément sur ces serveurs plutôt qu'en global.
+  commandGuildIds: []
+
+database:
+  url: ${DATABASE_URL}
+
+logLevel: ${LOG_LEVEL:-info}
+
+scheduler:
+  tickSeconds: 30
+
+# Valeurs par défaut pour tous les serveurs…
+defaults:
+  # Réglages initiaux d'un serveur. Ils ne servent qu'à sa première utilisation :
+  # ensuite, ils se modifient avec /config (et c'est la BDD qui fait foi).
+  seed:
+    timezone: Europe/Paris
+    locale: fr
+    reminderOffsetsMin: [1440, 15] # J-1 et 15 min avant
+    defaultDurationMin: 60
+    autoRecordDefault: false
+
+# … surchargées serveur par serveur (fusion profonde avec `defaults`).
+guilds: {}
+#  "123456789012345678":
+#    seed:
+#      defaultDurationMin: 90

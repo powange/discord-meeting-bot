@@ -1,0 +1,104 @@
+import { RSVP_STATUSES, type RsvpStatus } from './types.js';
+
+/**
+ * customId persistants : tout l'état nécessaire est encodé dans l'id (pas de collecteur en mémoire),
+ * ce qui permet aux boutons de fonctionner après un redémarrage. Préfixe de version pour pouvoir
+ * changer le format sans casser les anciens messages.
+ */
+export type Action =
+  | { type: 'rsvp'; meetingId: string; status: RsvpStatus }
+  | { type: 'agenda.add'; meetingId: string }
+  | { type: 'agenda.addSubmit'; meetingId: string }
+  | { type: 'agenda.manage'; meetingId: string }
+  | { type: 'agenda.select'; meetingId: string }
+  | { type: 'agenda.move'; meetingId: string; itemId: number; direction: 'up' | 'down' }
+  | { type: 'agenda.remove'; meetingId: string; itemId: number }
+  | { type: 'agenda.lock'; meetingId: string; locked: boolean }
+  | { type: 'meeting.edit'; meetingId: string }
+  | { type: 'meeting.editSubmit'; meetingId: string }
+  | { type: 'meeting.createSubmit' };
+
+const VERSION = 'v1';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function encode(action: Action): string {
+  const parts: Array<string | number> = [VERSION];
+  switch (action.type) {
+    case 'rsvp':
+      parts.push('rsvp', action.meetingId, action.status);
+      break;
+    case 'agenda.move':
+      parts.push('agenda', 'move', action.meetingId, action.itemId, action.direction);
+      break;
+    case 'agenda.remove':
+      parts.push('agenda', 'remove', action.meetingId, action.itemId);
+      break;
+    case 'agenda.lock':
+      parts.push('agenda', 'lock', action.meetingId, action.locked ? 1 : 0);
+      break;
+    case 'meeting.createSubmit':
+      parts.push('meeting', 'createSubmit');
+      break;
+    default: {
+      const [group, verb] = action.type.split('.') as [string, string];
+      parts.push(group, verb, action.meetingId);
+    }
+  }
+  const id = parts.join(':');
+  if (id.length > 100) throw new Error(`customId trop long (${id.length}) : ${id}`);
+  return id;
+}
+
+/** Décode un customId ; renvoie `null` pour tout ce qui n'est pas à nous ou est malformé. */
+export function decode(customId: string): Action | null {
+  const [version, group, ...rest] = customId.split(':');
+  if (version !== VERSION || group === undefined) return null;
+
+  if (group === 'rsvp') {
+    const [meetingId, status] = rest;
+    if (!isUuid(meetingId) || !RSVP_STATUSES.includes(status as RsvpStatus) || rest.length !== 2) return null;
+    return { type: 'rsvp', meetingId, status: status as RsvpStatus };
+  }
+
+  const [verb, meetingId, a, b] = rest;
+  if (group === 'meeting' && verb === 'createSubmit' && rest.length === 1) return { type: 'meeting.createSubmit' };
+  if (!isUuid(meetingId)) return null;
+
+  if (group === 'meeting') {
+    if (rest.length !== 2) return null;
+    if (verb === 'edit') return { type: 'meeting.edit', meetingId };
+    if (verb === 'editSubmit') return { type: 'meeting.editSubmit', meetingId };
+    return null;
+  }
+
+  if (group === 'agenda') {
+    switch (verb) {
+      case 'add':
+      case 'addSubmit':
+      case 'manage':
+      case 'select':
+        return rest.length === 2 ? { type: `agenda.${verb}`, meetingId } : null;
+      case 'move': {
+        const itemId = toId(a);
+        if (itemId === null || (b !== 'up' && b !== 'down') || rest.length !== 4) return null;
+        return { type: 'agenda.move', meetingId, itemId, direction: b };
+      }
+      case 'remove': {
+        const itemId = toId(a);
+        return itemId !== null && rest.length === 3 ? { type: 'agenda.remove', meetingId, itemId } : null;
+      }
+      case 'lock':
+        return (a === '1' || a === '0') && rest.length === 3 ? { type: 'agenda.lock', meetingId, locked: a === '1' } : null;
+    }
+  }
+  return null;
+}
+
+function isUuid(value: string | undefined): value is string {
+  return value !== undefined && UUID_RE.test(value);
+}
+
+function toId(value: string | undefined): number | null {
+  if (value === undefined || !/^\d{1,10}$/.test(value)) return null;
+  return Number(value);
+}
