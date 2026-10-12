@@ -7,8 +7,8 @@ import {
   TextInputBuilder,
   TextInputStyle,
   type ButtonInteraction,
-  type ChatInputCommandInteraction,
   type ModalSubmitInteraction,
+  type StringSelectMenuInteraction,
 } from 'discord.js';
 import type { AppContext } from '../../context.js';
 import type { TranscriptionBackendRow } from '../../db/schema.js';
@@ -23,11 +23,11 @@ type PanelInteraction = ButtonInteraction<'cached'> | ModalSubmitInteraction<'ca
 
 const F = { name: 'name', type: 'type', url: 'url', model: 'model', key: 'key' } as const;
 
-/** `/config transcription` : ouvre le panneau (message éphémère). */
-export async function openBackendPanel(ctx: AppContext, interaction: ChatInputCommandInteraction<'cached'>): Promise<void> {
+/** Depuis le panneau /config : remplace la vue par celle des serveurs de transcription. */
+export async function openBackendPanelInPlace(ctx: AppContext, interaction: StringSelectMenuInteraction<'cached'>): Promise<void> {
   const m = await ctx.settings.messages(interaction.guildId);
   const canEdit = ctx.owners.isOwner(interaction.user.id);
-  await interaction.reply({ ...(await panel(ctx, interaction.guildId, { canEdit }, m)), flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+  await interaction.update(await panel(ctx, interaction.guildId, { canEdit }, m));
 }
 
 /** Actions de consultation, permises aux administrateurs ; tout le reste est réservé aux propriétaires du bot. */

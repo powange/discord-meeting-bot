@@ -8,7 +8,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 
 | Fonction | Détail |
 |---|---|
-| Post épinglé | Créé par `/config forum` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire : tout message posté est supprimé (le post n'est pas verrouillé, sinon les membres ne pourraient plus cliquer). Le bot le surveille : supprimé (ou son message effacé), il est recréé aussitôt ; désépinglé, verrouillé ou archivé, il est rétabli ; vérification complète au démarrage puis toutes les 15 min. |
+| Post épinglé | Créé quand on choisit le forum dans `/config` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire : tout message posté est supprimé (le post n'est pas verrouillé, sinon les membres ne pourraient plus cliquer). Le bot le surveille : supprimé (ou son message effacé), il est recréé aussitôt ; désépinglé, verrouillé ou archivé, il est rétabli ; vérification complète au démarrage puis toutes les 15 min. |
 | `/reunion creer` | Même formulaire que le bouton : titre, jour (25 prochains jours), horaire (`18h` ou `18h-19h30`), salon vocal, description. Pour une date plus lointaine : `/reunion creer quand:15/01/2027 18h`. |
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
@@ -18,7 +18,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |
 | Clôture auto | **Uniquement quand le vocal est vide** depuis 5 min, compté depuis le départ de la dernière personne (ou depuis la fin prévue si personne n'est venu). Une réunion qui déborde n'est jamais coupée tant qu'il reste quelqu'un. |
-| `/config` | `transcription` (panneau des serveurs de transcription, voir phase 3), `forum`, `vocal` (impose un salon vocal à toutes les réunions ; sans option, choix libre), `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
+| `/config` | Une seule commande, réservée à « Gérer le serveur », qui ouvre un **panneau interactif**. L'accueil résume tous les réglages ; un menu ouvre chaque section : Forum, Salon vocal (imposé ou libre), Rôles, Rappels, Général (fuseau, durée, création), Enregistrement auto, Transcription. Les réglages se font avec des sélecteurs de salon et de rôle, des boutons et de petits formulaires. |
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
 
@@ -27,10 +27,10 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 | Fonction | Détail |
 |---|---|
 | Démarrer | Message **🎙️ Enregistrement** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). Il devient **⏹️ Arrêter** pendant l'enregistrement. |
-| Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur avec `/config general enregistrement-auto:True`. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
+| Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
 | Pendant | Le bot est dans le vocal, micro coupé. Avertissement dans le post et dans le chat du vocal. La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
-| Opt-out | Rôle « ne pas m'enregistrer » (`/config roles ne-pas-enregistrer:`). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
+| Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
 | Fin | Bouton Arrêter, `/reunion terminer`, ou clôture automatique de la réunion (vocal vide depuis 5 min). |
 | Bilan | Message silencieux dans le post : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
@@ -50,7 +50,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 ### Tester la phase 2
 
 1. Activer **Server Members Intent** (déjà requis), et vérifier que le bot voit le salon vocal et peut s'y connecter.
-2. Optionnel : `/config roles ne-pas-enregistrer:@NePasEnregistrer`, puis placer ce rôle sous celui du bot.
+2. Optionnel : choisir le rôle « ne pas m'enregistrer » dans `/config` → Rôles, puis placer ce rôle sous celui du bot.
 3. Créer une réunion dans quelques minutes et rejoindre le vocal à deux. À l'heure prévue, le message **🎙️ Enregistrement** apparaît : cliquer **🔴 Enregistrer**.
 4. Parler à tour de rôle, faire `/enregistrement refuser` avec un compte et vérifier que sa voix n'est plus captée.
 5. **⏹️ Arrêter l'enregistrement** dans ce message : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
@@ -80,7 +80,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 2. **Secours** (optionnel) : un serveur compatible OpenAI (speaches / faster-whisper) sur une autre machine, ajouté après Vibe dans la liste.
 3. **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
 4. **LiteLLM** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), et ajouter `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, définir `LLM_BASE_URL=http://hôte-ollama:11434/v1` et `LLM_MODEL=qwen3:14b`.
-5. **Serveurs de transcription** : `/config transcription` ouvre un panneau privé. **Seuls les propriétaires du bot peuvent modifier la liste** : le propriétaire de l'application Discord, plus la liste `owners` du YAML. Les administrateurs des serveurs peuvent consulter et tester. Avec `ai.allowedHosts`, le bot n'appelle que les hôtes autorisés (par exemple `*.tailnet.ts.net`, `192.168.1.0/24`), et il ne suit jamais une redirection.
+5. **Serveurs de transcription** : `/config` → Transcription. **Seuls les propriétaires du bot peuvent modifier la liste** : le propriétaire de l'application Discord, plus la liste `owners` du YAML. Les administrateurs des serveurs peuvent consulter et tester. Avec `ai.allowedHosts`, le bot n'appelle que les hôtes autorisés (par exemple `*.tailnet.ts.net`, `192.168.1.0/24`), et il ne suit jamais une redirection.
    - **Ajouter** un serveur, jusqu'à 4, avec un formulaire : nom, type Vibe ou compatible OpenAI, URL, modèle, clé d'API.
    - **Gérer chaque serveur** avec ses boutons : ✏️ Modifier · ⬆️ Monter · ⏸️ Désactiver / ▶️ Activer · 🧪 Tester · 🗑️ Supprimer (avec confirmation). L'ordre de la liste est l'ordre de bascule.
    - **Tester** : un vrai essai (santé, puis transcription d'une seconde de silence), avec la latence affichée sous le serveur. Un test est aussi lancé automatiquement après chaque ajout ou modification.
@@ -109,7 +109,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    - Créer et gérer les événements
    - Se connecter (enregistrement)
    - Gérer les rôles : uniquement pour `/enregistrement refuser|accepter`. Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
-5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) et lancer `/config forum salon:#réunions`.
+5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions.
 
 > Discord ne sait pas trier les posts d'un forum selon la date de la réunion : seulement par activité récente ou par date de création. L'ordre chronologique se lit dans le post épinglé.
 
@@ -138,8 +138,8 @@ Commandes utiles :
 
 ### Scénario de test manuel
 
-1. `/config forum` : les 4 tags apparaissent sur le forum.
-2. `/config rappels delais:"5min, 2min"`, pour voir passer les rappels rapidement.
+1. `/config` → Forum des réunions : les 4 tags et le post épinglé apparaissent sur le forum.
+2. `/config` → Rappels → « 5min, 2min », pour voir passer les rappels rapidement.
 3. `/reunion creer` avec une date dans 8 minutes. Vérifier que le post, la carte et l'événement Discord sont créés.
 4. Avec deux comptes, répondre (Présent / Peut-être) et ajouter des points à l'ordre du jour. La carte se met à jour en environ une seconde.
 5. Avec **Gérer l'ODJ**, réordonner, retirer un point et verrouiller. Avec le second compte, vérifier que l'ajout est refusé.

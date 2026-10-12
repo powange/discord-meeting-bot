@@ -21,7 +21,7 @@ import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from 
 type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
 
 /** Traite un bouton, menu ou formulaire dont le customId a été décodé. */
-export async function handleAction(ctx: AppContext, interaction: ComponentInteraction, action: Exclude<Action, { type: 'tx' }>): Promise<void> {
+export async function handleAction(ctx: AppContext, interaction: ComponentInteraction, action: Exclude<Action, { type: 'tx' } | { type: 'cfg' }>): Promise<void> {
   if (action.type === 'meeting.create') {
     if (!interaction.isButton()) return;
     return showCreateModal(ctx, interaction);

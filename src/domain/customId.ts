@@ -18,6 +18,7 @@ export type Action =
   | { type: 'meeting.editSubmit'; meetingId: string }
   | { type: 'report.retry'; meetingId: string }
   | { type: 'tx'; action: TxAction; backendId: number | null }
+  | { type: 'cfg'; action: CfgAction }
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
   | { type: 'meeting.create' }
@@ -26,6 +27,25 @@ export type Action =
 /** Actions du panneau des serveurs de transcription (`backendId` : serveur visé, sinon null). */
 export const TX_ACTIONS = ['select', 'up', 'down', 'toggle', 'test', 'delete', 'confirmDelete', 'edit', 'editSubmit', 'add', 'addSubmit', 'testAll'] as const;
 export type TxAction = (typeof TX_ACTIONS)[number];
+
+/** Actions du panneau /config (navigation et réglages). */
+export const CFG_ACTIONS = [
+  'home',
+  'section',
+  'forum',
+  'voice',
+  'voiceClear',
+  'roleManager',
+  'roleOptout',
+  'roleNudge',
+  'remindersEdit',
+  'remindersSubmit',
+  'generalEdit',
+  'generalSubmit',
+  'toggleCreators',
+  'toggleAutoRecord',
+] as const;
+export type CfgAction = (typeof CFG_ACTIONS)[number];
 
 const VERSION = 'v1';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -51,6 +71,9 @@ export function encode(action: Action): string {
     case 'tx':
       parts.push('tx', action.action, action.backendId ?? '-');
       break;
+    case 'cfg':
+      parts.push('cfg', action.action);
+      break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
       break;
@@ -73,6 +96,11 @@ export function decode(customId: string): Action | null {
     const [meetingId, status] = rest;
     if (!isUuid(meetingId) || !RSVP_STATUSES.includes(status as RsvpStatus) || rest.length !== 2) return null;
     return { type: 'rsvp', meetingId, status: status as RsvpStatus };
+  }
+
+  if (group === 'cfg') {
+    const [action] = rest;
+    return rest.length === 1 && CFG_ACTIONS.includes(action as CfgAction) ? { type: 'cfg', action: action as CfgAction } : null;
   }
 
   if (group === 'tx') {

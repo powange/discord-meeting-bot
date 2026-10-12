@@ -7,7 +7,7 @@ import { truncate } from '../../lib/text.js';
 /**
  * Nombre maximal de serveurs : chaque serveur occupe 8 composants (bloc, texte, bouton
  * Modifier, rangée de 4 boutons) et Discord limite un message à 40 composants, conteneur
- * compris (4 serveurs + en-tête + boutons généraux = 38).
+ * compris (4 serveurs + en-tête + boutons généraux et retour = 39).
  */
 export const MAX_BACKENDS = 4;
 
@@ -79,12 +79,12 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
 
   container.addSeparatorComponents((s) => s.setSpacing(SeparatorSpacingSize.Large));
   const canTestAll = rows.some((r) => r.enabled) || (rows.length === 0 && Boolean(state.yamlFallback?.length));
-  if (canEdit || canTestAll) {
-    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => {
-      if (canEdit) row.addComponents(button('add', null, '➕', p.add, ButtonStyle.Success).setDisabled(rows.length >= MAX_BACKENDS));
-      if (canTestAll) row.addComponents(button('testAll', null, '🧪', p.testAll));
-      return row;
-    });
-  }
+  container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => {
+    if (canEdit) row.addComponents(button('add', null, '➕', p.add, ButtonStyle.Success).setDisabled(rows.length >= MAX_BACKENDS));
+    if (canTestAll) row.addComponents(button('testAll', null, '🧪', p.testAll));
+    // Retour à l'accueil du panneau /config.
+    row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'cfg', action: 'home' })).setEmoji('↩️').setLabel(m.config.back).setStyle(ButtonStyle.Secondary));
+    return row;
+  });
   return container.toJSON();
 }
