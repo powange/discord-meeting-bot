@@ -33,3 +33,10 @@ export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
 
 /** Raison de fin d'un enregistrement. */
 export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disconnected';
+
+/** Étapes du traitement post-réunion (la phase 4 ajoutera mix et upload). */
+export const PIPELINE_STEPS = ['transcribe', 'summarize', 'publish'] as const;
+export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+
+export const STEP_STATUSES = ['pending', 'running', 'done', 'failed'] as const;
+export type StepStatus = (typeof STEP_STATUSES)[number];

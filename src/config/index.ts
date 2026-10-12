@@ -4,13 +4,14 @@ import { z } from 'zod';
 import { deepMerge, interpolateEnv } from './env.js';
 import { guildBlockSchema, rootSchema, type GuildBlock } from './schema.js';
 
-export type { GuildBlock, GuildSeed, RecordingConfig } from './schema.js';
+export type { BackendConfig, GuildBlock, GuildSeed, LlmConfig, RecordingConfig, TranscriptionConfig } from './schema.js';
 
 export interface AppConfig {
   discord: { token: string; commandGuildIds: string[] };
   database: { url: string };
   logLevel: string;
   dataDir: string;
+  ffmpegPath: string | undefined;
   scheduler: { tickSeconds: number };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
   guild(guildId: string): GuildBlock;
@@ -22,6 +23,10 @@ const FALLBACK = {
   database: { url: '${DATABASE_URL}' },
   logLevel: '${LOG_LEVEL:-info}',
   dataDir: '${DATA_DIR:-data}',
+  ffmpegPath: '${FFMPEG_PATH:-}',
+  defaults: {
+    llm: { baseUrl: '${LLM_BASE_URL:-http://litellm:4000/v1}', apiKey: '${LLM_API_KEY:-}', model: '${LLM_MODEL:-summary}' },
+  },
 };
 
 export class ConfigError extends Error {
@@ -54,6 +59,7 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     database: root.database,
     logLevel: root.logLevel,
     dataDir: root.dataDir,
+    ffmpegPath: root.ffmpegPath || undefined,
     scheduler: root.scheduler,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,
   };

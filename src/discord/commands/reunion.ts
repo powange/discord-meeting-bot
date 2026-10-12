@@ -30,6 +30,12 @@ const data = new SlashCommandBuilder()
   .addSubcommand((s) => s.setName('terminer').setDescription('Clore la réunion de ce post'))
   .addSubcommand((s) =>
     s
+      .setName('compte-rendu')
+      .setDescription('Générer à nouveau le compte rendu de cette réunion')
+      .addBooleanOption((o) => o.setName('retranscrire').setDescription('Refaire aussi la transcription (défaut : non, seulement le résumé)')),
+  )
+  .addSubcommand((s) =>
+    s
       .setName('enregistrement-auto')
       .setDescription("Enregistrer automatiquement cette réunion dès son début (le bot rejoint le vocal)")
       .addBooleanOption((o) => o.setName('actif').setDescription('Oui pour enregistrer automatiquement').setRequired(true)),
@@ -82,6 +88,17 @@ export const reunion: Command = {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const ok = await ctx.meetings.end(meeting.id, interaction.user.id);
         await replyEphemeral(interaction, ok ? m.replies.ended : m.errors.meetingClosed);
+        return;
+      }
+
+      case 'compte-rendu': {
+        requireManager(scope);
+        if (ctx.recordings.isRecording(meeting.id)) throw new UserError(m.errors.alreadyRecording);
+        if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
+        const recordings = await ctx.repos.listRecordingsForMeeting(meeting.id);
+        if (recordings.length === 0) throw new UserError(m.pipeline.nothing);
+        await ctx.pipeline.regenerate(meeting.id, interaction.options.getBoolean('retranscrire') ?? false);
+        await replyEphemeral(interaction, m.pipeline.scheduled);
         return;
       }
 

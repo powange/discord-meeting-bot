@@ -51,6 +51,36 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 6. Tester l'automatique : `/reunion enregistrement-auto actif:True` sur une réunion dans 5 min. Le bot arrive à H-2.
 7. Rester au-delà de l'heure de fin : rien ne se coupe. Puis quitter le vocal : 5 min après, la réunion est close et l'enregistrement s'arrête.
 
+## Phase 3 — Transcription et compte rendu
+
+| Fonction | Détail |
+|---|---|
+| Déclenchement | À la **clôture** de la réunion (manuelle ou vocal vide), s'il y a de la parole enregistrée. Une réunion à la fois. |
+| Suivi | Message **📝 Compte rendu** dans le post : ⬜ ⏳ ✅ ❌ par étape, avec la progression (blocs transcrits, passes de résumé). |
+| Transcription | Prises de parole regroupées en blocs par personne, assemblées en WAV 16 kHz par ffmpeg, puis envoyées au **premier backend disponible** de `transcription.backends`. Health check court, puis bascule au suivant en cas d'erreur, de délai dépassé ou de « occupé » (Vibe ne traite qu'une requête à la fois). Les hallucinations connues de Whisper sont filtrées. Pas de diarisation nécessaire : chaque piste a son auteur. |
+| Résumé | Via LiteLLM (ou Ollama directement). Structuré **par point d'ordre du jour** : synthèse, décisions, actions (qui / échéance), questions ouvertes, sujets hors ODJ, points non traités. Une réunion longue est résumée **en plusieurs passes** (morceaux, puis fusion). |
+| Publication | Compte rendu en Components V2, découpé sur plusieurs messages si besoin, avec la **transcription complète en `.md`** jointe. Les responsables d'actions reconnus sont mentionnés, donc notifiés. La trace des modèles utilisés est en pied de message. |
+| Échec | L'étape passe en ❌ avec l'erreur et un bouton **🔁 Relancer** (organisateur ou gestionnaire) : seule l'étape en échec et les suivantes sont refaites, les blocs déjà transcrits sont conservés. Un arrêt du bot reprend au démarrage. |
+| Régénérer | `/reunion compte-rendu` dans le post (résumé et publication), avec `retranscrire:True` pour tout refaire. L'ancien compte rendu est remplacé. |
+
+### Mettre en place l'IA
+
+1. **Vibe** sur le PC GPU : télécharger `vibe-server` (releases `server-v*` de [thewh1teagle/vibe](https://github.com/thewh1teagle/vibe/releases)) et un modèle (`vibe-server pull <url>`, par exemple `ggml-large-v3-turbo.bin`), puis lancer :
+   ```
+   vibe-server serve C:\models\ggml-large-v3-turbo.bin --host 0.0.0.0 --port 8080 --exit-with-parent false
+   ```
+   Pour qu'il démarre avec Windows, en faire un service, avec NSSM par exemple. Vibe n'a **ni authentification ni TLS** : l'exposer uniquement sur le LAN ou Tailscale. Vérifier depuis le serveur : `curl http://pc-main.tailnet:8080/ready`.
+2. **Secours** (optionnel) : un serveur compatible OpenAI (speaches / faster-whisper) sur une autre machine, ajouté après Vibe dans la liste.
+3. **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
+4. **LiteLLM** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), et ajouter `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, définir `LLM_BASE_URL=http://hôte-ollama:11434/v1` et `LLM_MODEL=qwen3:14b`.
+5. **Config du bot** : section `transcription.backends` de `config.yaml` (voir [config/config.example.yaml](config/config.example.yaml)), puis décommenter `CONFIG_PATH` et le volume de config dans la stack.
+
+### Tester la phase 3
+
+- **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore avec `/reunion terminer`.
+- **Sur une réunion déjà enregistrée** : `/reunion compte-rendu` dans son post.
+- **Tests automatiques** : `TEST_DATABASE_URL=… npm test` lance aussi un test de bout en bout : vraies pistes OGG, ffmpeg, bascule entre serveurs simulés, LLM simulé, relance et reprise.
+
 ## 1. Créer l'application Discord
 
 1. Sur https://discord.com/developers/applications, créer une application puis ouvrir l'onglet **Bot**.

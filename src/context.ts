@@ -2,6 +2,7 @@ import type { Client } from 'discord.js';
 import type { AppConfig } from './config/index.js';
 import type { Repositories } from './db/repositories.js';
 import type { Logger } from './lib/logger.js';
+import type { PipelineService } from './pipeline/runner.js';
 import type { CardService } from './services/cards.js';
 import type { HubService } from './services/hub.js';
 import type { MeetingService } from './services/meetings.js';
@@ -18,4 +19,5 @@ export interface AppContext {
   hub: HubService;
   meetings: MeetingService;
   recordings: RecordingService;
+  pipeline: PipelineService;
 }

@@ -6,6 +6,8 @@ import { createClient, Events } from './discord/client.js';
 import { routeInteraction } from './discord/interactions/router.js';
 import { registerCommands } from './discord/registerCommands.js';
 import { createLogger } from './lib/logger.js';
+import { PipelineService } from './pipeline/runner.js';
+import { createSteps } from './pipeline/steps.js';
 import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
@@ -29,11 +31,14 @@ async function main(): Promise<void> {
   const hub = new HubService(client, repos, settings, log);
   const meetings = new MeetingService(config, client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
   const recordings = new RecordingService(client, repos, settings, cards, config, log);
+  const pipelineDeps = { client, repos, settings, config, log };
+  const pipeline = new PipelineService(pipelineDeps, createSteps(pipelineDeps));
   meetings.hooks = {
     afterStart: (meeting) => recordings.onMeetingStarted(meeting),
     beforeClose: (meetingId) => recordings.onMeetingClosing(meetingId),
+    afterEnd: (meetingId) => pipeline.scheduleIfRecorded(meetingId),
   };
-  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings };
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   await hub.load();
@@ -48,6 +53,7 @@ async function main(): Promise<void> {
     await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
     scheduler.start();
     watcher.start();
+    await pipeline.resume().catch((err) => log.error({ err }, 'Reprise des comptes rendus impossible'));
     hub.startWatchdog();
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
     // des réunions ouvertes, sans notification (simple édition des messages existants).
@@ -78,6 +84,7 @@ async function main(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
     watcher.stop();
+    await pipeline.stop().catch(() => undefined);
     await recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet'));
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);

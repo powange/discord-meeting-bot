@@ -158,6 +158,37 @@ export const fr = {
     footnote: '-# % : part du temps de parole total · 🗣️ temps de parole · ⏱️ présence dans le vocal (part de la durée).',
   },
 
+  report: {
+    title: 'Compte rendu',
+    offAgenda: 'hors ordre du jour',
+    decisions: 'Décisions',
+    actions: 'Actions',
+    questions: 'Questions ouvertes',
+    notCovered: 'Points non traités',
+    empty: "Aucun contenu exploitable n'a été retenu de la transcription.",
+    subtitle: (when: string, duration: string, people: number) => `${when} · ${duration} · ${people} participant${people > 1 ? 's' : ''}`,
+    trace: (transcription: string, llm: string, passes: number) =>
+      `Transcription : ${transcription} · Résumé : ${llm} · ${passes} passe${passes > 1 ? 's' : ''}`,
+    noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
+  },
+
+  pipeline: {
+    title: '## 📝 Compte rendu',
+    steps: { transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication' } as Record<string, string>,
+    pending: '⬜',
+    running: '⏳',
+    done: '✅',
+    failed: '❌',
+    progressTranscribe: (done: number, total: number) => `${done}/${total} bloc${total > 1 ? 's' : ''}`,
+    progressSummarize: (pass: number, total: number) => `passe ${pass}/${total}`,
+    published: (url: string) => `Compte rendu publié : ${url}`,
+    failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut le relancer : seules les étapes en échec sont refaites.",
+    retry: 'Relancer',
+    scheduled: 'Compte rendu programmé : il sera publié dans le post.',
+    nothing: "Aucun enregistrement exploitable pour cette réunion.",
+    running_reply: 'Un traitement est déjà en cours pour cette réunion.',
+  },
+
   format: {
     /** Durée précise : « 45 s », « 12 min 30 s », « 1 h 05 ». */
     duration: (ms: number) => {

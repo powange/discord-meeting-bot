@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { freshDatabase } from './helpers/db.js';
 import { createDb, runMigrations, type Db } from '../src/db/client.js';
 import { Repositories } from '../src/db/repositories.js';
 import { planJobs } from '../src/domain/reminders.js';
@@ -17,8 +18,7 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
   let repos: Repositories;
 
   beforeAll(async () => {
-    ({ db, pool } = createDb(url!));
-    await db.execute('drop schema if exists public cascade; drop schema if exists drizzle cascade; create schema public;');
+    ({ db, pool } = createDb(await freshDatabase(url!, 'repos')));
     await runMigrations(db);
     repos = new Repositories(db);
   });

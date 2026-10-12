@@ -16,6 +16,8 @@ logLevel: ${LOG_LEVEL:-info}
 
 # Données locales (pistes audio). Dans Docker : /data (volume).
 dataDir: ${DATA_DIR:-data}
+# ffmpeg : vide = ffmpeg-static en développement, `ffmpeg` de l'image en production.
+# ffmpegPath: /usr/bin/ffmpeg
 
 scheduler:
   tickSeconds: 30
@@ -36,6 +38,32 @@ defaults:
     endWhenEmptyMin: 5 # vocal vide depuis 5 min : clôture de la réunion (et de l'enregistrement), jamais sur l'heure de fin
     silenceMs: 1500 # silence qui clôt une prise de parole
     decryptionFailureTolerance: 48 # DAVE : échecs de déchiffrement tolérés avant réinitialisation
+
+  # Transcription (phase 3) : backends par ordre de priorité, bascule au suivant en cas d'erreur,
+  # de délai dépassé ou de serveur occupé. Vibe : https://github.com/thewh1teagle/vibe (vibe-server).
+  transcription:
+    language: fr
+    # prompt: "Vocabulaire du groupe : CA, AG, trésorerie…" # aide la reconnaissance des noms propres
+    backends:
+      - name: vibe-pc-main
+        type: vibe # vibe-server serve <modèle> --host 0.0.0.0 --port 8080 --exit-with-parent false
+        url: http://pc-main.tailnet:8080
+        timeoutSec: 600
+      - name: speaches-secours
+        type: openai # serveur compatible OpenAI (speaches, faster-whisper-server…)
+        url: http://pc-secours.tailnet:8000/v1
+        model: Systran/faster-whisper-large-v3
+        # apiKey: ${SPEACHES_KEY}
+    maxGapSec: 4 # prises de parole d'une même personne à moins de 4 s : transcrites ensemble
+    maxBlockMin: 5
+
+  # Résumé (phase 3) : LiteLLM (recommandé) ou Ollama directement (http://hôte:11434/v1).
+  llm:
+    baseUrl: ${LLM_BASE_URL:-http://litellm:4000/v1}
+    apiKey: ${LLM_API_KEY:-}
+    model: ${LLM_MODEL:-summary}
+    chunkTokens: 6000 # au-delà, résumé en plusieurs passes (morceaux puis fusion)
+    timeoutSec: 600
 
 # … surchargées serveur par serveur (fusion profonde avec `defaults`).
 guilds: {}

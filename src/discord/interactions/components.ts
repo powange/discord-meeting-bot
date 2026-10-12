@@ -112,6 +112,14 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       return;
     }
 
+    case 'report.retry': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await ctx.pipeline.retry(meeting.id);
+      await interaction.deferUpdate(); // le message de suivi se met à jour de lui-même
+      return;
+    }
+
     case 'rec.start': {
       if (!interaction.isButton()) return;
       requireManager(scope);

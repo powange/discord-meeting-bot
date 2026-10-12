@@ -22,6 +22,8 @@ export interface MeetingHooks {
   afterStart(meeting: MeetingRow): Promise<unknown>;
   /** Avant clôture ou annulation (arrêt de l'enregistrement, bilan avant le message de fin). */
   beforeClose(meetingId: string): Promise<unknown>;
+  /** Après la clôture (pas l'annulation) : lancement du compte rendu. */
+  afterEnd(meetingId: string): Promise<unknown>;
 }
 
 export interface MeetingInput {
@@ -40,7 +42,7 @@ export interface MeetingInput {
 export class MeetingService {
   private readonly events: ScheduledEvents;
   /** Branchements de l'enregistrement (phase 2), renseignés au démarrage. */
-  hooks: MeetingHooks = { afterStart: async () => undefined, beforeClose: async () => undefined };
+  hooks: MeetingHooks = { afterStart: async () => undefined, beforeClose: async () => undefined, afterEnd: async () => undefined };
 
   constructor(
     private readonly config: AppConfig,
@@ -176,6 +178,7 @@ export class MeetingService {
     if (guild) await this.events.complete(guild, meeting.scheduledEventId);
     this.onChange(meeting.guildId);
     this.log.info({ meetingId, by }, 'Réunion close');
+    await this.hooks.afterEnd(meeting.id).catch((err) => this.warn(meeting, 'Lancement du compte rendu impossible', err));
     return true;
   }
 

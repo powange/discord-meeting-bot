@@ -1,6 +1,6 @@
 # Bot réunions — proposition d'architecture
 
-> Statut : **phases 1 et 2 livrées**. Doc des libs vérifiée le 2026-10-12.
+> Statut : **phases 1 à 3 livrées**. Doc des libs vérifiée le 2026-10-12.
 >
 > Écarts entre cette proposition et l'implémentation de la phase 1 :
 > - **npm** au lieu de pnpm (pas de pnpm dans l'environnement ; aucun impact fonctionnel).
@@ -14,6 +14,13 @@
 > - **Pas de prism-media** : sa version 2 (seule à écrire de l'OGG) exige `node-crc`, un module natif. Un muxer OGG/Opus d'environ 150 lignes ([src/recording/ogg.ts](../src/recording/ogg.ts)) le remplace. Il comble aussi les courtes pauses au sein d'une prise de parole par des trames de silence, ce qui garde la durée fidèle.
 > - Plusieurs sessions d'enregistrement par réunion (reprise après coupure) : `recordings` → `recording_presence`, `audio_segments`. `lost_packets` n'existe pas : les paquets que DAVE n'arrive pas à déchiffrer sont jetés sans signal par la lib.
 > - Paramètres techniques dans le YAML (`recording.autoJoinLeadMin`, `endWhenEmptyMin`, `silenceMs`, `decryptionFailureTolerance`), avec la même surcharge par serveur que le reste.
+> - Clôture automatique d'une réunion **uniquement sur vocal vide** (MeetingWatcher), jamais sur l'heure de fin.
+>
+> Écarts de la phase 3 :
+> - Traitement **par réunion** (et non par session d'enregistrement) : toutes les sessions d'une réunion sont transcrites ensemble. Étapes `transcribe → summarize → publish` (mix et upload arrivent en phase 4).
+> - Transcription par **blocs** (prises de parole proches d'une même personne, ≤ 5 min) : moins de requêtes, plus de contexte, peu de silence. Table `transcription_blocks` pour la reprise fine.
+> - Client LLM en `fetch` direct (pas de SDK) pour lire les en-têtes LiteLLM (`x-litellm-model-id`). Mode JSON validé par zod, avec une correction automatique si le JSON est invalide.
+> - Publication en **Components V2** (et non en embeds) : 4000 caractères de texte par message, découpage par sujet.
 
 ## 0. Décisions actées
 

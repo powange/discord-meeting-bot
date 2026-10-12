@@ -2,11 +2,15 @@ import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-o
 import type { GuildSeed } from '../config/index.js';
 import { reindex } from '../domain/agenda.js';
 import type { PlannedJob } from '../domain/reminders.js';
-import type { MeetingStatus, RsvpStatus } from '../domain/types.js';
+import { PIPELINE_STEPS, type MeetingStatus, type PipelineStep, type RsvpStatus } from '../domain/types.js';
 import type { Db } from './client.js';
 import {
   agendaItems,
   audioSegments,
+  pipelineSteps,
+  summaries,
+  transcriptionBlocks,
+  transcriptSegments,
   recordingPresence,
   recordings,
   guildSettings,
@@ -14,6 +18,10 @@ import {
   rsvps,
   scheduledJobs,
   type AgendaItemRow,
+  type PipelineStepRow,
+  type SummaryRow,
+  type TranscriptionBlockRow,
+  type TranscriptSegmentRow,
   type AudioSegmentRow,
   type RecordingPresenceRow,
   type RecordingRow,
@@ -322,5 +330,106 @@ export class Repositories {
       .from(audioSegments)
       .where(eq(audioSegments.recordingId, recordingId))
       .orderBy(asc(audioSegments.userId), asc(audioSegments.startMs));
+  }
+
+  async listRecordingsForMeeting(meetingId: string): Promise<RecordingRow[]> {
+    return this.db.select().from(recordings).where(eq(recordings.meetingId, meetingId)).orderBy(asc(recordings.startedAt));
+  }
+
+  /** Dernier nom affiché connu de chaque participant enregistré (pour la transcription). */
+  async displayNamesForMeeting(meetingId: string): Promise<Map<string, string>> {
+    const rows = await this.db
+      .select({ userId: recordingPresence.userId, name: recordingPresence.displayName })
+      .from(recordingPresence)
+      .innerJoin(recordings, eq(recordings.id, recordingPresence.recordingId))
+      .where(eq(recordings.meetingId, meetingId))
+      .orderBy(asc(recordingPresence.joinedAt));
+    return new Map(rows.map((r) => [r.userId, r.name]));
+  }
+
+  // ---------------------------------------------------------------- pipeline
+
+  /** Crée les étapes manquantes (en attente) ; les étapes existantes ne sont pas touchées. */
+  async ensurePipeline(meetingId: string): Promise<void> {
+    await this.db
+      .insert(pipelineSteps)
+      .values(PIPELINE_STEPS.map((step) => ({ meetingId, step })))
+      .onConflictDoNothing();
+  }
+
+  async listPipeline(meetingId: string): Promise<PipelineStepRow[]> {
+    const rows = await this.db.select().from(pipelineSteps).where(eq(pipelineSteps.meetingId, meetingId));
+    return rows.sort((a, b) => PIPELINE_STEPS.indexOf(a.step) - PIPELINE_STEPS.indexOf(b.step));
+  }
+
+  async updateStep(meetingId: string, step: PipelineStep, patch: Partial<typeof pipelineSteps.$inferInsert>): Promise<void> {
+    await this.db
+      .update(pipelineSteps)
+      .set(patch)
+      .where(and(eq(pipelineSteps.meetingId, meetingId), eq(pipelineSteps.step, step)));
+  }
+
+  /** Remet en attente les étapes données (relance). */
+  async resetSteps(meetingId: string, steps: readonly PipelineStep[]): Promise<void> {
+    if (steps.length === 0) return;
+    await this.db
+      .update(pipelineSteps)
+      .set({ status: 'pending', error: null, startedAt: null, finishedAt: null })
+      .where(and(eq(pipelineSteps.meetingId, meetingId), inArray(pipelineSteps.step, [...steps])));
+  }
+
+  /** Réunions dont le traitement n'est pas terminé (reprise au démarrage). */
+  async listUnfinishedPipelines(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ meetingId: pipelineSteps.meetingId })
+      .from(pipelineSteps)
+      .where(inArray(pipelineSteps.status, ['pending', 'running']));
+    return rows.map((r) => r.meetingId);
+  }
+
+  // ---------------------------------------------------------------- transcription
+
+  /** Enregistre les blocs (idempotent : un bloc existant n'est pas recréé) et renvoie tous ceux de la réunion. */
+  async upsertBlocks(meetingId: string, blocks: ReadonlyArray<Omit<typeof transcriptionBlocks.$inferInsert, 'meetingId'>>): Promise<TranscriptionBlockRow[]> {
+    if (blocks.length > 0) {
+      await this.db
+        .insert(transcriptionBlocks)
+        .values(blocks.map((b) => ({ ...b, meetingId })))
+        .onConflictDoNothing();
+    }
+    return this.db.select().from(transcriptionBlocks).where(eq(transcriptionBlocks.meetingId, meetingId)).orderBy(asc(transcriptionBlocks.startMs));
+  }
+
+  async segmentsByIds(ids: readonly number[]) {
+    if (ids.length === 0) return [];
+    return this.db.select().from(audioSegments).where(inArray(audioSegments.id, [...ids])).orderBy(asc(audioSegments.startMs));
+  }
+
+  /** Enregistre le texte d'un bloc et le marque traité (transaction : pas de bloc à moitié écrit). */
+  async completeBlock(blockId: number, meetingId: string, lines: ReadonlyArray<Omit<typeof transcriptSegments.$inferInsert, 'meetingId' | 'blockId'>>, backend: string, model: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx.delete(transcriptSegments).where(eq(transcriptSegments.blockId, blockId));
+      if (lines.length > 0) await tx.insert(transcriptSegments).values(lines.map((l) => ({ ...l, meetingId, blockId })));
+      await tx.update(transcriptionBlocks).set({ done: true, backend, model }).where(eq(transcriptionBlocks.id, blockId));
+    });
+  }
+
+  /** Oublie la transcription d'une réunion (retranscription complète). */
+  async resetTranscription(meetingId: string): Promise<void> {
+    await this.db.delete(transcriptionBlocks).where(eq(transcriptionBlocks.meetingId, meetingId));
+  }
+
+  async listTranscript(meetingId: string): Promise<TranscriptSegmentRow[]> {
+    return this.db.select().from(transcriptSegments).where(eq(transcriptSegments.meetingId, meetingId)).orderBy(asc(transcriptSegments.startAt));
+  }
+
+  async saveSummary(values: typeof summaries.$inferInsert): Promise<void> {
+    const { meetingId, ...rest } = values;
+    await this.db.insert(summaries).values(values).onConflictDoUpdate({ target: summaries.meetingId, set: { ...rest, createdAt: new Date() } });
+  }
+
+  async getSummary(meetingId: string): Promise<SummaryRow | undefined> {
+    const [row] = await this.db.select().from(summaries).where(eq(summaries.meetingId, meetingId));
+    return row;
   }
 }

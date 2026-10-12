@@ -43,6 +43,13 @@
       "when": 1791825792328,
       "tag": "0005_control_message",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791826776823,
+      "tag": "0006_pipeline",
+      "breakpoints": true
     }
   ]
 }

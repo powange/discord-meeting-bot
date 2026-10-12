@@ -1,0 +1,43 @@
+# LiteLLM proxy (phase 3) : un seul point d'entrée OpenAI pour le bot, avec répartition et
+# bascule entre les machines qui font tourner les modèles (Ollama, LM Studio…).
+# Doc : https://docs.litellm.ai/docs/proxy/configs
+#
+# Le bot appelle le modèle « summary » (llm.model dans config.yaml). Plusieurs déploiements
+# sous le même model_name = répartition et bascule automatiques. L'id (model_info.id) est
+# repris dans la trace du compte rendu.
+
+model_list:
+  - model_name: summary
+    litellm_params:
+      model: ollama_chat/qwen3:14b
+      api_base: http://pc-main.tailnet:11434
+    model_info: { id: ollama-pc-main }
+
+  - model_name: summary
+    litellm_params:
+      model: ollama_chat/qwen3:8b
+      api_base: http://mini-amd.tailnet:11434
+    model_info: { id: ollama-mini-amd }
+
+  # LM Studio (compatible OpenAI) :
+  # - model_name: summary
+  #   litellm_params:
+  #     model: openai/qwen3-14b
+  #     api_base: http://pc-secours.tailnet:1234/v1
+  #     api_key: none
+  #   model_info: { id: lmstudio-secours }
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 600 # un résumé de réunion peut être long
+  allowed_fails: 1
+  cooldown_time: 60
+
+litellm_settings:
+  drop_params: true # ignore les paramètres non supportés par un backend
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  background_health_checks: true
+  health_check_interval: 60

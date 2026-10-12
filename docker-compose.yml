@@ -1,5 +1,5 @@
 # Stack Portainer (déploiement depuis le dépôt Git).
-# Variables à définir dans Portainer : DISCORD_TOKEN, POSTGRES_PASSWORD (+ optionnelles ci-dessous).
+# Variables à définir dans Portainer : DISCORD_TOKEN, POSTGRES_PASSWORD, LITELLM_MASTER_KEY (+ optionnelles ci-dessous).
 name: meeting-bot
 
 services:
@@ -12,6 +12,10 @@ services:
       DATABASE_URL: postgres://bot:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@postgres:5432/meetingbot
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATA_DIR: /data
+      # Résumés (phase 3) : LiteLLM de la stack, ou directement un Ollama (http://hôte:11434/v1)
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://litellm:4000/v1}
+      LLM_API_KEY: ${LITELLM_MASTER_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-summary}
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
       # CONFIG_PATH: /app/config/config.yaml
     volumes:
@@ -38,6 +42,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.105.0
+    restart: unless-stopped
+    command: ['--config', '/app/config.yaml', '--port', '4000']
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY requis}
+    volumes:
+      # Fichier à créer sur l'hôte à partir de config/litellm.example.yaml
+      - ${LITELLM_CONFIG:-/srv/meeting-bot/litellm.yaml}:/app/config.yaml:ro
 
 volumes:
   pgdata:

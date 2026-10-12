@@ -1,0 +1,111 @@
+import type { BackendConfig } from '../../config/index.js';
+import type { RawSegment } from '../../domain/transcript.js';
+import { fetchWithTimeout, isTimeout, trimSlash } from '../http.js';
+
+export interface TranscribeOptions {
+  language: string;
+  prompt?: string | undefined;
+}
+
+export interface TranscriptionResult {
+  segments: RawSegment[];
+  /** Modèle annoncé par le serveur (ou demandé). */
+  model: string;
+}
+
+export type BackendErrorKind = 'busy' | 'unavailable' | 'timeout' | 'bad_response' | 'rejected';
+
+export class BackendError extends Error {
+  constructor(
+    message: string,
+    readonly kind: BackendErrorKind,
+  ) {
+    super(message);
+    this.name = 'BackendError';
+  }
+}
+
+export interface TranscriptionBackend {
+  readonly name: string;
+  readonly concurrency: number;
+  /** Vérification rapide (le serveur répond et a un modèle chargé). */
+  health(signal?: AbortSignal): Promise<boolean>;
+  transcribe(audio: Blob, filename: string, options: TranscribeOptions, signal?: AbortSignal): Promise<TranscriptionResult>;
+}
+
+interface VerboseJson {
+  text?: string;
+  model?: string;
+  segments?: Array<{ start: number; end: number; text: string; no_speech_prob?: number }>;
+}
+
+/**
+ * Client `/v1/audio/transcriptions` (format OpenAI), commun aux deux types de serveur :
+ * - `openai` : speaches / faster-whisper… (url incluant /v1, champ `model` utilisé) ;
+ * - `vibe` : vibe-server (url sans /v1, modèle préchargé, une requête à la fois → 429 « busy »).
+ */
+export class HttpTranscriptionBackend implements TranscriptionBackend {
+  readonly name: string;
+  readonly concurrency: number;
+  private readonly base: string;
+
+  constructor(private readonly config: BackendConfig) {
+    this.name = config.name;
+    this.concurrency = config.type === 'vibe' ? 1 : config.concurrency;
+    this.base = config.type === 'vibe' ? `${trimSlash(config.url)}/v1` : trimSlash(config.url);
+  }
+
+  async health(signal?: AbortSignal): Promise<boolean> {
+    // vibe : /ready répond 503 tant qu'aucun modèle n'est chargé ; openai : /models.
+    const url = this.config.type === 'vibe' ? `${trimSlash(this.config.url)}/ready` : `${this.base}/models`;
+    try {
+      const res = await fetchWithTimeout(url, { headers: this.headers() }, this.config.healthTimeoutSec * 1000, signal);
+      await res.body?.cancel();
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async transcribe(audio: Blob, filename: string, options: TranscribeOptions, signal?: AbortSignal): Promise<TranscriptionResult> {
+    const form = new FormData();
+    form.append('file', audio, filename);
+    form.append('model', this.config.model);
+    form.append('language', options.language);
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'segment');
+    if (options.prompt) form.append('prompt', options.prompt);
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${this.base}/audio/transcriptions`, { method: 'POST', body: form, headers: this.headers() }, this.config.timeoutSec * 1000, signal);
+    } catch (err) {
+      if (isTimeout(err) && !signal?.aborted) throw new BackendError(`${this.name} : délai dépassé (${this.config.timeoutSec} s)`, 'timeout');
+      throw new BackendError(`${this.name} : injoignable (${err instanceof Error ? err.message : err})`, 'unavailable');
+    }
+
+    if (!res.ok) {
+      const body = (await res.text().catch(() => '')).slice(0, 300);
+      if (res.status === 429) throw new BackendError(`${this.name} : occupé`, 'busy');
+      if (res.status >= 500) throw new BackendError(`${this.name} : erreur ${res.status} ${body}`, 'unavailable');
+      throw new BackendError(`${this.name} : requête refusée (${res.status}) ${body}`, 'rejected');
+    }
+
+    let json: VerboseJson;
+    try {
+      json = (await res.json()) as VerboseJson;
+    } catch {
+      throw new BackendError(`${this.name} : réponse illisible`, 'bad_response');
+    }
+    const segments: RawSegment[] = Array.isArray(json.segments)
+      ? json.segments.map((s) => ({ start: Number(s.start) || 0, end: Number(s.end) || 0, text: String(s.text ?? ''), noSpeechProb: s.no_speech_prob }))
+      : json.text
+        ? [{ start: 0, end: 0, text: json.text }]
+        : [];
+    return { segments, model: json.model ?? this.config.model };
+  }
+
+  private headers(): Record<string, string> {
+    return this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {};
+  }
+}

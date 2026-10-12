@@ -17,6 +17,7 @@ describe('customId', () => {
     { type: 'agenda.lock', meetingId: id, locked: false },
     { type: 'meeting.edit', meetingId: id },
     { type: 'meeting.editSubmit', meetingId: id },
+    { type: 'report.retry', meetingId: id },
     { type: 'rec.start', meetingId: id },
     { type: 'rec.stop', meetingId: id },
     { type: 'meeting.create' },
