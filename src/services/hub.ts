@@ -15,7 +15,7 @@ const MAX_LISTED = 20;
 /**
  * Post épinglé du forum (« hub ») : bouton « Nouvelle réunion » et liste des réunions à venir,
  * régénérée à chaque création ou changement de statut. Le bot le surveille et le recrée
- * s'il disparaît (suppression, message effacé) ou le rétablit s'il est désépinglé/déverrouillé.
+ * s'il disparaît (suppression, message effacé) ou le rétablit s'il est désépinglé, verrouillé ou archivé.
  */
 export class HubService {
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -36,8 +36,8 @@ export class HubService {
   }
 
   /**
-   * Personne n'écrit dans le post épinglé : le verrou bloque les membres, et ce filtre
-   * supprime les messages des modérateurs (qui passent outre le verrou).
+   * Personne n'écrit dans le post épinglé : tout message d'un autre auteur que le bot est
+   * supprimé (le post n'est pas verrouillé, sinon les membres ne pourraient plus cliquer).
    */
   async onMessage(message: Message): Promise<void> {
     if (!this.hubThreadIds.has(message.channelId) || message.author.id === this.client.user?.id) return;
@@ -47,7 +47,7 @@ export class HubService {
 
   /**
    * Garantit que le forum du serveur a son post épinglé, complet (message présent, épinglé,
-   * verrouillé) ; le (re)crée sinon. Sérialisé par serveur : une suppression et la
+   * ni verrouillé ni archivé) ; le (re)crée sinon. Sérialisé par serveur : une suppression et la
    * vérification périodique ne peuvent pas créer deux posts. Renvoie l'id du post.
    */
   ensure(forum: ForumChannel, m: Messages): Promise<string> {
@@ -93,10 +93,10 @@ export class HubService {
     await this.ensureForGuild(guildId);
   }
 
-  /** Post épinglé désépinglé ou déverrouillé : on rétablit. */
+  /** Post épinglé désépinglé, verrouillé ou archivé : on rétablit. */
   async onThreadUpdate(thread: ThreadChannel): Promise<void> {
     if (!this.hubThreadIds.has(thread.id)) return;
-    if (!thread.flags.has(ChannelFlags.Pinned) || !thread.locked) await this.pinAndLock(thread);
+    await this.keepAccessible(thread);
   }
 
   private async doEnsure(forum: ForumChannel, m: Messages): Promise<string> {
@@ -109,7 +109,7 @@ export class HubService {
       });
       if (message) {
         this.hubThreadIds.add(existing.id);
-        await this.pinAndLock(existing);
+        await this.keepAccessible(existing);
         return existing.id;
       }
       // Message du post supprimé : le post est inutilisable, on le remplace.
@@ -127,7 +127,7 @@ export class HubService {
     if (settings.hubThreadId) this.hubThreadIds.delete(settings.hubThreadId);
     this.hubThreadIds.add(thread.id);
     await this.repos.updateSettings(forum.guildId, { hubThreadId: thread.id });
-    await this.pinAndLock(thread);
+    await this.keepAccessible(thread);
     this.log.info({ guildId: forum.guildId, threadId: thread.id }, 'Post épinglé créé');
     return thread.id;
   }
@@ -171,15 +171,20 @@ export class HubService {
       .slice(0, MAX_LISTED);
   }
 
-  /** Épinglé en tête du forum, et verrouillé : seuls les modérateurs peuvent y répondre. */
-  private async pinAndLock(thread: ThreadChannel): Promise<void> {
-    if (thread.flags.has(ChannelFlags.Pinned) && thread.locked) return;
+  /**
+   * Épinglé, actif et surtout NON verrouillé : dans un post verrouillé, les membres sans
+   * « Gérer les fils » ne peuvent plus cliquer sur les boutons. Le post reste vide grâce
+   * à `onMessage`, qui supprime tout message posté par quelqu'un d'autre que le bot.
+   */
+  private async keepAccessible(thread: ThreadChannel): Promise<void> {
+    const pinned = thread.flags.has(ChannelFlags.Pinned);
+    if (pinned && !thread.locked && !thread.archived) return;
     try {
       await ensureUnarchived(thread);
-      if (!thread.flags.has(ChannelFlags.Pinned)) await thread.pin('Post de création des réunions');
-      if (!thread.locked) await thread.setLocked(true, 'Post de création des réunions');
+      if (thread.locked) await thread.setLocked(false, 'Post de création des réunions : boutons accessibles à tous');
+      if (!pinned) await thread.pin('Post de création des réunions');
     } catch (err) {
-      this.log.warn({ threadId: thread.id, err }, 'Épinglage du post impossible');
+      this.log.warn({ threadId: thread.id, err }, 'Rétablissement du post épinglé impossible');
     }
   }
 }
