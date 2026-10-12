@@ -151,6 +151,19 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(llmPrompts.at(-1)).toContain('Participants : Alice, Bob');
   }, 60_000);
 
+  it('sans LLM configuré : résumé sauté, pas d’échec', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const noLlm = buildConfig({ discord: { token: 'x' }, database: { url: url! }, dataDir }, {});
+    const steps = createSteps({ ...d, config: noLlm });
+    const settings = await d.settings.get('g');
+    const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
+    await repos.upsertBlocks(meeting.id, []); // pas de transcription nécessaire pour ce cas : on force une ligne
+    const block = (await repos.upsertBlocks(meeting.id, [{ recordingId: (await repos.listRecordingsForMeeting(meeting.id))[0]!.id, userId: 'alice', startMs: 0, endMs: 1000, segmentIds: [] }]))[0]!;
+    await repos.completeBlock(block.id, meeting.id, [{ userId: 'alice', startAt: new Date(), endAt: new Date(), text: 'Bonjour.' }], 'vibe-pc', 'm');
+    expect(await steps.summarize(ctx)).toEqual({ skipped: true });
+  }, 30_000);
+
   it('audio complet : toutes les prises de parole sur une même ligne de temps, en Opus', async () => {
     const meeting = await seedMeeting();
     const d = deps();

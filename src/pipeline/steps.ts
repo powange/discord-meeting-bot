@@ -188,6 +188,11 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
     await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });
     return { passes: 0 };
   }
+  // Résumé facultatif : sans LLM configuré, l'étape est sautée et la transcription publiée seule.
+  if (!cfg.baseUrl) {
+    await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });
+    return { skipped: true };
+  }
 
   const llm = new LlmClient(cfg, config.ai.allowedHosts);
   const agenda = await repos.listAgenda(meeting.id);
@@ -243,6 +248,8 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const subtitle = m.report.subtitle(formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when), m.format.duration(durationMs), names.size);
   const people = new Map([...names].map(([id, name]) => [name, id]));
   const llmTrace = summary.llmDeployments.length ? summary.llmDeployments.join(', ') : summary.llmModel;
+  const summarizeStep = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'summarize');
+  const summaryDisabled = summarizeStep?.output?.skipped === true;
   const transcriptFile = `transcription-${meeting.startsAt.toISOString().slice(0, 10)}.md`;
   const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
@@ -254,7 +261,10 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       agenda: (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title })),
       summary: summary.content,
       people,
-      trace: m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
+      trace: summaryDisabled
+        ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
+        : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
+      summaryDisabled,
       transcriptFile,
       ...(audioUrl ? { audioUrl } : {}),
     },

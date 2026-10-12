@@ -228,6 +228,8 @@ export const fr = {
       `Transcription : ${transcription} · Résumé : ${llm} · ${passes} passe${passes > 1 ? 's' : ''}`,
     noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
     listen: "Écouter l'audio",
+    disabled: '*Résumé désactivé : aucun modèle de langue configuré. La transcription complète est jointe.*',
+    traceNoSummary: (transcription: string) => `Transcription : ${transcription} · Résumé désactivé`,
   },
 
   audio: {
@@ -249,6 +251,8 @@ export const fr = {
     running: '⏳',
     done: '✅',
     failed: '❌',
+    skipped: '⏭️',
+    skippedDetail: 'désactivé (aucun modèle configuré)',
     progressTranscribe: (done: number, total: number) => `${done}/${total} bloc${total > 1 ? 's' : ''}`,
     progressSummarize: (pass: number, total: number) => `passe ${pass}/${total}`,
     published: (url: string) => `Compte rendu publié : ${url}`,

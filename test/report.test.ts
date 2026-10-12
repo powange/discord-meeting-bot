@@ -101,6 +101,15 @@ describe('renderReport', () => {
     expect(MESSAGE_TEXT_BUDGET).toBeLessThan(4000);
   });
 
+  it('résumé désactivé : compte rendu réduit, transcription jointe, sans ODJ non traité', () => {
+    const out = renderReport({ ...base, summaryDisabled: true, trace: 'Transcription : vibe-pc · Résumé désactivé' }, m);
+    const all = out.map(texts).join('\n');
+    expect(all).toContain(m.report.disabled);
+    expect(all).not.toContain('Points non traités');
+    expect(all).not.toContain('### 1.');
+    expect(out.at(-1)!.components.at(-1)).toMatchObject({ type: ComponentType.File });
+  });
+
   it('aucun sujet : message explicite', () => {
     expect(renderReport({ ...base, summary: { overview: '', topics: [] } }, m).map(texts).join('\n')).toContain(m.report.empty);
   });

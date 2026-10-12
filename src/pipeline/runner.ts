@@ -237,7 +237,12 @@ class StatusMessage {
     const { repos, client, log } = this.deps;
     const meeting = (await repos.getMeeting(this.meeting.id)) ?? this.meeting;
     const rows = await repos.listPipeline(meeting.id);
-    const views: StepView[] = rows.map((r) => ({ step: r.step, status: r.status, detail: r.status === 'failed' ? (r.error ?? details.get(r.step)) : (details.get(r.step) ?? null) }));
+    const views: StepView[] = rows.map((r) => ({
+      step: r.step,
+      status: r.status,
+      detail: r.status === 'failed' ? (r.error ?? details.get(r.step)) : (details.get(r.step) ?? null),
+      skipped: r.status === 'done' && r.output?.skipped === true,
+    }));
     const publish = rows.find((r) => r.step === 'publish');
     const url = typeof publish?.output?.url === 'string' ? publish.output.url : undefined;
     const container = renderPipelineStatus(meeting.id, views, this.m, url);

@@ -9,6 +9,8 @@ export interface StepView {
   status: StepStatus;
   /** Progression (« 12/30 blocs ») ou erreur. */
   detail?: string | null;
+  /** Étape volontairement sautée (ex. résumé sans LLM configuré). */
+  skipped?: boolean;
 }
 
 /** Message de suivi du traitement : une ligne par étape, bouton « Relancer » en cas d'échec. */
@@ -18,6 +20,7 @@ export function renderPipelineStatus(meetingId: string, steps: readonly StepView
   const allDone = steps.length > 0 && steps.every((s) => s.status === 'done');
   const lines = steps.map((s) => {
     const detail = s.detail ? ` — ${s.status === 'failed' ? truncate(s.detail, 300) : s.detail}` : '';
+    if (s.skipped) return `${p.skipped} ${p.steps[s.step] ?? s.step} — ${p.skippedDetail}`;
     return `${p[s.status]} ${p.steps[s.step] ?? s.step}${detail}`;
   });
 

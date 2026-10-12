@@ -20,6 +20,8 @@ export interface ReportInput {
   transcriptFile?: string;
   /** Lien vers le message de l'audio complet. */
   audioUrl?: string;
+  /** Aucun LLM configuré : compte rendu réduit (audio et transcription). */
+  summaryDisabled?: boolean;
 }
 
 const normalize = (s: string) =>
@@ -90,10 +92,14 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
   const sections: string[] = [
     `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}`,
   ];
-  if (input.summary.overview) sections.push(input.summary.overview);
-  topics.forEach((t, i) => sections.push(topicSection(t, i + 1, input, m)));
-  if (topics.length === 0) sections.push(r.empty);
-  if (notCovered.length) sections.push(`### ${r.notCovered}\n${notCovered.map((a) => `- ${a.title}`).join('\n')}`);
+  if (input.summaryDisabled) {
+    sections.push(r.disabled);
+  } else {
+    if (input.summary.overview) sections.push(input.summary.overview);
+    topics.forEach((t, i) => sections.push(topicSection(t, i + 1, input, m)));
+    if (topics.length === 0) sections.push(r.empty);
+    if (notCovered.length) sections.push(`### ${r.notCovered}\n${notCovered.map((a) => `- ${a.title}`).join('\n')}`);
+  }
   const footer = `-# ${input.trace}`;
 
   // Répartition des sections en messages, chacun sous le budget de texte.
