@@ -102,12 +102,12 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
-   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892902005776
+   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892902038544
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
    - Voir les salons, Envoyer des messages, Envoyer des messages dans les fils
-   - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Voir l'historique
+   - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Joindre des fichiers (audio et transcription du compte rendu), Voir l’historique
    - Créer et gérer les événements
    - Se connecter (enregistrement)
    - Changer le pseudo : le bot s'appelle « 🔴 Enregistrement » pendant une capture

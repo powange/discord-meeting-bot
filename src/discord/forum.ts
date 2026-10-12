@@ -20,6 +20,7 @@ export const FORUM_PERMISSIONS = {
   ManageMessages: PermissionFlagsBits.ManageMessages,
   ManageChannels: PermissionFlagsBits.ManageChannels,
   EmbedLinks: PermissionFlagsBits.EmbedLinks,
+  AttachFiles: PermissionFlagsBits.AttachFiles,
   ReadMessageHistory: PermissionFlagsBits.ReadMessageHistory,
 } as const;
 
