@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { entersState, joinVoiceChannel, VoiceConnectionStatus, type VoiceConnection } from '@discordjs/voice';
 import {
-  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
@@ -390,7 +389,15 @@ export class RecordingService {
       this.repos.getRecording(recordingId),
     ]);
     if (!recording) return;
-    const embed = renderRecordingSummary(
+    const resumeButton =
+      interrupted && isOpen(meeting.status)
+        ? new ButtonBuilder()
+            .setCustomId(encode({ type: 'rec.start', meetingId }))
+            .setLabel(m.buttons.resumeRecording)
+            .setEmoji('🔴')
+            .setStyle(ButtonStyle.Primary)
+        : undefined;
+    const container = renderRecordingSummary(
       {
         reason: m.recording.reasons[reason] ?? reason,
         startedAt: recording.startedAt,
@@ -399,31 +406,15 @@ export class RecordingService {
         presence,
         rsvps,
       },
+      { meetingTitle: meeting.title, interrupted, ...(resumeButton ? { resumeButton } : {}) },
       m,
     );
 
-    const components =
-      interrupted && isOpen(meeting.status)
-        ? [
-            new ActionRowBuilder<ButtonBuilder>()
-              .addComponents(
-                new ButtonBuilder()
-                  .setCustomId(encode({ type: 'rec.start', meetingId }))
-                  .setLabel(m.buttons.resumeRecording)
-                  .setEmoji('🔴')
-                  .setStyle(ButtonStyle.Primary),
-              )
-              .toJSON(),
-          ]
-        : [];
-
     await ensureUnarchived(thread);
     await thread.send({
-      embeds: [embed],
-      ...(interrupted ? { content: m.recording.interrupted } : {}),
-      components,
+      components: [container],
       allowedMentions: { parse: [] },
-      flags: MessageFlags.SuppressNotifications,
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications,
     });
   }
 

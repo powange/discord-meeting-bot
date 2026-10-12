@@ -1,4 +1,10 @@
-import { EmbedBuilder, type APIEmbed } from 'discord.js';
+import {
+  ContainerBuilder,
+  SeparatorSpacingSize,
+  type ActionRowBuilder,
+  type APIContainerComponent,
+  type ButtonBuilder,
+} from 'discord.js';
 import { attendanceReport, type PresenceInterval } from '../../domain/recording.js';
 import { discordTimestamp } from '../../domain/time.js';
 import type { RsvpStatus } from '../../domain/types.js';
@@ -27,6 +33,8 @@ export interface ParticipantStats {
 }
 
 const BAR_LENGTH = 10;
+/** Les Components V2 limitent le texte total d'un message à 4000 caractères. */
+const PARTICIPANTS_BUDGET = 3000;
 
 /** Statistiques par participant, triées par temps de parole décroissant. */
 export function participantStats(input: SummaryInput): ParticipantStats[] {
@@ -62,34 +70,61 @@ export function bar(pct: number, length = BAR_LENGTH): string {
   return '▰'.repeat(filled) + '▱'.repeat(length - filled);
 }
 
-/** Bilan de fin d'enregistrement : participation de chacun et présences déclarées vs réelles. */
-export function renderRecordingSummary(input: SummaryInput, m: Messages): APIEmbed {
+export interface SummaryOptions {
+  meetingTitle: string;
+  interrupted: boolean;
+  /** Bouton « Reprendre l'enregistrement » (session interrompue, réunion encore ouverte). */
+  resumeButton?: ButtonBuilder;
+}
+
+/**
+ * Bilan de fin d'enregistrement, en Components V2 (bloc encadré) : il préfigure le compte rendu
+ * que les phases 3 et 4 compléteront (résumé, décisions, actions, audio, liens).
+ */
+export function renderRecordingSummary(input: SummaryInput, options: SummaryOptions, m: Messages): APIContainerComponent {
   const s = m.summary;
   const stats = participantStats(input);
   const durationMs = input.endedAt.getTime() - input.startedAt.getTime();
+  const reason = input.reason.charAt(0).toUpperCase() + input.reason.slice(1);
+
+  const container = new ContainerBuilder()
+    .setAccentColor(options.interrupted ? 0xe67e22 : 0x57f287)
+    .addTextDisplayComponents((t) =>
+      t.setContent(
+        `${s.title(options.meetingTitle)}\n${s.subtitle(
+          options.interrupted ? s.status.interrupted : s.status.stopped,
+          reason,
+          discordTimestamp(input.startedAt, 't'),
+          discordTimestamp(input.endedAt, 't'),
+          m.format.duration(durationMs),
+          stats.length,
+          input.segments.length,
+        )}`,
+      ),
+    )
+    .addSeparatorComponents((sep) => sep.setSpacing(SeparatorSpacingSize.Large));
+
   const lines = stats.map((p) => {
     const who = `<@${p.userId}>${p.registered ? '' : ` *(${s.unannounced})*`}`;
     return p.recorded
-      ? s.participantLine(who, bar(p.speechPct), m.format.duration(p.speechMs), p.speechPct, m.format.duration(p.presenceMs), p.presencePct)
-      : s.notRecordedLine(who, m.format.duration(p.presenceMs), p.presencePct);
+      ? s.participant(who, p.speechPct, bar(p.speechPct), m.format.duration(p.speechMs), m.format.duration(p.presenceMs), p.presencePct)
+      : s.notRecorded(who, m.format.duration(p.presenceMs), p.presencePct);
   });
-  const noShow = attendanceReport(input.rsvps, input.presence, input.endedAt).noShow;
+  container.addTextDisplayComponents((t) =>
+    t.setContent(`${s.participation}\n${lines.length ? joinLinesWithin(lines, PARTICIPANTS_BUDGET, m.card.more) : s.nobody}`),
+  );
 
-  const embed = new EmbedBuilder()
-    .setTitle(s.title)
-    .setColor(0x95a5a6)
-    .setDescription(
-      s.header(
-        input.reason.charAt(0).toUpperCase() + input.reason.slice(1),
-        discordTimestamp(input.startedAt, 't'),
-        discordTimestamp(input.endedAt, 't'),
-        m.format.duration(durationMs),
-        input.segments.length,
-      ),
-    )
-    .addFields({ name: s.participants(stats.length), value: lines.length ? joinLinesWithin(lines, 1024, m.card.more) : s.nobody });
+  const noShow = attendanceReport(input.rsvps, input.presence, input.endedAt).noShow;
   if (noShow.length > 0) {
-    embed.addFields({ name: s.noShow(noShow.length), value: joinLinesWithin(noShow.map((id) => `<@${id}>`), 1024, m.card.more, ' ') });
+    container
+      .addSeparatorComponents((sep) => sep.setDivider(false))
+      .addTextDisplayComponents((t) => t.setContent(`${s.noShow}\n${joinLinesWithin(noShow.map((id) => `<@${id}>`), 500, m.card.more, ' ')}`));
   }
-  return embed.toJSON();
+  if (lines.length > 0) container.addTextDisplayComponents((t) => t.setContent(s.footnote));
+
+  if (options.interrupted) {
+    container.addSeparatorComponents((sep) => sep).addTextDisplayComponents((t) => t.setContent(m.recording.interrupted));
+    if (options.resumeButton) container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => row.addComponents(options.resumeButton!));
+  }
+  return container.toJSON();
 }

@@ -144,16 +144,18 @@ export const fr = {
   },
 
   summary: {
-    title: '⏹️ Enregistrement terminé',
-    header: (reason: string, from: string, to: string, duration: string, segments: number) =>
-      `${reason} · ${from} → ${to} (${duration}) · ${segments} prise${segments > 1 ? 's' : ''} de parole`,
-    participants: (n: number) => `Participants (${n})`,
-    participantLine: (who: string, bar: string, speech: string, speechPct: number, presence: string, presencePct: number) =>
-      `${who}\n\`${bar}\` 🗣️ ${speech} (**${speechPct} %** de la parole) · présent ${presence} (${presencePct} %)`,
-    notRecordedLine: (who: string, presence: string, presencePct: number) => `${who} · 🔇 non enregistré · présent ${presence} (${presencePct} %)`,
+    title: (meeting: string) => `## ⏹️ Enregistrement · ${meeting}`,
+    status: { stopped: '🟢 Terminé', interrupted: '🟠 Interrompu' },
+    subtitle: (status: string, reason: string, from: string, to: string, duration: string, people: number, segments: number) =>
+      `-# ${status} · ${reason} · ${from} → ${to} · ${duration} · ${people} participant${people > 1 ? 's' : ''} · ${segments} prise${segments > 1 ? 's' : ''} de parole`,
+    participation: '### Participation',
+    participant: (who: string, pct: number, bar: string, speech: string, presence: string, presencePct: number) =>
+      `${who} · **${pct} %**\n\`${bar}\` 🗣️ ${speech} · présent ${presence} (${presencePct} %)`,
+    notRecorded: (who: string, presence: string, presencePct: number) => `${who} · 🔇 non enregistré\n-# présent ${presence} (${presencePct} %)`,
     unannounced: 'non inscrit',
-    noShow: (n: number) => `Inscrits absents (${n})`,
+    noShow: '### Inscrits absents',
     nobody: "Personne n'a été enregistré.",
+    footnote: '-# Pourcentage : part du temps de parole total. Présence : part de la durée de l’enregistrement.',
   },
 
   format: {

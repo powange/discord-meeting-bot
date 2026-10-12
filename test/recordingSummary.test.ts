@@ -1,3 +1,4 @@
+import { ButtonBuilder, ButtonStyle, ComponentType, type APIContainerComponent } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 import { bar, participantStats, renderRecordingSummary, type SummaryInput } from '../src/discord/embeds/recordingSummary.js';
 import { messages } from '../src/i18n/index.js';
@@ -43,22 +44,45 @@ describe('participantStats', () => {
 });
 
 describe('renderRecordingSummary', () => {
-  const embed = renderRecordingSummary(input, m);
+  const texts = (c: APIContainerComponent) =>
+    c.components.filter((x) => x.type === ComponentType.TextDisplay).map((x) => (x as { content: string }).content);
+  const container = renderRecordingSummary(input, { meetingTitle: 'Bureau', interrupted: false }, m);
+  const all = texts(container).join('\n');
 
-  it('en-tête : raison, horaires, durée précise, prises de parole', () => {
-    expect(embed.description).toContain('Arrêt manuel');
-    expect(embed.description).toContain('(40 min)');
-    expect(embed.description).toContain('3 prises de parole');
+  it('en-tête : titre, statut, raison, durée précise, participants, prises de parole', () => {
+    expect(all).toContain('## ⏹️ Enregistrement · Bureau');
+    expect(all).toContain('🟢 Terminé · Arrêt manuel');
+    expect(all).toContain('40 min · 3 participants · 3 prises de parole');
   });
 
-  it('une ligne par participant, inscrits absents à part', () => {
-    const [participants, noShow] = embed.fields!;
-    expect(participants!.name).toBe('Participants (3)');
-    expect(participants!.value).toContain('<@a>');
-    expect(participants!.value).toContain('**80 %**');
-    expect(participants!.value).toContain('<@b> *(non inscrit)*');
-    expect(participants!.value).toContain('🔇 non enregistré');
-    expect(noShow).toEqual({ name: 'Inscrits absents (1)', value: '<@d>' });
+  it('participation par personne, non inscrits et opt-out signalés, absents à part', () => {
+    expect(all).toContain('<@a> · **80 %**');
+    expect(all).toContain('<@b> *(non inscrit)* · **20 %**');
+    expect(all).toContain('<@c> · 🔇 non enregistré');
+    expect(all).toContain('### Inscrits absents\n<@d>');
+  });
+
+  it('interrompu : couleur orange, message et bouton de reprise', () => {
+    const button = new ButtonBuilder().setCustomId('x').setLabel('Reprendre').setStyle(ButtonStyle.Primary);
+    const c = renderRecordingSummary(input, { meetingTitle: 'Bureau', interrupted: true, resumeButton: button }, m);
+    expect(c.accent_color).toBe(0xe67e22);
+    expect(texts(c).join('\n')).toContain('🟠 Interrompu');
+    expect(c.components.some((x) => x.type === ComponentType.ActionRow)).toBe(true);
+  });
+
+  it('beaucoup de participants : texte total sous 4000 caractères', () => {
+    const many = Array.from({ length: 80 }, (_, i) => String(100000000000000000n + BigInt(i)));
+    const big = renderRecordingSummary(
+      {
+        ...input,
+        segments: many.map((userId, i) => ({ userId, startMs: i * 1000, endMs: i * 1000 + 500 })),
+        presence: many.map((userId) => ({ userId, joinedAt: t('18:00'), leftAt: null, excluded: false })),
+        rsvps: many.map((userId) => ({ userId, status: 'yes' as const })),
+      },
+      { meetingTitle: 'x'.repeat(100), interrupted: false },
+      m,
+    );
+    expect(texts(big).join('').length).toBeLessThanOrEqual(4000);
   });
 });
 
