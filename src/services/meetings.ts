@@ -7,7 +7,8 @@ import { fetchForum, fetchThread } from '../discord/threads.js';
 import { canReschedule, threadName } from '../domain/meeting.js';
 import { planJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
-import { displayName, joinVoiceRow, voiceName } from '../discord/notify.js';
+import { displayName, joinVoiceRow, sendWithMentions, voiceName } from '../discord/notify.js';
+import { reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
@@ -104,7 +105,11 @@ export class MeetingService {
       if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
       if (input.startsAt.getTime() !== meeting.startsAt.getTime()) {
         const when = formatWhen(updated.startsAt, settings.timezone, settings.locale, m.format.when);
-        await thread.send({ content: m.thread.rescheduled(updated.title, when), allowedMentions: { parse: [] } });
+        const startsIn = m.format.startsIn(Math.round((updated.startsAt.getTime() - Date.now()) / 60_000));
+        // Tous ceux qui ont répondu sont prévenus, y compris les absents (la nouvelle date leur convient peut-être).
+        // Ce message tient lieu des rappels qu'un avancement de l'heure aurait fait sauter.
+        const responders = (await this.repos.listRsvps(updated.id)).map((r) => r.userId);
+        await sendWithMentions(thread, m.thread.rescheduled(updated.title, when, startsIn), m.thread.responders, responders);
       }
     }
     if (updated.status === 'scheduled') {
@@ -126,12 +131,11 @@ export class MeetingService {
     const m = messages(settings.locale);
     await this.replan(meeting, settings);
     const voice = await voiceName(this.client, meeting.voiceChannelId, m);
+    const attendees = reminderTargets(await this.repos.listRsvps(meeting.id));
     await this.afterStatusChange(meeting, settings, (thread) =>
-      thread.send({
-        content: m.thread.started(meeting.title, voice),
-        components: [joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m)],
-        allowedMentions: { parse: [] },
-      }),
+      sendWithMentions(thread, m.thread.started(meeting.title, voice), m.thread.reminderTargets, attendees, [
+        joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m),
+      ]),
     );
     const guild = await this.guild(meeting);
     if (guild) await this.events.start(guild, meeting.scheduledEventId);

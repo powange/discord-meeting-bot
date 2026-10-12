@@ -6,14 +6,12 @@ import { fetchThread } from '../discord/threads.js';
 import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
 import { nonResponders, reminderTargets } from '../domain/rsvp.js';
 import { formatWhen } from '../domain/time.js';
-import { joinVoiceRow, voiceName } from '../discord/notify.js';
+import { joinVoiceRow, mentionBatches, voiceName } from '../discord/notify.js';
 import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
-import { chunkJoin } from '../lib/text.js';
 
 const BATCH = 20;
 const MAX_ATTEMPTS = 5;
-const MESSAGE_MAX = 2000;
 
 /**
  * Scheduler interne : un tick node-cron lit en BDD les échéances dues. Rien n'est gardé en
@@ -118,14 +116,4 @@ export class Scheduler {
       });
     }
   }
-}
-
-/** Découpe une liste de mentions en messages de 2000 caractères max, chacun autorisant ses propres mentions. */
-function mentionBatches(prefix: string, userIds: readonly string[]): Array<{ content: string; users: string[] }> {
-  if (userIds.length === 0) return [{ content: prefix.trimEnd(), users: [] }];
-  const allowed = new Set(userIds); // le titre ne doit pas pouvoir mentionner quelqu'un d'autre
-  return chunkJoin(prefix, userIds.map((id) => `<@${id}>`), MESSAGE_MAX).map((content) => ({
-    content,
-    users: [...new Set([...content.matchAll(/<@(\d+)>/g)].map((match) => match[1]!))].filter((id) => allowed.has(id)),
-  }));
 }

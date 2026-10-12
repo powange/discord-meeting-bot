@@ -24,10 +24,23 @@ describe('textes lisibles en notification', () => {
     const texts = [
       m.thread.reminder('Bureau', 'dans 15 min', 'lundi 12/10 à 18h00', 'Salle de réunion'),
       m.thread.started('Bureau', 'Salle de réunion'),
-      m.thread.rescheduled('Bureau', 'lundi 19/10 à 18h00'),
+      m.thread.rescheduled('Bureau', 'lundi 19/10 à 18h00', 'dans 7 jours'),
       m.thread.cancelled('Bureau', 'Pierre', 'Imprévu'),
       m.thread.ended('Pierre'),
     ];
     for (const text of texts) expect(text).not.toMatch(/<[@#:t]|\*\*/);
+  });
+});
+
+describe('mentionBatches', () => {
+  it('texte lisible en tête, mentions autorisées uniquement pour les personnes visées', async () => {
+    const { mentionBatches } = await import('../src/discord/notify.js');
+    const [batch] = mentionBatches('« <@999> » commence\nInscrits : ', ['111', '222']);
+    expect(batch!.content).toBe('« <@999> » commence\nInscrits : <@111> <@222>');
+    expect(batch!.users).toEqual(['111', '222']);
+  });
+  it('sans personne à mentionner : texte seul', async () => {
+    const { mentionBatches } = await import('../src/discord/notify.js');
+    expect(mentionBatches('Texte\nInscrits : ', [])).toEqual([{ content: 'Texte\nInscrits :', users: [] }]);
   });
 });

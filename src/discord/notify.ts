@@ -1,4 +1,13 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type APIActionRowComponent, type APIComponentInMessageActionRow, type Client } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  type APIActionRowComponent,
+  type APIComponentInMessageActionRow,
+  type Client,
+  type ThreadChannel,
+} from 'discord.js';
+import { chunkJoin } from '../lib/text.js';
 import type { Messages } from '../i18n/index.js';
 
 /** Nom du salon vocal en texte (les mentions `<#id>` s'affichent brutes dans les notifications mobiles). */
@@ -21,4 +30,34 @@ export function joinVoiceRow(guildId: string, channelId: string, m: Messages): A
       new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(m.buttons.joinVoice).setEmoji('🔊').setURL(`https://discord.com/channels/${guildId}/${channelId}`),
     )
     .toJSON();
+}
+
+const MESSAGE_MAX = 2000;
+
+/** Découpe une liste de mentions en messages de 2000 caractères max, chacun autorisant ses propres mentions. */
+export function mentionBatches(prefix: string, userIds: readonly string[]): Array<{ content: string; users: string[] }> {
+  if (userIds.length === 0) return [{ content: prefix.trimEnd(), users: [] }];
+  const allowed = new Set(userIds); // le titre ne doit pas pouvoir mentionner quelqu'un d'autre
+  return chunkJoin(prefix, userIds.map((id) => `<@${id}>`), MESSAGE_MAX).map((content) => ({
+    content,
+    users: [...new Set([...content.matchAll(/<@(\d+)>/g)].map((match) => match[1]!))].filter((id) => allowed.has(id)),
+  }));
+}
+
+/**
+ * Envoie `text` dans le post en mentionnant `userIds` sur une ligne à part (`label`), pour que
+ * les intéressés soient notifiés : le post est créé par le bot, personne n'en est membre d'office.
+ * Les composants ne sont joints qu'au premier message.
+ */
+export async function sendWithMentions(
+  thread: ThreadChannel,
+  text: string,
+  label: string,
+  userIds: readonly string[],
+  components: APIActionRowComponent<APIComponentInMessageActionRow>[] = [],
+): Promise<void> {
+  const batches = mentionBatches(userIds.length > 0 ? `${text}\n${label} ` : text, userIds);
+  for (const [i, batch] of batches.entries()) {
+    await thread.send({ content: batch.content, allowedMentions: { users: batch.users }, ...(i === 0 ? { components } : {}) });
+  }
 }
