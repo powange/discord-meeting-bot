@@ -14,6 +14,7 @@ import { buildBlocks, cleanSegments, formatClock, formatLine, mergeTranscript, t
 import type { PipelineStep } from '../domain/types.js';
 import { bitrateForLimit, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, type PlacedInput } from '../lib/ffmpeg.js';
+import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
 /** Étapes du traitement post-réunion (phase 3). */
@@ -116,8 +117,9 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   const agenda = (await repos.listAgenda(meeting.id)).map((a) => a.title);
   const prompt = [cfg.prompt, [...names, ...agenda].join(', ')].filter(Boolean).join(' ').slice(0, 800) || undefined;
 
+  const { backends } = await effectiveBackends(repos, config, meeting.guildId);
   const pool = new TranscriptionPool(
-    cfg.backends.map((b) => new HttpTranscriptionBackend(b)),
+    backends.map((b) => new HttpTranscriptionBackend(b)),
     ctx.log,
   );
   const ffmpeg = ffmpegPath(config.ffmpegPath);

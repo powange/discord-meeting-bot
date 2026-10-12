@@ -158,6 +158,28 @@ export const fr = {
     footnote: '-# % : part du temps de parole total · 🗣️ temps de parole · ⏱️ présence dans le vocal (part de la durée).',
   },
 
+  transcriptionConfig: {
+    title: '🎙️ Serveurs de transcription (ordre de bascule)',
+    none: 'Aucun serveur de transcription. Ajoutez-en un : `/config transcription ajouter`.',
+    fromYaml: 'fichier de config',
+    footerDiscord: 'Liste gérée par /config transcription. Désactivés (⚪) : ignorés.',
+    footerYaml: 'Valeurs du fichier de configuration : la première commande « ajouter » les remplace.',
+    badUrl: 'URL invalide : http(s)://hôte:port (vibe) ou http(s)://hôte:port/v1 (openai).',
+    exists: (name: string) => `Un serveur « ${name} » existe déjà.`,
+    unknown: (name: string) => `Serveur « ${name} » introuvable.`,
+    added: (name: string, position: number) => `Serveur « ${name} » ajouté en position ${position}.`,
+    removed: (name: string) => `Serveur « ${name} » retiré.`,
+    backToYaml: "Plus aucun serveur ajouté par commande : ceux du fichier de configuration s'appliquent de nouveau.",
+    reordered: (order: readonly string[]) => `Ordre de bascule : ${order.map((n, i) => `${i + 1}. ${n}`).join(' → ')}`,
+    toggled: (name: string, on: boolean) => `Serveur « ${name} » ${on ? 'activé' : 'désactivé'}.`,
+    result: (name: string, r: { healthy: boolean; transcribeMs?: number; model?: string; error?: string }) =>
+      !r.healthy
+        ? `❌ **${name}** : ${r.error}`
+        : r.error
+          ? `⚠️ **${name}** : joignable, mais la transcription a échoué : ${r.error}`
+          : `✅ **${name}** : opérationnel · transcription en ${((r.transcribeMs ?? 0) / 1000).toFixed(1)} s${r.model ? ` · ${r.model}` : ''}`,
+  },
+
   report: {
     title: 'Compte rendu',
     offAgenda: 'hors ordre du jour',

@@ -47,7 +47,7 @@ export class TranscriptionPool {
   }
 
   async transcribe(audio: Blob, filename: string, options: TranscribeOptions, signal?: AbortSignal): Promise<TranscriptionResult & { backend: string }> {
-    if (this.backends.length === 0) throw new NoBackendError('Aucun backend de transcription configuré (transcription.backends).');
+    if (this.backends.length === 0) throw new NoBackendError('Aucun serveur de transcription actif : ajoutez-en un avec /config transcription ajouter.');
     const errors: string[] = [];
 
     for (let round = 0; round < this.opts.rounds; round++) {

@@ -9,6 +9,7 @@ import {
   audioSegments,
   pipelineSteps,
   summaries,
+  transcriptionBackends,
   transcriptionBlocks,
   transcriptSegments,
   recordingPresence,
@@ -20,6 +21,7 @@ import {
   type AgendaItemRow,
   type PipelineStepRow,
   type SummaryRow,
+  type TranscriptionBackendRow,
   type TranscriptionBlockRow,
   type TranscriptSegmentRow,
   type AudioSegmentRow,
@@ -431,5 +433,54 @@ export class Repositories {
   async getSummary(meetingId: string): Promise<SummaryRow | undefined> {
     const [row] = await this.db.select().from(summaries).where(eq(summaries.meetingId, meetingId));
     return row;
+  }
+
+  // ---------------------------------------------------------------- serveurs de transcription
+
+  async listBackends(guildId: string): Promise<TranscriptionBackendRow[]> {
+    return this.db.select().from(transcriptionBackends).where(eq(transcriptionBackends.guildId, guildId)).orderBy(asc(transcriptionBackends.position));
+  }
+
+  /** Ajoute en fin de liste (priorité la plus basse). */
+  async addBackend(values: Omit<typeof transcriptionBackends.$inferInsert, 'position' | 'id' | 'createdAt'>): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [{ n } = { n: 0 }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(transcriptionBackends)
+        .where(eq(transcriptionBackends.guildId, values.guildId));
+      await tx.insert(transcriptionBackends).values({ ...values, position: n });
+    });
+  }
+
+  async updateBackend(guildId: string, name: string, patch: Partial<typeof transcriptionBackends.$inferInsert>): Promise<boolean> {
+    const rows = await this.db
+      .update(transcriptionBackends)
+      .set(patch)
+      .where(and(eq(transcriptionBackends.guildId, guildId), eq(transcriptionBackends.name, name)))
+      .returning({ id: transcriptionBackends.id });
+    return rows.length > 0;
+  }
+
+  /** Retire un serveur et recompacte les priorités. */
+  async removeBackend(guildId: string, name: string): Promise<boolean> {
+    const remaining = (await this.listBackends(guildId)).filter((b) => b.name !== name);
+    const deleted = await this.db
+      .delete(transcriptionBackends)
+      .where(and(eq(transcriptionBackends.guildId, guildId), eq(transcriptionBackends.name, name)))
+      .returning({ id: transcriptionBackends.id });
+    await this.reorderBackends(guildId, remaining.map((b) => b.name));
+    return deleted.length > 0;
+  }
+
+  /** Applique un ordre de priorité (liste complète des noms). */
+  async reorderBackends(guildId: string, names: readonly string[]): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      for (const [position, name] of names.entries()) {
+        await tx
+          .update(transcriptionBackends)
+          .set({ position })
+          .where(and(eq(transcriptionBackends.guildId, guildId), eq(transcriptionBackends.name, name)));
+      }
+    });
   }
 }

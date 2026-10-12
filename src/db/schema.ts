@@ -123,6 +123,26 @@ export const scheduledJobs = pgTable(
   ],
 );
 
+/** Serveurs de transcription d'un serveur Discord (/config transcription), par ordre de priorité. */
+export const transcriptionBackends = pgTable(
+  'transcription_backends',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    guildId: text().notNull(),
+    position: integer().notNull(),
+    name: text().notNull(),
+    type: text().$type<'vibe' | 'openai'>().notNull(),
+    url: text().notNull(),
+    model: text().notNull().default('whisper-1'),
+    apiKey: text(),
+    timeoutSec: integer().notNull().default(600),
+    concurrency: integer().notNull().default(1),
+    enabled: boolean().notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.guildId, t.name), index().on(t.guildId, t.position)],
+);
+
 /** Une session d'enregistrement (une réunion peut en avoir plusieurs : reprise après coupure). */
 export const recordings = pgTable(
   'recordings',
@@ -260,6 +280,7 @@ export const summaries = pgTable('summaries', {
 });
 
 export type RecordingRow = typeof recordings.$inferSelect;
+export type TranscriptionBackendRow = typeof transcriptionBackends.$inferSelect;
 export type PipelineStepRow = typeof pipelineSteps.$inferSelect;
 export type TranscriptionBlockRow = typeof transcriptionBlocks.$inferSelect;
 export type TranscriptSegmentRow = typeof transcriptSegments.$inferSelect;

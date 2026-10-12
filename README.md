@@ -18,7 +18,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | `/reunion modifier` · `annuler` · `terminer` · `dupliquer` | À utiliser dans le post de la réunion. |
 | Clôture auto | **Uniquement quand le vocal est vide** depuis 5 min, compté depuis le départ de la dernière personne (ou depuis la fin prévue si personne n'est venu). Une réunion qui déborde n'est jamais coupée tant qu'il reste quelqu'un. |
-| `/config` | `forum`, `vocal` (impose un salon vocal à toutes les réunions ; sans option, choix libre), `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
+| `/config` | `transcription` (serveurs de transcription, voir phase 3), `forum`, `vocal` (impose un salon vocal à toutes les réunions ; sans option, choix libre), `roles`, `rappels`, `general`, `voir`. Réservé à « Gérer le serveur ». |
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
 
@@ -74,7 +74,14 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 2. **Secours** (optionnel) : un serveur compatible OpenAI (speaches / faster-whisper) sur une autre machine, ajouté après Vibe dans la liste.
 3. **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
 4. **LiteLLM** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), et ajouter `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, définir `LLM_BASE_URL=http://hôte-ollama:11434/v1` et `LLM_MODEL=qwen3:14b`.
-5. **Config du bot** : section `transcription.backends` de `config.yaml` (voir [config/config.example.yaml](config/config.example.yaml)), puis décommenter `CONFIG_PATH` et le volume de config dans la stack.
+5. **Serveurs de transcription**, depuis Discord (réservé à « Gérer le serveur ») :
+   ```
+   /config transcription ajouter nom:vibe-pc type:vibe url:http://pc-main.tailnet:8080
+   /config transcription ajouter nom:speaches type:openai url:http://pc2:8000/v1 modele:Systran/faster-whisper-large-v3
+   /config transcription priorite nom:speaches position:1
+   /config transcription tester
+   ```
+   L'ordre de la liste est l'ordre de bascule. `tester` fait un vrai essai (santé, puis transcription d'une seconde de silence) et affiche la latence. `activer actif:False` met un serveur de côté sans le retirer. Les clés d'API sont stockées en base et masquées à l'affichage. Tant qu'aucun serveur n'est ajouté par commande, la section `transcription.backends` du YAML s'applique.
 
 ### Tester la phase 3
 

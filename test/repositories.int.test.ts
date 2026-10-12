@@ -146,6 +146,36 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect(await repos.getActiveRecording(m.id)).toBeUndefined();
   });
 
+  it('serveurs de transcription : ajout, priorité, retrait, et repli sur le YAML', async () => {
+    const { effectiveBackends } = await import('../src/services/transcriptionBackends.js');
+    const { buildConfig } = await import('../src/config/index.js');
+    const config = buildConfig(
+      { discord: { token: 'x' }, database: { url: 'postgres://a@b/c' }, defaults: { transcription: { backends: [{ name: 'yaml-vibe', type: 'vibe', url: 'http://y:8080' }] } } },
+      {},
+    );
+    const g = 'guild-backends';
+    expect(await effectiveBackends(repos, config, g)).toMatchObject({ source: 'yaml', backends: [{ name: 'yaml-vibe' }] });
+
+    await repos.addBackend({ guildId: g, name: 'vibe-pc', type: 'vibe', url: 'http://pc:8080' });
+    await repos.addBackend({ guildId: g, name: 'speaches', type: 'openai', url: 'http://s:8000/v1', model: 'large-v3', apiKey: 'k' });
+    await repos.addBackend({ guildId: g, name: 'amd', type: 'vibe', url: 'http://amd:8080' });
+    await repos.reorderBackends(g, ['amd', 'vibe-pc', 'speaches']);
+    await repos.updateBackend(g, 'vibe-pc', { enabled: false });
+    const eff = await effectiveBackends(repos, config, g);
+    expect(eff.source).toBe('discord');
+    expect(eff.backends.map((b) => b.name)).toEqual(['amd', 'speaches']); // désactivé ignoré
+    expect(eff.backends[1]).toMatchObject({ type: 'openai', model: 'large-v3', apiKey: 'k' });
+
+    await repos.removeBackend(g, 'amd');
+    expect((await repos.listBackends(g)).map((r) => [r.name, r.position])).toEqual([
+      ['vibe-pc', 0],
+      ['speaches', 1],
+    ]);
+    await repos.removeBackend(g, 'vibe-pc');
+    await repos.removeBackend(g, 'speaches');
+    expect((await effectiveBackends(repos, config, g)).source).toBe('yaml');
+  });
+
   it('suppression en cascade', async () => {
     const m = await newMeeting();
     await repos.setRsvp(m.id, 'u', 'yes');
