@@ -92,3 +92,14 @@ async function mixOnce(bin: string, inputs: readonly PlacedInput[], output: stri
       : `${inputs.map((_, n) => `[a${n}]`).join('')}amix=inputs=${inputs.length}:normalize=0:dropout_transition=0${tail}[out]`;
   await runFfmpeg(bin, [...args, '-filter_complex', [...placed, mix].join(';'), '-map', '[out]', ...encodeArgs, output], signal);
 }
+
+/** Découpe un fichier audio en parties de `partMs`, sans réencodage. Renvoie les chemins. */
+export async function splitAudio(bin: string, input: string, partMs: number, parts: number, outputFor: (index: number) => string, signal?: AbortSignal): Promise<string[]> {
+  const files: string[] = [];
+  for (let i = 0; i < parts; i++) {
+    const out = outputFor(i);
+    await runFfmpeg(bin, ['-i', input, '-ss', String((i * partMs) / 1000), '-t', String(partMs / 1000), '-c', 'copy', out], signal);
+    files.push(out);
+  }
+  return files;
+}

@@ -70,6 +70,8 @@ export class RetentionService {
       const full = mixes.find((x) => x.meetingId === mix.meetingId)!;
       try {
         await rm(mix.file!, { force: true });
+        const parts = Array.isArray(full.output.parts) ? (full.output.parts as string[]) : [];
+        for (const part of parts) await rm(part, { force: true });
         await this.repos.markMixPurged(mix.meetingId, full.output, now);
         report.mixes++;
       } catch (err) {

@@ -234,6 +234,9 @@ export const fr = {
 
   audio: {
     published: (duration: string) => `🎧 **Audio complet de la réunion** · ${duration}`,
+    publishedParts: (duration: string, parts: number) => `🎧 **Audio complet de la réunion** · ${duration}, en ${parts} parties`,
+    part: (index: number, total: number, from: string, to: string) => `Partie ${index}/${total} · ${from} → ${to}`,
+    partTooLarge: 'trop lourde pour Discord, conservée sur le serveur',
     tooLarge: (duration: string, mb: number) =>
       `🎧 Audio complet de la réunion (${duration}, ${mb} Mo) : trop lourd pour être envoyé sur Discord, il est conservé sur le serveur.`,
   },

@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ffmpegPath, mixPlaced, runFfmpeg } from '../src/lib/ffmpeg.js';
+import { ffmpegPath, mixPlaced, runFfmpeg, splitAudio } from '../src/lib/ffmpeg.js';
 import { SegmentWriter } from '../src/recording/segmentWriter.js';
 
 describe('mixPlaced (ffmpeg réel)', () => {
@@ -32,5 +32,15 @@ describe('mixPlaced (ffmpeg réel)', () => {
     const seconds = Number(last![1]) * 3600 + Number(last![2]) * 60 + Number(last![3]);
     expect(seconds).toBeGreaterThan(59);
     expect(seconds).toBeLessThan(60.5);
+
+    // Découpage en 3 parties de 20 s, sans réencodage, chacune décodable.
+    const parts = await splitAudio(ffmpegPath(), out, 20_000, 3, (i) => join(dir, `part${i + 1}.ogg`));
+    const durations = parts.map((p) => {
+      const l = spawnSync(ffmpegPath(), ['-i', p, '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+      const all = [...l.matchAll(/time=(\d+):(\d+):([\d.]+)/g)].at(-1)!;
+      return Number(all[2]) * 60 + Number(all[3]);
+    });
+    expect(durations.every((d) => d <= 20.1)).toBe(true);
+    expect(durations.reduce((a, b) => a + b, 0)).toBeCloseTo(seconds, 0); // rien de perdu ni de doublé
   }, 60_000);
 });
