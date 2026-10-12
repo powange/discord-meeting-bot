@@ -117,8 +117,6 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       requireManager(scope);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // la connexion au vocal peut prendre plusieurs secondes
       await ctx.recordings.start(meeting.id, interaction.user.id);
-      // Enregistrer avant l'heure, c'est que la réunion a commencé.
-      if (meeting.status === 'scheduled') await ctx.meetings.start(meeting.id);
       await replyEphemeral(interaction, m.recording.started_reply);
       return;
     }

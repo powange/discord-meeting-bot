@@ -30,8 +30,8 @@ async function main(): Promise<void> {
   const recordings = new RecordingService(client, repos, settings, cards, config, log);
   recordings.setEndMeeting((meetingId) => meetings.end(meetingId, null));
   meetings.hooks = {
-    afterStart: (meeting) => recordings.autoStart(meeting.id),
-    beforeClose: (meetingId) => recordings.stop(meetingId, 'meeting_end'),
+    afterStart: (meeting) => recordings.onMeetingStarted(meeting),
+    beforeClose: (meetingId) => recordings.onMeetingClosing(meetingId),
   };
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings };
   const scheduler = new Scheduler(ctx);
@@ -49,7 +49,10 @@ async function main(): Promise<void> {
     hub.startWatchdog();
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
     // des réunions ouvertes, sans notification (simple édition des messages existants).
-    for (const meeting of await repos.listOpenMeetings().catch(() => [])) cards.refresh(meeting.id);
+    for (const meeting of await repos.listOpenMeetings().catch(() => [])) {
+      cards.refresh(meeting.id);
+      if (meeting.status === 'live') await recordings.syncControl(meeting.id).catch((err) => log.warn({ err }, 'Message de contrôle impossible'));
+    }
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
   client.on(Events.MessageCreate, (message) => {

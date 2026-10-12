@@ -15,6 +15,7 @@ import {
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
+import { renderRecordingControl } from '../discord/embeds/recordingControl.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { displayName } from '../discord/notify.js';
 import { fetchThread } from '../discord/threads.js';
@@ -61,6 +62,8 @@ export class RecordingService {
   /** Par serveur. Une entrée `null` = démarrage en cours (évite deux démarrages simultanés). */
   private readonly active = new Map<string, ActiveRecording | null>();
   private endMeeting: EndMeeting = async () => undefined;
+  /** Mises à jour du message de contrôle, sérialisées par réunion (pas de double publication). */
+  private readonly controlQueue = new Map<string, Promise<void>>();
 
   constructor(
     private readonly client: Client,
@@ -200,6 +203,7 @@ export class RecordingService {
     this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
     await this.announceStart(meeting, settings, m, channel, by);
     this.cards.refresh(meeting.id, ['card']);
+    await this.syncControl(meeting.id);
   }
 
   /** Avertissement RGPD dans le post et dans le chat du salon vocal (lu par ceux qui y sont). */
@@ -238,7 +242,10 @@ export class RecordingService {
     this.log.info({ meetingId, recordingId: entry.recordingId, reason }, 'Enregistrement arrêté');
 
     await this.postSummary(entry.recordingId, meetingId, reason, interrupted).catch((err) => this.warn(meetingId, 'Bilan impossible', err));
-    if (reason !== 'shutdown') this.cards.refresh(meetingId, ['card']);
+    if (reason !== 'shutdown') {
+      this.cards.refresh(meetingId, ['card']);
+      await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Mise à jour du contrôle impossible', err));
+    }
     return true;
   }
 
@@ -257,12 +264,19 @@ export class RecordingService {
       this.log.warn({ recordingId: rec.id, meetingId: rec.meetingId }, 'Enregistrement interrompu par un arrêt inattendu');
       await this.postSummary(rec.id, rec.meetingId, 'crash', true).catch((err) => this.warn(rec.meetingId, 'Bilan impossible', err));
       this.cards.refresh(rec.meetingId, ['card']);
+      await this.syncControl(rec.meetingId).catch((err) => this.warn(rec.meetingId, 'Mise à jour du contrôle impossible', err));
     }
   }
 
   // ---------------------------------------------------------------- présences et surveillance
 
   onVoiceStateUpdate(oldState: VoiceState, newState: VoiceState): void {
+    const arrived = newState.channelId && oldState.channelId !== newState.channelId && !newState.member?.user.bot;
+    if (arrived) {
+      void this.offerControl(newState.guild.id, newState.channelId!).catch((err) =>
+        this.log.warn({ guildId: newState.guild.id, err: errorMessage(err) }, 'Message de contrôle impossible'),
+      );
+    }
     const entry = this.active.get(newState.guild.id);
     if (!entry) return;
     const member = newState.member ?? oldState.member;
@@ -318,6 +332,68 @@ export class RecordingService {
         }
       })().catch((err) => this.warn(entry.meetingId, 'Gestion de la déconnexion impossible', err));
     });
+  }
+
+  // ---------------------------------------------------------------- message de contrôle
+
+  /** Réunion passée « En cours » : démarrage auto éventuel, et contrôle si quelqu'un est déjà là. */
+  async onMeetingStarted(meeting: MeetingRow): Promise<void> {
+    await this.autoStart(meeting.id);
+    await this.syncControl(meeting.id);
+  }
+
+  /** Réunion close ou annulée : arrêt de l'enregistrement et contrôle désactivé. */
+  async onMeetingClosing(meetingId: string): Promise<void> {
+    await this.stop(meetingId, 'meeting_end');
+    await this.syncControl(meetingId);
+  }
+
+  /** Quelqu'un rejoint un vocal : s'il s'agit de celui d'une réunion en cours, on propose l'enregistrement. */
+  private async offerControl(guildId: string, channelId: string): Promise<void> {
+    const live = await this.repos.listMeetings(guildId, ['live']);
+    for (const meeting of live) if (meeting.voiceChannelId === channelId && !meeting.controlMessageId) await this.syncControl(meeting.id);
+  }
+
+  /**
+   * Publie ou met à jour le message de contrôle. Il n'apparaît qu'une fois la réunion « En
+   * cours » avec au moins une personne dans le vocal (ou si un enregistrement auto a démarré
+   * plus tôt) ; ensuite il suit l'état de l'enregistrement, puis la clôture.
+   */
+  syncControl(meetingId: string): Promise<void> {
+    const previous = this.controlQueue.get(meetingId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.doSyncControl(meetingId));
+    this.controlQueue.set(meetingId, next);
+    void next.finally(() => this.controlQueue.get(meetingId) === next && this.controlQueue.delete(meetingId)).catch(() => undefined);
+    return next;
+  }
+
+  private async doSyncControl(meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting?.threadId) return;
+    const recording = await this.repos.getActiveRecording(meetingId);
+    const m = await this.settings.messages(meeting.guildId);
+    const payload = renderRecordingControl(meeting, recording?.startedAt ?? null, m);
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!thread) return;
+
+    if (meeting.controlMessageId) {
+      const message = await thread.messages.fetch(meeting.controlMessageId).catch(() => null);
+      if (message) {
+        await ensureUnarchived(thread);
+        await message.edit({ ...payload, allowedMentions: { parse: [] } });
+        return;
+      }
+      // Supprimé à la main : on le republie si c'est encore utile.
+    }
+
+    if (!isOpen(meeting.status)) return;
+    const channel = this.client.channels.cache.get(meeting.voiceChannelId);
+    const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
+    const wanted = recording !== undefined || (meeting.status === 'live' && humans > 0);
+    if (!wanted) return;
+    await ensureUnarchived(thread);
+    const message = await thread.send({ ...payload, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
+    await this.repos.updateMeeting(meetingId, { controlMessageId: message.id });
   }
 
   private shouldRecord(guild: Guild, settings: GuildSettingsRow, userId: string): boolean {

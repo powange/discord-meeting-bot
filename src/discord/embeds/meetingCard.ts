@@ -91,18 +91,6 @@ export function renderMeetingCard(
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!open),
-    recordingSince
-      ? new ButtonBuilder()
-          .setCustomId(encode({ type: 'rec.stop', meetingId: meeting.id }))
-          .setLabel(m.buttons.stopRecording)
-          .setEmoji('⏹️')
-          .setStyle(ButtonStyle.Danger)
-      : new ButtonBuilder()
-          .setCustomId(encode({ type: 'rec.start', meetingId: meeting.id }))
-          .setLabel(m.buttons.record)
-          .setEmoji('🔴')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!open),
   );
 
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };

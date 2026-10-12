@@ -47,6 +47,8 @@ export const meetings = pgTable(
     threadId: text().unique(),
     /** Second message du post, dédié à l'ordre du jour. */
     agendaMessageId: text(),
+    /** Message de contrôle de l'enregistrement, publié au début de la réunion (quelqu'un dans le vocal). */
+    controlMessageId: text(),
     scheduledEventId: text(),
     voiceChannelId: text().notNull(),
     title: text().notNull(),

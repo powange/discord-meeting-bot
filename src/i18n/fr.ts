@@ -112,6 +112,12 @@ export const fr = {
     voiceFallback: 'le salon vocal',
   },
 
+  control: {
+    idle: "🎙️ **Enregistrement** — non démarré. L'organisateur ou un gestionnaire peut l'enregistrer (une piste par participant).",
+    recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}.`,
+    closed: '🎙️ Réunion close : enregistrement terminé.',
+  },
+
   recording: {
     warning: (optoutRole: string | null) =>
       '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.' +

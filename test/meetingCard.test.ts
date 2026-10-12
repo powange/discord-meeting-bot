@@ -42,7 +42,7 @@ describe('renderMeetingCard', () => {
     expect(fields.find((f) => f.name.startsWith('✅'))!.value).toBe('<@1>');
     expect(fields.find((f) => f.name.startsWith('❌'))!.value).toBe(m.card.nobody);
     expect(fields.some((f) => f.name.includes(m.card.agenda))).toBe(false);
-    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier', 'Enregistrer']);
+    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier']);
   });
 
   it('reste sous les limites Discord même avec beaucoup de monde', () => {
@@ -58,12 +58,10 @@ describe('renderMeetingCard', () => {
     expect(embed.fields!.find((f) => f.name.startsWith('✅'))!.value).toMatch(/… et \d+ de plus$/);
   });
 
-  it('enregistrement en cours : mention et bouton d’arrêt', () => {
+  it('enregistrement en cours : mention sur la carte, sans bouton (message de contrôle séparé)', () => {
     const card = renderMeetingCard(meeting, [], m, new Date('2026-10-15T16:02:00Z'));
     expect(card.embeds[0]!.description).toContain('Enregistrement en cours');
-    const last = buttons(card).at(-1)!;
-    expect([last.label, last.disabled ?? false]).toEqual(["Arrêter l'enregistrement", false]);
-    expect(decode(last.custom_id)).toEqual({ type: 'rec.stop', meetingId: meeting.id });
+    expect(buttons(card).some((b) => decode(b.custom_id)?.type.startsWith('rec.'))).toBe(false);
   });
 
   it('désactive les boutons quand la réunion est close', () => {

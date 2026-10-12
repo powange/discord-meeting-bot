@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "control_message_id" text;
