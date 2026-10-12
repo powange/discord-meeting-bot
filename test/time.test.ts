@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { describe, expect, it } from 'vitest';
-import { combineDayTime, dayChoices, formatTimeRange, parseDateTime, parseTimeRange } from '../src/domain/time.js';
+import { combineDayTime, dayChoices, formatTimeRange, parseDatedRange, parseDateTime, parseTimeRange } from '../src/domain/time.js';
 
 const zone = 'Europe/Paris';
 const now = DateTime.fromISO('2026-10-12T10:00:00', { zone });
@@ -105,5 +105,19 @@ describe('dayChoices', () => {
   });
   it('minuit à Paris = encore la veille en UTC', () => {
     expect(dayChoices(zone, new Date('2026-10-12T22:30:00Z'), 1)).toEqual(['2026-10-13']);
+  });
+});
+
+describe('parseDatedRange (option « Autre date »)', () => {
+  it.each([
+    ['15/01/2027 18h-19h30', { day: '2027-01-15', hour: 18, minute: 0, durationMin: 90 }],
+    ['15/01 18:30', { day: '2027-01-15', hour: 18, minute: 30, durationMin: null }], // année déduite
+    ['2027-03-02 à 9h', { day: '2027-03-02', hour: 9, minute: 0, durationMin: null }],
+  ])('%s', (input, expected) => {
+    expect(parseDatedRange(input, zone, now)).toEqual({ ok: true, ...expected });
+  });
+  it('erreurs', () => {
+    expect(parseDatedRange('18h-19h', zone, now)).toEqual({ ok: false, error: 'format' });
+    expect(parseDatedRange('31/02/2027 18h', zone, now)).toEqual({ ok: false, error: 'invalid' });
   });
 });

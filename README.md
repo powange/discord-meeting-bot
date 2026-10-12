@@ -9,7 +9,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Fonction | Détail |
 |---|---|
 | Post épinglé | Créé quand on choisit le forum dans `/config` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire : tout message posté est supprimé (le post n'est pas verrouillé, sinon les membres ne pourraient plus cliquer). Le bot le surveille : supprimé (ou son message effacé), il est recréé aussitôt ; désépinglé, verrouillé ou archivé, il est rétabli ; vérification complète au démarrage puis toutes les 15 min. |
-| `/reunion creer` | Même formulaire que le bouton : titre, jour (25 prochains jours), horaire (`18h` ou `18h-19h30`), salon vocal, description. Pour une date plus lointaine : `/reunion creer quand:15/01/2027 18h`. |
+| Nouvelle réunion | Bouton du post épinglé. Formulaire : titre, jour (les 24 prochains jours, ou « 📅 Autre date… »), horaire (`18h` ou `18h-19h30` ; avec « Autre date » : `15/01/2027 18h-19h30`), salon vocal, description. |
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
 | Réponses | Boutons Présent / Peut-être / Absent, modifiables à tout moment. |
@@ -143,7 +143,7 @@ Commandes utiles :
 
 1. `/config` → Forum des réunions : les 4 tags et le post épinglé apparaissent sur le forum.
 2. `/config` → Rappels → « 5min, 2min », pour voir passer les rappels rapidement.
-3. `/reunion creer` avec une date dans 8 minutes. Vérifier que le post, la carte et l'événement Discord sont créés.
+3. Bouton **Nouvelle réunion** du post épinglé, avec une heure dans 8 minutes. Vérifier que le post, la carte et l'événement Discord sont créés.
 4. Avec deux comptes, répondre (Présent / Peut-être) et ajouter des points à l'ordre du jour. La carte se met à jour en environ une seconde.
 5. Avec **Gérer l'ODJ**, réordonner, retirer un point et verrouiller. Avec le second compte, vérifier que l'ajout est refusé.
 6. Vérifier les rappels à H-5 et H-2 min, puis le passage du tag à « En cours » et de l'événement à « Actif » à l'heure prévue.

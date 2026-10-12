@@ -58,7 +58,9 @@ export const fr = {
     tomorrow: 'demain',
     time: 'Horaire',
     timePlaceholder: '18h ou 18h-19h30',
-    timeHint: (duration: string, tz: string) => `Début, ou début-fin. Sans heure de fin : ${duration}. (${tz})`,
+    timeHint: (duration: string, tz: string) => `Début, ou début-fin. Sans heure de fin : ${duration}. Avec « Autre date » : 15/01/2027 18h-19h30. (${tz})`,
+    otherDay: 'Autre date…',
+    otherDayHint: "Saisir la date dans l'horaire : 15/01/2027 18h-19h30",
     voice: 'Salon vocal',
     description: 'Description',
     descriptionHint: 'Optionnel : contexte, documents à lire…',
@@ -73,7 +75,7 @@ export const fr = {
     threadName: '📌 Planifier une réunion',
     title: 'Réunions',
     intro:
-      'Cliquez sur **Nouvelle réunion** pour planifier une réunion (ou utilisez `/reunion creer`).\n' +
+      'Cliquez sur **Nouvelle réunion** pour planifier une réunion.\n' +
       'Chaque réunion a son propre post : inscriptions, ordre du jour et rappels.',
     upcoming: 'Prochaines réunions',
     none: 'Aucune réunion prévue.',
@@ -315,6 +317,7 @@ export const fr = {
     dateInvalid: "Cette date n'existe pas.",
     dayRequired: 'Choisissez un jour.',
     timeFormat: 'Horaire illisible. Exemples : `18h`, `18:30`, `18h-19h30`.',
+    otherDayFormat: 'Avec « Autre date », indiquez la date puis l’horaire : `15/01/2027 18h-19h30`.',
     datePast: 'La date doit être dans le futur.',
     duration: (min: number, max: number) => `Durée invalide : un nombre de minutes entre ${min} et ${max}.`,
     voiceRequired: 'Choisissez un salon vocal.',

@@ -11,7 +11,7 @@ import {
 import { DateTime } from 'luxon';
 import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX } from '../domain/agenda.js';
 import { DESCRIPTION_MAX, DURATION_MAX, DURATION_MIN, TITLE_MAX } from '../domain/meeting.js';
-import { combineDayTime, dayChoices, dayOf, formatTimeRange, parseDateTime, parseTimeRange } from '../domain/time.js';
+import { combineDayTime, dayChoices, dayOf, formatTimeRange, OTHER_DAY, parseDatedRange, parseDateTime, parseTimeRange } from '../domain/time.js';
 import type { Messages } from '../i18n/index.js';
 import { UserError } from '../lib/errors.js';
 import type { MeetingInput } from '../services/meetings.js';
@@ -52,11 +52,13 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
       .setPlaceholder(m.modal.dayPlaceholder)
       .setRequired(true)
       .addOptions(
-        dayChoices(o.timezone, now, DAY_CHOICES, selectedDay).map((iso) => ({
+        ...dayChoices(o.timezone, now, DAY_CHOICES - 1, selectedDay).map((iso) => ({
           label: dayLabel(iso, today, o.timezone, o.locale, m),
           value: iso,
           default: iso === selectedDay,
         })),
+        // Au-delà des prochains jours : la date se saisit avec l'horaire.
+        { label: m.modal.otherDay, value: OTHER_DAY, emoji: '📅', description: m.modal.otherDayHint },
       );
 
     const time = new TextInputBuilder()
@@ -126,10 +128,20 @@ export function readMeetingModal(
     return { ...options.current, title, description };
   }
 
-  const day = interaction.fields.getStringSelectValues(F.day)[0];
+  let day = interaction.fields.getStringSelectValues(F.day)[0];
   if (!day) throw new UserError(m.errors.dayRequired);
-  const range = parseTimeRange(interaction.fields.getTextInputValue(F.time));
-  if (!range.ok) throw new UserError(m.errors.timeFormat);
+  const timeInput = interaction.fields.getTextInputValue(F.time);
+  let range: { hour: number; minute: number; durationMin: number | null };
+  if (day === OTHER_DAY) {
+    const dated = parseDatedRange(timeInput, options.timezone, DateTime.now());
+    if (!dated.ok) throw new UserError(dated.error === 'format' ? m.errors.otherDayFormat : m.errors.dateInvalid);
+    day = dated.day;
+    range = dated;
+  } else {
+    const parsed = parseTimeRange(timeInput);
+    if (!parsed.ok) throw new UserError(m.errors.timeFormat);
+    range = parsed;
+  }
   const startsAt = combineDayTime(day, range.hour, range.minute, options.timezone);
   if (!startsAt) throw new UserError(m.errors.dateInvalid);
   const durationMin = range.durationMin ?? options.current?.durationMin ?? options.defaultDurationMin;

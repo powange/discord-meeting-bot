@@ -243,11 +243,10 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
   );
 }
 
-/** Ouvre le formulaire de création (bouton du post épinglé ou `/reunion creer`). */
+/** Ouvre le formulaire de création (bouton « Nouvelle réunion » du post épinglé). */
 export async function showCreateModal(
   ctx: AppContext,
-  interaction: ButtonInteraction<'cached'> | ChatInputCommandInteraction<'cached'>,
-  startsAt?: Date,
+  interaction: ButtonInteraction<'cached'>,
 ): Promise<void> {
   const settings = await ctx.settings.get(interaction.guildId);
   const m = messages(settings.locale);
@@ -262,7 +261,7 @@ export async function showCreateModal(
       locale: settings.locale,
       defaultDurationMin: settings.defaultDurationMin,
       fixedVoiceChannelId: settings.voiceChannelId,
-      defaults: startsAt ? { startsAt } : {},
+      defaults: {},
     }),
   );
 }

@@ -109,3 +109,27 @@ export function discordTimestamp(date: Date, style: 'F' | 'f' | 'R' | 't' | 'D' 
 export function formatWhen(date: Date, zone: string, locale: string, format: string): string {
   return DateTime.fromJSDate(date, { zone }).setLocale(locale).toFormat(format);
 }
+
+/** Valeur « Autre date… » de la liste des jours : la date est alors saisie avec l'horaire. */
+export const OTHER_DAY = 'other';
+
+export type DatedRangeResult =
+  | { ok: true; day: string; hour: number; minute: number; durationMin: number | null }
+  | { ok: false; error: 'format' | 'invalid' };
+
+/**
+ * « 15/01/2027 18h-19h30 » (option « Autre date ») : jour puis horaire. Sans année, prochaine
+ * occurrence à partir de `now`.
+ */
+export function parseDatedRange(input: string, zone: string, now: DateTime): DatedRangeResult {
+  const trimmed = input.trim().replace(/\s+(à|a)\s+/i, ' ');
+  const space = trimmed.search(/\s/);
+  if (space < 0) return { ok: false, error: 'format' };
+  const datePart = trimmed.slice(0, space);
+  const range = parseTimeRange(trimmed.slice(space + 1));
+  if (!range.ok) return { ok: false, error: 'format' };
+  // Validation du jour via parseDateTime (mêmes formats de date), à l'heure de début.
+  const parsed = parseDateTime(`${datePart} ${range.hour}:${String(range.minute).padStart(2, '0')}`, zone, now);
+  if (!parsed.ok) return parsed;
+  return { ok: true, day: parsed.value.toISODate()!, hour: range.hour, minute: range.minute, durationMin: range.durationMin };
+}
