@@ -15,7 +15,16 @@ export interface EventData {
   description: string;
   startsAt: Date;
   durationMin: number;
-  voiceChannelId: string;
+  /** Null tant que le salon temporaire n'existe pas : l'événement est alors « externe », avec `location`. */
+  voiceChannelId: string | null;
+  location: string;
+}
+
+/** Lieu de l'événement : le salon vocal, ou un texte tant que le salon n'est pas créé. */
+function where(data: EventData) {
+  return data.voiceChannelId
+    ? { entityType: GuildScheduledEventEntityType.Voice, channel: data.voiceChannelId }
+    : { entityType: GuildScheduledEventEntityType.External, entityMetadata: { location: truncate(data.location, 100) } };
 }
 
 /**
@@ -34,8 +43,7 @@ export class ScheduledEvents {
         scheduledStartTime: data.startsAt,
         scheduledEndTime: new Date(data.startsAt.getTime() + data.durationMin * 60_000),
         privacyLevel: GuildScheduledEventPrivacyLevel.GuildOnly,
-        entityType: GuildScheduledEventEntityType.Voice,
-        channel: data.voiceChannelId,
+        ...where(data),
       });
       return event.id;
     } catch (err) {
@@ -53,7 +61,7 @@ export class ScheduledEvents {
         description: truncate(data.description, 1000),
         scheduledStartTime: data.startsAt,
         scheduledEndTime: new Date(data.startsAt.getTime() + data.durationMin * 60_000),
-        channel: data.voiceChannelId,
+        ...where(data),
       });
       return eventId;
     } catch (err) {

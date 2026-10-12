@@ -12,11 +12,13 @@ export interface PlannedJob {
  * Un rappel dont l'échéance est déjà passée est ignoré (pas de rappel « J-1 » envoyé à H-10 min).
  */
 export function planJobs(
-  meeting: { startsAt: Date; durationMin: number; status: MeetingStatus; autoRecord?: boolean },
+  meeting: { startsAt: Date; durationMin: number; status: MeetingStatus; autoRecord?: boolean; voiceChannelId?: string | null },
   reminderOffsetsMin: readonly number[],
   now: Date,
   /** Avance du démarrage auto de l'enregistrement (le bot arrive avant les participants). */
   recordLeadMin = 0,
+  /** Avance de la création du salon vocal temporaire (réunion sans salon). */
+  voiceLeadMin = 15,
 ): PlannedJob[] {
   // La clôture n'est pas planifiée : elle dépend de la présence dans le vocal (MeetingWatcher).
   const jobs: PlannedJob[] = [];
@@ -26,6 +28,9 @@ export function planJobs(
   for (const offset of [...new Set(reminderOffsetsMin)].filter((o) => o > 0).sort((a, b) => b - a)) {
     const dueAt = new Date(start - offset * 60_000);
     if (dueAt.getTime() > now.getTime()) jobs.push({ kind: 'reminder', offsetMin: offset, dueAt });
+  }
+  if (meeting.voiceChannelId === null) {
+    jobs.push({ kind: 'voice_create', offsetMin: voiceLeadMin, dueAt: new Date(Math.max(start - voiceLeadMin * 60_000, now.getTime())) });
   }
   if (meeting.autoRecord) {
     jobs.push({ kind: 'record_start', offsetMin: recordLeadMin, dueAt: new Date(Math.max(start - recordLeadMin * 60_000, now.getTime())) });

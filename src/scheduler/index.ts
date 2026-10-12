@@ -6,7 +6,7 @@ import { fetchThread } from '../discord/threads.js';
 import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
 import { nonResponders, reminderTargets } from '../domain/rsvp.js';
 import { formatWhen } from '../domain/time.js';
-import { joinVoiceRow, mentionBatches, voiceName } from '../discord/notify.js';
+import { joinVoiceRows, mentionBatches, voiceName } from '../discord/notify.js';
 import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
 
@@ -69,7 +69,11 @@ export class Scheduler {
         await this.ctx.meetings.start(job.meetingId);
         return;
       case 'record_start':
+        await this.ctx.meetings.ensureVoice(job.meetingId);
         await this.ctx.recordings.autoStart(job.meetingId);
+        return;
+      case 'voice_create':
+        await this.ctx.meetings.ensureVoice(job.meetingId);
         return;
       case 'auto_end':
         // Ancienne clôture à heure fixe : remplacée par la clôture sur vocal vide (MeetingWatcher).
@@ -78,12 +82,16 @@ export class Scheduler {
   }
 
   private async sendReminder(job: ScheduledJobRow, now: Date): Promise<void> {
-    const meeting = await this.ctx.repos.getMeeting(job.meetingId);
+    let meeting = await this.ctx.repos.getMeeting(job.meetingId);
     if (!meeting || meeting.status !== 'scheduled' || isReminderStale(meeting.startsAt, now)) return;
+    const settings = await this.ctx.settings.get(meeting.guildId);
+    // Rappel tombant avec (ou après) la création du salon temporaire : le salon d'abord, pour le bouton « Rejoindre ».
+    if (!meeting.voiceChannelId && meeting.startsAt.getTime() - now.getTime() <= settings.autoVoiceLeadMin * 60_000) {
+      meeting = (await this.ctx.meetings.ensureVoice(meeting.id)) ?? meeting;
+    }
     const thread = await fetchThread(this.ctx.client, meeting.threadId);
     if (!thread) return;
 
-    const settings = await this.ctx.settings.get(meeting.guildId);
     const m = messages(settings.locale);
     const rsvps = await this.ctx.repos.listRsvps(meeting.id);
 
@@ -113,7 +121,7 @@ export class Scheduler {
       await thread.send({
         content: batch.content,
         allowedMentions: { users: batch.users },
-        ...(i === 0 ? { components: [joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m)] } : {}),
+        ...(i === 0 ? { components: joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m) } : {}),
       });
     }
   }

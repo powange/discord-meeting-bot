@@ -116,6 +116,14 @@ export class Repositories {
     return this.db.select().from(meetings).where(inArray(meetings.status, ['scheduled', 'live']));
   }
 
+  /** Salons temporaires de réunions finies ou annulées, pas encore supprimés. */
+  async listTemporaryVoicesToDelete(): Promise<MeetingRow[]> {
+    return this.db
+      .select()
+      .from(meetings)
+      .where(and(eq(meetings.voiceTemporary, true), isNull(meetings.voiceDeletedAt), inArray(meetings.status, ['ended', 'cancelled'])));
+  }
+
   async listMeetings(guildId: string, statuses: readonly MeetingStatus[]): Promise<MeetingRow[]> {
     return this.db
       .select()

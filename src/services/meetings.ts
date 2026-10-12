@@ -1,19 +1,20 @@
-import { MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
+import { ChannelType, MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { applyStatusTag, ensureUnarchived } from '../discord/forum.js';
 import { ScheduledEvents, type EventData } from '../discord/scheduledEvent.js';
 import { fetchForum, fetchThread } from '../discord/threads.js';
-import { canReschedule, threadName } from '../domain/meeting.js';
+import { canReschedule, isOpen, threadName } from '../domain/meeting.js';
 import { planJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
-import { displayName, joinVoiceRow, sendWithMentions, voiceName } from '../discord/notify.js';
+import { displayName, joinVoiceRows, sendWithMentions, voiceName } from '../discord/notify.js';
 import { reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
+import { truncate } from '../lib/text.js';
 import type { CardService } from './cards.js';
 import type { SettingsService } from './settings.js';
 
@@ -31,7 +32,8 @@ export interface MeetingInput {
   description: string;
   startsAt: Date;
   durationMin: number;
-  voiceChannelId: string;
+  /** Null en mode « salon créé automatiquement » : il est créé peu avant le début. */
+  voiceChannelId: string | null;
 }
 
 /**
@@ -41,6 +43,8 @@ export interface MeetingInput {
  */
 export class MeetingService {
   private readonly events: ScheduledEvents;
+  /** Créations de salon temporaire en cours (rappel, début et enregistrement peuvent la demander ensemble). */
+  private readonly creatingVoice = new Map<string, Promise<MeetingRow | undefined>>();
   /** Branchements de l'enregistrement (phase 2), renseignés au démarrage. */
   hooks: MeetingHooks = { afterStart: async () => undefined, beforeClose: async () => undefined, afterEnd: async () => undefined };
 
@@ -63,7 +67,7 @@ export class MeetingService {
     const forum = await fetchForum(this.client, settings.forumChannelId);
     if (!forum) throw new UserError(m.errors.forumNotConfigured);
     if (!settings.tagIds) throw new UserError(m.errors.tagsMissing);
-    input = await this.applyFixedVoice(settings, input, m);
+    input = await this.applyVoiceMode(settings, input, m);
 
     let meeting = await this.repos.insertMeeting({
       guildId: guild.id,
@@ -94,7 +98,7 @@ export class MeetingService {
       throw err;
     }
 
-    const eventId = await this.events.create(guild, this.eventData(meeting, thread.url, m));
+    const eventId = await this.events.create(guild, this.eventData(meeting, thread.url, m, settings));
     if (eventId) meeting = (await this.repos.updateMeeting(meeting.id, { scheduledEventId: eventId }))!;
     await this.replan(meeting, settings);
     this.onChange(guild.id);
@@ -105,7 +109,7 @@ export class MeetingService {
   async update(guild: Guild, meeting: MeetingRow, input: MeetingInput, by: string): Promise<MeetingRow> {
     const settings = await this.settings.get(guild.id);
     const m = messages(settings.locale);
-    if (canReschedule(meeting.status)) input = await this.applyFixedVoice(settings, input, m);
+    if (canReschedule(meeting.status)) input = await this.applyVoiceMode(settings, input, m, meeting);
     const rescheduled =
       input.startsAt.getTime() !== meeting.startsAt.getTime() ||
       input.durationMin !== meeting.durationMin ||
@@ -128,7 +132,7 @@ export class MeetingService {
       }
     }
     if (updated.status === 'scheduled') {
-      const eventId = await this.events.update(guild, updated.scheduledEventId, this.eventData(updated, thread?.url ?? '', m));
+      const eventId = await this.events.update(guild, updated.scheduledEventId, this.eventData(updated, thread?.url ?? '', m, settings));
       if (eventId !== updated.scheduledEventId) updated = (await this.repos.updateMeeting(updated.id, { scheduledEventId: eventId }))!;
     }
     if (rescheduled) await this.replan(updated, settings);
@@ -140,6 +144,7 @@ export class MeetingService {
 
   /** Passage « En cours » (heure de début atteinte). */
   async start(meetingId: string): Promise<boolean> {
+    await this.ensureVoice(meetingId).catch((err) => this.log.warn({ meetingId, err: errorMessage(err) }, 'Création du salon vocal impossible'));
     const meeting = await this.repos.transitionMeeting(meetingId, ['scheduled'], 'live', { startedAt: new Date() });
     if (!meeting) return false;
     const settings = await this.settings.get(meeting.guildId);
@@ -148,9 +153,7 @@ export class MeetingService {
     const voice = await voiceName(this.client, meeting.voiceChannelId, m);
     const attendees = reminderTargets(await this.repos.listRsvps(meeting.id));
     await this.afterStatusChange(meeting, settings, (thread) =>
-      sendWithMentions(thread, m.thread.started(meeting.title, voice), m.thread.reminderTargets, attendees, [
-        joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m),
-      ]),
+      sendWithMentions(thread, m.thread.started(meeting.title, voice), m.thread.reminderTargets, attendees, joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m)),
     );
     const guild = await this.guild(meeting);
     if (guild) await this.events.start(guild, meeting.scheduledEventId);
@@ -223,11 +226,82 @@ export class MeetingService {
     for (const meeting of await this.repos.listMeetings(guildId, ['scheduled', 'live'])) await this.replan(meeting, settings);
   }
 
+  /**
+   * Salon vocal d'une réunion qui n'en a pas encore (mode « créé automatiquement ») : il est créé
+   * dans la catégorie choisie (à défaut celle du forum). Recréé s'il a été supprimé à la main avant
+   * la fin. Sans effet si la réunion a déjà son salon ou est terminée.
+   */
+  async ensureVoice(meetingId: string): Promise<MeetingRow | undefined> {
+    const pending = this.creatingVoice.get(meetingId);
+    if (pending) return pending;
+    const task = this.doEnsureVoice(meetingId).finally(() => this.creatingVoice.delete(meetingId));
+    this.creatingVoice.set(meetingId, task);
+    return task;
+  }
+
+  /** Supprime le salon temporaire d'une réunion finie, une fois vide. Renvoie vrai si c'est fait. */
+  async deleteTemporaryVoice(meeting: MeetingRow): Promise<boolean> {
+    if (!meeting.voiceTemporary || meeting.voiceDeletedAt || isOpen(meeting.status)) return false;
+    const channel = meeting.voiceChannelId ? await this.client.channels.fetch(meeting.voiceChannelId).catch(() => null) : null;
+    if (channel?.isVoiceBased()) {
+      if (channel.members.filter((mb) => !mb.user.bot).size > 0) return false;
+      // En cas d'échec (permission retirée…), on n'insiste pas : la surveillance réessaierait toutes les 30 s.
+      await channel.delete(`Fin de la réunion « ${meeting.title} »`).catch((err) => this.warn(meeting, 'Suppression du salon temporaire impossible', err));
+    }
+    await this.repos.updateMeeting(meeting.id, { voiceDeletedAt: new Date() });
+    this.cards.refresh(meeting.id, ['card']);
+    this.log.info({ meetingId: meeting.id, channelId: meeting.voiceChannelId }, 'Salon vocal temporaire supprimé');
+    return true;
+  }
+
   // ---------------------------------------------------------------- interne
 
-  /** Salon vocal imposé par `/config vocal` : il remplace celui saisi, et doit toujours exister. */
-  private async applyFixedVoice(settings: GuildSettingsRow, input: MeetingInput, m: Messages): Promise<MeetingInput> {
-    if (!settings.voiceChannelId) return input;
+  private async doEnsureVoice(meetingId: string): Promise<MeetingRow | undefined> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || !isOpen(meeting.status)) return meeting;
+    if (meeting.voiceChannelId) {
+      if (!meeting.voiceTemporary) return meeting;
+      if (await this.client.channels.fetch(meeting.voiceChannelId).catch(() => null)) return meeting;
+    }
+    const guild = await this.guild(meeting);
+    if (!guild) return meeting;
+    const settings = await this.settings.get(meeting.guildId);
+    const m = messages(settings.locale);
+    const parent = settings.autoVoiceCategoryId ?? (await fetchForum(this.client, settings.forumChannelId))?.parentId ?? null;
+    const create = (withParent: boolean) =>
+      guild.channels.create({
+        name: truncate(meeting.title, 100),
+        type: ChannelType.GuildVoice,
+        ...(withParent && parent ? { parent } : {}),
+        reason: `Réunion « ${meeting.title} »`,
+      });
+    // Catégorie supprimée ou interdite au bot : le salon est créé hors catégorie plutôt que pas du tout.
+    const channel = await create(true).catch((err) => {
+      if (!parent) throw err;
+      this.warn(meeting, 'Création du salon dans la catégorie impossible', err);
+      return create(false);
+    });
+    let updated = (await this.repos.updateMeeting(meeting.id, { voiceChannelId: channel.id, voiceTemporary: true, voiceDeletedAt: null }))!;
+    if (updated.status === 'scheduled') {
+      const thread = await fetchThread(this.client, updated.threadId);
+      const eventId = await this.events.update(guild, updated.scheduledEventId, this.eventData(updated, thread?.url ?? '', m, settings));
+      if (eventId !== updated.scheduledEventId) updated = (await this.repos.updateMeeting(updated.id, { scheduledEventId: eventId }))!;
+    }
+    await this.cards.refreshNow(updated.id).catch((err) => this.warn(updated, 'Mise à jour de la carte impossible', err));
+    this.log.info({ meetingId: updated.id, channelId: channel.id }, 'Salon vocal temporaire créé');
+    return updated;
+  }
+
+  /**
+   * Salon imposé par /config : il remplace celui saisi, et doit toujours exister. En mode « créé
+   * automatiquement », la réunion garde le salon déjà créé, sinon elle n'en a pas encore.
+   */
+  private async applyVoiceMode(settings: GuildSettingsRow, input: MeetingInput, m: Messages, current?: MeetingRow): Promise<MeetingInput> {
+    if (settings.autoVoice) return { ...input, voiceChannelId: current?.voiceChannelId ?? null };
+    if (!settings.voiceChannelId) {
+      if (!input.voiceChannelId) throw new UserError(m.errors.voiceRequired);
+      return input;
+    }
     const channel = await this.client.channels.fetch(settings.voiceChannelId).catch(() => null);
     if (!channel?.isVoiceBased()) throw new UserError(m.errors.fixedVoiceMissing);
     return { ...input, voiceChannelId: settings.voiceChannelId };
@@ -235,7 +309,7 @@ export class MeetingService {
 
   private async replan(meeting: MeetingRow, settings: GuildSettingsRow): Promise<void> {
     const lead = this.config.guild(meeting.guildId).recording.autoJoinLeadMin;
-    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead));
+    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead, settings.autoVoiceLeadMin));
   }
 
   /** Carte, tag et message dans le post après un changement de statut. */
@@ -256,13 +330,14 @@ export class MeetingService {
     await announce(thread).catch((err) => this.warn(meeting, 'Message dans le post impossible', err));
   }
 
-  private eventData(meeting: MeetingRow, threadUrl: string, m: Messages): EventData {
+  private eventData(meeting: MeetingRow, threadUrl: string, m: Messages, settings: GuildSettingsRow): EventData {
     return {
       title: meeting.title,
       description: m.event.description(threadUrl, meeting.description),
       startsAt: meeting.startsAt,
       durationMin: meeting.durationMin,
       voiceChannelId: meeting.voiceChannelId,
+      location: m.event.voiceLater(settings.autoVoiceLeadMin),
     };
   }
 

@@ -22,7 +22,8 @@ export interface CardMeeting {
   description: string;
   startsAt: Date;
   durationMin: number;
-  voiceChannelId: string;
+  voiceChannelId: string | null;
+  voiceDeletedAt?: Date | null;
   organizerId: string;
   status: MeetingStatus;
   autoRecord: boolean;
@@ -70,7 +71,7 @@ export function renderMeetingCard(
     .addFields(
       { name: m.card.when, value: `${discordTimestamp(meeting.startsAt, 'F')}\n${discordTimestamp(meeting.startsAt, 'R')}`, inline: true },
       { name: m.card.duration, value: m.card.minutes(meeting.durationMin), inline: true },
-      { name: m.card.voice, value: `<#${meeting.voiceChannelId}>`, inline: true },
+      { name: m.card.voice, value: !meeting.voiceChannelId ? m.card.voicePending : meeting.voiceDeletedAt ? m.card.voiceDeleted : `<#${meeting.voiceChannelId}>`, inline: true },
       { name: m.card.organizer, value: `<@${meeting.organizerId}>`, inline: true },
       { name: `✅ ${m.rsvp.yes} (${groups.yes.length})`, value: mentions(groups.yes), inline: false },
       { name: `❔ ${m.rsvp.maybe} (${groups.maybe.length})`, value: mentions(groups.maybe), inline: true },

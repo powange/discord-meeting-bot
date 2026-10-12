@@ -30,6 +30,16 @@ describe('planJobs', () => {
     expect(planJobs(meeting, [], now).find((j) => j.kind === 'start')?.dueAt).toEqual(now);
   });
 
+  it('salon créé automatiquement : création planifiée N min avant le début, tant qu’il n’existe pas', () => {
+    const now = at('2026-10-12T10:00:00Z');
+    const pending = planJobs({ ...meeting, voiceChannelId: null }, [], now, 2, 30);
+    expect(pending.find((j) => j.kind === 'voice_create')?.dueAt.toISOString()).toBe('2026-10-15T15:30:00.000Z');
+    expect(planJobs({ ...meeting, voiceChannelId: '42' }, [], now, 2, 30).some((j) => j.kind === 'voice_create')).toBe(false);
+    // Réunion créée moins de N min avant : salon créé tout de suite.
+    const late = at('2026-10-15T15:50:00Z');
+    expect(planJobs({ ...meeting, voiceChannelId: null }, [], late, 2, 30).find((j) => j.kind === 'voice_create')?.dueAt).toEqual(late);
+  });
+
   it('réunion en cours : plus rien de planifié (clôture sur vocal vide)', () => {
     expect(planJobs({ ...meeting, status: 'live' }, [15], at('2026-10-15T16:10:00Z'))).toEqual([]);
   });

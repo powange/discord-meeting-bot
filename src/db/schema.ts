@@ -34,6 +34,11 @@ export const guildSettings = pgTable('guild_settings', {
   alertChannelId: text(),
   /** Si renseigné, toutes les réunions se tiennent dans ce salon vocal (pas de choix à la création). */
   voiceChannelId: text(),
+  /** Un salon vocal temporaire est créé pour chaque réunion, `autoVoiceLeadMin` minutes avant le début. */
+  autoVoice: boolean().notNull().default(false),
+  /** Catégorie des salons temporaires ; null = celle du forum. */
+  autoVoiceCategoryId: text(),
+  autoVoiceLeadMin: integer().notNull().default(15),
   tagIds: jsonb().$type<StatusTagIds>(),
   managerRoleId: text(),
   /** Ancien rôle « ne pas m'enregistrer » : ses membres sont repris dans recording_optouts, puis il est oublié. */
@@ -64,7 +69,11 @@ export const meetings = pgTable(
     /** Message de suivi du compte rendu (progression, puis lien vers le compte rendu publié). */
     reportStatusMessageId: text(),
     scheduledEventId: text(),
-    voiceChannelId: text().notNull(),
+    /** Null tant que le salon temporaire n'est pas créé (mode « créé automatiquement »). */
+    voiceChannelId: text(),
+    /** Salon créé par le bot pour cette réunion : supprimé une fois la réunion finie et le salon vide. */
+    voiceTemporary: boolean().notNull().default(false),
+    voiceDeletedAt: tz(),
     title: text().notNull(),
     description: text().notNull().default(''),
     startsAt: tz().notNull(),

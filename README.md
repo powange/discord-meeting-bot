@@ -9,7 +9,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Fonction | Détail |
 |---|---|
 | Post épinglé | Créé quand on choisit le forum dans `/config` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire : tout message posté est supprimé (le post n'est pas verrouillé, sinon les membres ne pourraient plus cliquer). Le bot le surveille : supprimé (ou son message effacé), il est recréé aussitôt ; désépinglé, verrouillé ou archivé, il est rétabli ; vérification complète au démarrage puis toutes les 15 min. |
-| Nouvelle réunion | Bouton du post épinglé. Formulaire : titre, jour (les 24 prochains jours, ou « 📅 Autre date… »), horaire (`18h` ou `18h-19h30` ; avec « Autre date » : `15/01/2027 18h-19h30`), salon vocal, description. |
+| Nouvelle réunion | Bouton du post épinglé. Formulaire : titre, jour (les 24 prochains jours, ou « 📅 Autre date… »), horaire (`18h` ou `18h-19h30` ; avec « Autre date » : `15/01/2027 18h-19h30`), salon vocal (sauf s'il est imposé ou créé automatiquement), description. |
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
 | Réponses | Boutons Présent / Peut-être / Absent, modifiables à tout moment. |
@@ -18,7 +18,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | ⚙️ Gérer | Bouton de la carte (organisateur ou gestionnaire), qui ouvre un panneau privé : modifier, dupliquer (nouveau jour et horaire, ODJ repris ou non), enregistrement auto oui/non, clore maintenant (avec confirmation), annuler (raison facultative), régénérer le compte rendu. **Le bot n'a qu'une seule commande, `/config`** : tout le reste passe par des boutons. |
 | Clôture auto | **Uniquement quand le vocal est vide** depuis 5 min, compté depuis le départ de la dernière personne (ou depuis la fin prévue si personne n'est venu). Une réunion qui déborde n'est jamais coupée tant qu'il reste quelqu'un. |
-| `/config` | Une seule commande, réservée à « Gérer le serveur », qui ouvre un **panneau interactif**. L'accueil résume tous les réglages ; un menu ouvre chaque section : Forum, Salon vocal (imposé ou libre), Rôles, Rappels, Général (fuseau, durée, création), Enregistrement auto, Transcription, Résumé (serveur et modèle, liste des modèles, test, activation), Alertes. Les réglages se font avec des sélecteurs de salon et de rôle, des boutons et de petits formulaires. |
+| `/config` | Une seule commande, réservée à « Gérer le serveur », qui ouvre un **panneau interactif**. L'accueil résume tous les réglages ; un menu ouvre chaque section : Forum, Salon vocal (au choix, imposé, ou **créé automatiquement** : un salon au nom de la réunion, dans la catégorie choisie, N min avant le début, supprimé une fois la réunion finie et le salon vide), Rôles, Rappels, Général (fuseau, durée, création), Enregistrement auto, Transcription, Résumé (serveur et modèle, liste des modèles, test, activation), Alertes. Les réglages se font avec des sélecteurs de salon et de rôle, des boutons et de petits formulaires. |
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
 

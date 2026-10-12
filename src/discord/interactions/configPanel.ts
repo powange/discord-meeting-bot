@@ -22,7 +22,7 @@ import { UserError } from '../../lib/errors.js';
 import { effectiveLlm, listModels, testLlm } from '../../services/llmSettings.js';
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
 import { assertUrlAllowed } from '../../lib/hosts.js';
-import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, type ConfigContext, type ConfigSection } from '../embeds/configPanel.js';
+import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, VOICE_LEADS_MIN, type ConfigContext, type ConfigSection, type VoiceMode } from '../embeds/configPanel.js';
 import { ensureStatusTags, missingForumPermissions } from '../forum.js';
 import { openBackendPanelInPlace } from './backendPanel.js';
 
@@ -83,9 +83,10 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     throw new UserError(m.backendPanel.forbidden);
   }
 
-  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[]) => {
+  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[], voiceMode?: VoiceMode) => {
     const c = await context(ctx, guildId, m, notice, interaction.user.id);
     if (models) c.models = models;
+    if (voiceMode) c.voiceMode = voiceMode;
     const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
     if (type !== undefined) {
       const list = channelsOf(interaction.guild, type);
@@ -135,12 +136,35 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!interaction.isStringSelectMenu()) return;
       const voice = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
       if (!voice || voice.type !== ChannelType.GuildVoice) return show('voice');
-      await ctx.repos.updateSettings(guildId, { voiceChannelId: voice.id });
+      await ctx.repos.updateSettings(guildId, { voiceChannelId: voice.id, autoVoice: false });
       return show('voice', t.saved);
     }
     case 'voiceClear':
       await ctx.repos.updateSettings(guildId, { voiceChannelId: null });
       return show('voice', t.saved);
+    case 'voiceMode': {
+      if (!interaction.isStringSelectMenu()) return;
+      const mode = interaction.values[0];
+      if (mode === 'free') await ctx.repos.updateSettings(guildId, { voiceChannelId: null, autoVoice: false });
+      else if (mode === 'auto') await ctx.repos.updateSettings(guildId, { voiceChannelId: null, autoVoice: true });
+      // « Imposé » : le salon reste à choisir dans la liste qui apparaît.
+      else if (mode === 'fixed') return show('voice', t.pickVoiceNow, undefined, undefined, 'fixed');
+      await ctx.meetings.replanGuild(guildId); // tâche de création du salon (ajoutée ou retirée)
+      return show('voice', t.saved);
+    }
+    case 'voiceCategory': {
+      if (!interaction.isChannelSelectMenu()) return;
+      await ctx.repos.updateSettings(guildId, { autoVoiceCategoryId: interaction.values[0] ?? null });
+      return show('voice', t.saved);
+    }
+    case 'voiceLead': {
+      if (!interaction.isStringSelectMenu()) return;
+      const lead = Number(interaction.values[0]);
+      if (!VOICE_LEADS_MIN.includes(lead as (typeof VOICE_LEADS_MIN)[number])) return;
+      await ctx.repos.updateSettings(guildId, { autoVoiceLeadMin: lead });
+      await ctx.meetings.replanGuild(guildId);
+      return show('voice', t.saved);
+    }
 
     case 'roleManager':
     case 'roleNudge': {

@@ -45,6 +45,7 @@ export class MeetingWatcher {
       for (const id of this.lastHumanAt.keys()) if (!liveIds.has(id)) this.lastHumanAt.delete(id);
 
       for (const meeting of live) {
+        if (!meeting.voiceChannelId) continue; // salon temporaire pas (encore) créé : rien à surveiller
         const channel = this.client.channels.cache.get(meeting.voiceChannelId);
         const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
         if (humans > 0) {
@@ -60,6 +61,13 @@ export class MeetingWatcher {
         this.log.info({ meetingId: meeting.id, graceMin }, 'Vocal vide : clôture de la réunion');
         this.lastHumanAt.delete(meeting.id);
         await this.meetings.end(meeting.id, null).catch((err) => this.log.warn({ meetingId: meeting.id, err: errorMessage(err) }, 'Clôture impossible'));
+      }
+
+      // Salons temporaires des réunions finies : supprimés dès qu'ils sont vides.
+      for (const meeting of await this.repos.listTemporaryVoicesToDelete()) {
+        await this.meetings
+          .deleteTemporaryVoice(meeting)
+          .catch((err) => this.log.warn({ meetingId: meeting.id, err: errorMessage(err) }, 'Suppression du salon temporaire impossible'));
       }
     } catch (err) {
       this.log.error({ err }, 'Surveillance des réunions en échec');

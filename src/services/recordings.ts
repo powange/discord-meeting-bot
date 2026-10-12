@@ -135,7 +135,7 @@ export class RecordingService {
 
   private async doStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, by: string | null): Promise<void> {
     const guild = await this.client.guilds.fetch(meeting.guildId);
-    const channel = await guild.channels.fetch(meeting.voiceChannelId).catch(() => null);
+    const channel = meeting.voiceChannelId ? await guild.channels.fetch(meeting.voiceChannelId).catch(() => null) : null;
     if (!channel?.isVoiceBased()) throw new UserError(m.errors.voiceInvalid);
     const me = guild.members.me;
     const perms = me ? channel.permissionsFor(me) : null;
@@ -409,7 +409,7 @@ export class RecordingService {
       // Supprimé à la main : on le republie si c'est encore utile.
     }
 
-    if (!isOpen(meeting.status)) return;
+    if (!isOpen(meeting.status) || !meeting.voiceChannelId) return;
     const channel = this.client.channels.cache.get(meeting.voiceChannelId);
     const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
     const wanted = recording !== undefined || (meeting.status === 'live' && humans > 0);

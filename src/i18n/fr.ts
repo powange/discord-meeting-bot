@@ -27,6 +27,8 @@ export const fr = {
     nobody: '—',
     more: (n: number) => `… et ${n} de plus`,
     autoRecord: '🔴 Enregistrement automatique au démarrage',
+    voicePending: '*Créé peu avant le début*',
+    voiceDeleted: '*Salon temporaire (supprimé)*',
     recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}`,
     footer: (status: string) => `Statut : ${status}`,
     minutes: (n: number) => (n > 0 && n % 60 === 0 ? `${n / 60} h` : n > 60 ? `${Math.floor(n / 60)} h ${n % 60}` : `${n} min`),
@@ -119,6 +121,7 @@ export const fr = {
     responders: 'Ont répondu :',
     nudge: "Pas encore de réponse — merci d'indiquer votre présence :",
     voiceFallback: 'le salon vocal',
+    voicePending: 'un salon créé peu avant le début',
   },
 
   control: {
@@ -334,6 +337,7 @@ export const fr = {
 
   event: {
     description: (url: string, description: string) => `Inscriptions et ordre du jour : ${url}${description ? `\n\n${description}` : ''}`,
+    voiceLater: (leadMin: number) => `Salon vocal créé ${leadMin} min avant le début`,
   },
 
   errors: {
@@ -384,7 +388,12 @@ export const fr = {
     no: 'Non',
     sections: {
       forum: { emoji: '📌', label: 'Forum des réunions', hint: 'Où sont publiées les réunions', help: 'Les réunions y sont publiées ; le bot y crée les tags de statut et le post épinglé « Nouvelle réunion ».' },
-      voice: { emoji: '🔊', label: 'Salon vocal', hint: 'Imposer un vocal ou laisser le choix', help: "Imposé : toutes les réunions s'y tiennent et le choix n'est plus proposé. Sinon, l'organisateur choisit." },
+      voice: {
+        emoji: '🔊',
+        label: 'Salon vocal',
+        hint: 'Au choix, imposé ou créé automatiquement',
+        help: "Au choix : l'organisateur choisit. Imposé : toutes les réunions s'y tiennent. Créé automatiquement : un salon au nom de la réunion est créé peu avant le début, puis supprimé une fois la réunion finie et le salon vide.",
+      },
       roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "Gestionnaires : gèrent toutes les réunions. Relance : membres mentionnés s'ils n'ont pas répondu. Videz un sélecteur pour retirer un rôle." },
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
@@ -406,6 +415,17 @@ export const fr = {
     voiceImposed: 'imposé',
     voiceFree: 'au choix de l’organisateur',
     voiceFreeButton: 'Laisser le choix',
+    voiceModes: {
+      free: 'Au choix de l’organisateur',
+      fixed: 'Salon imposé',
+      auto: 'Créé automatiquement',
+      autoHint: 'Un salon par réunion, supprimé après',
+    },
+    voiceAutoSummary: (leadMin: number, categoryId: string | null) =>
+      `créé automatiquement ${leadMin} min avant · ${categoryId ? `catégorie <#${categoryId}>` : 'catégorie du forum'}`,
+    pickVoiceNow: '👇 Choisissez le salon imposé.',
+    pickVoiceCategory: 'Catégorie des salons (vide : celle du forum)',
+    voiceLead: (min: number) => `Créé ${min} min avant le début`,
     managerRole: 'Gestionnaires',
     nudgeRole: 'Relance',
     creatorsAll: 'création : tout le monde',

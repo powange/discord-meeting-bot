@@ -16,6 +16,9 @@ const settings: GuildSettingsRow = {
   llmEnabled: true,
   hubThreadId: null,
   voiceChannelId: null,
+  autoVoice: false,
+  autoVoiceCategoryId: null,
+  autoVoiceLeadMin: 15,
   tagIds: null,
   managerRoleId: '222',
   optoutRoleId: null,
@@ -62,7 +65,7 @@ describe('panneau /config', () => {
 
   it.each([
     ['forum', ['forum', 'home']],
-    ['voice', ['voice', 'home']],
+    ['voice', ['voiceMode', 'home']],
     ['alerts', ['alerts', 'home']],
     ['roles', ['roleManager', 'roleNudge', 'home']],
     ['reminders', ['remindersEdit', 'home']],
@@ -94,9 +97,19 @@ describe('panneau /config', () => {
     expect(pageButtons).toEqual(['v1:cfg:page:alerts.0', 'v1:cfg:page:alerts.2']);
   });
 
-  it('vocal imposé : bouton pour rendre le choix libre', () => {
-    const view = renderConfigSection('voice', { ...withChannels(2), settings: { ...settings, voiceChannelId: '100' } }, m);
-    expect(ids(view)).toEqual(['voice', 'voiceClear', 'home']);
+  it('vocal : mode au choix, imposé (liste des salons) ou créé automatiquement (catégorie, délai)', () => {
+    expect(ids(renderConfigSection('voice', { ...withChannels(2), settings }, m))).toEqual(['voiceMode', 'home']);
+    const fixed = renderConfigSection('voice', { ...withChannels(2), settings: { ...settings, voiceChannelId: '100' } }, m);
+    expect(ids(fixed)).toEqual(['voiceMode', 'voice', 'home']);
+    // « Imposé » choisi, salon pas encore désigné : la liste apparaît quand même.
+    expect(ids(renderConfigSection('voice', { ...withChannels(2), settings, voiceMode: 'fixed' }, m))).toEqual(['voiceMode', 'voice', 'home']);
+
+    const auto = renderConfigSection('voice', { ...c, settings: { ...settings, autoVoice: true, autoVoiceCategoryId: '900', autoVoiceLeadMin: 30 } }, m);
+    expect(ids(auto)).toEqual(['voiceMode', 'voiceCategory', 'voiceLead', 'home']);
+    const category = flatten(auto).find((x) => x.type === ComponentType.ChannelSelect)!;
+    expect(category.default_values).toEqual([{ id: '900', type: 'channel' }]);
+    expect(category.min_values).toBe(0);
+    expect(texts(auto)).toContain('créé automatiquement 30 min avant · catégorie <#900>');
   });
 
   it('rôles : chaque sélecteur peut être vidé pour retirer le rôle', () => {

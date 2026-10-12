@@ -2,6 +2,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   ContainerBuilder,
   RoleSelectMenuBuilder,
   SeparatorSpacingSize,
@@ -31,7 +33,16 @@ export interface ConfigContext {
   refusals?: readonly string[];
   /** Propriétaire du bot : peut modifier les adresses appelées par le bot. */
   canEditAi?: boolean;
+  /** Mode « salon imposé » choisi, salon pas encore désigné. */
+  voiceMode?: VoiceMode;
   notice?: string | undefined;
+}
+
+export type VoiceMode = 'free' | 'fixed' | 'auto';
+export const VOICE_LEADS_MIN = [5, 10, 15, 30, 60] as const;
+
+export function voiceModeOf(s: GuildSettingsRow): VoiceMode {
+  return s.autoVoice ? 'auto' : s.voiceChannelId ? 'fixed' : 'free';
 }
 
 const cfg = (action: CfgAction, arg?: string) => encode(arg === undefined ? { type: 'cfg', action } : { type: 'cfg', action, arg });
@@ -50,6 +61,7 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
     case 'forum':
       return s.forumChannelId ? `<#${s.forumChannelId}>` : `*${t.none}*`;
     case 'voice':
+      if (s.autoVoice) return t.voiceAutoSummary(s.autoVoiceLeadMin, s.autoVoiceCategoryId);
       return s.voiceChannelId ? `<#${s.voiceChannelId}> · ${t.voiceImposed}` : `*${t.voiceFree}*`;
     case 'roles':
       return `${t.managerRole} ${role(s.managerRoleId, m)} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
@@ -104,7 +116,9 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
     container.addTextDisplayComponents((x) => x.setContent(`${t.refusalsList}\n${c.refusals!.slice(0, 60).map((id) => `<@${id}>`).join(' ')}`));
   }
 
-  const rows: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<RoleSelectMenuBuilder>> = [];
+  const rows: Array<
+    ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<RoleSelectMenuBuilder> | ActionRowBuilder<ChannelSelectMenuBuilder>
+  > = [];
 
   /** Liste « Catégorie › #salon » (les homonymes se distinguent), paginée par 25. */
   function channelRows(action: 'forum' | 'voice' | 'alerts', current: string | null, placeholder: string, prefix: string) {
@@ -133,10 +147,39 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
     case 'forum':
       rows.push(...channelRows('forum', s.forumChannelId, t.pickForum, '#'));
       break;
-    case 'voice':
-      rows.push(...channelRows('voice', s.voiceChannelId, t.pickVoice, '🔊 '));
-      if (s.voiceChannelId) rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('voiceClear', t.voiceFreeButton, '🔓')));
+    case 'voice': {
+      const mode = c.voiceMode ?? voiceModeOf(s);
+      rows.push(
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(cfg('voiceMode'))
+            .addOptions(
+              { label: t.voiceModes.free, value: 'free', emoji: '🔓', default: mode === 'free' },
+              { label: t.voiceModes.fixed, value: 'fixed', emoji: '📌', default: mode === 'fixed' },
+              { label: t.voiceModes.auto, value: 'auto', emoji: '🪄', description: t.voiceModes.autoHint, default: mode === 'auto' },
+            ),
+        ),
+      );
+      if (mode === 'fixed') rows.push(...channelRows('voice', s.voiceChannelId, t.pickVoice, '🔊 '));
+      if (mode === 'auto') {
+        const category = new ChannelSelectMenuBuilder()
+          .setCustomId(cfg('voiceCategory'))
+          .setChannelTypes(ChannelType.GuildCategory)
+          .setPlaceholder(t.pickVoiceCategory)
+          .setMinValues(0)
+          .setMaxValues(1);
+        if (s.autoVoiceCategoryId) category.setDefaultChannels(s.autoVoiceCategoryId);
+        rows.push(
+          new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(category),
+          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(cfg('voiceLead'))
+              .addOptions(VOICE_LEADS_MIN.map((min) => ({ label: t.voiceLead(min), value: String(min), default: min === s.autoVoiceLeadMin }))),
+          ),
+        );
+      }
       break;
+    }
     case 'roles': {
       const roleSelect = (action: CfgAction, current: string | null, placeholder: string) => {
         const select = new RoleSelectMenuBuilder().setCustomId(cfg(action)).setPlaceholder(placeholder).setMinValues(0).setMaxValues(1);

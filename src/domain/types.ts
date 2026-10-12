@@ -4,7 +4,7 @@ export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 export const RSVP_STATUSES = ['yes', 'maybe', 'no'] as const;
 export type RsvpStatus = (typeof RSVP_STATUSES)[number];
 
-export const JOB_KINDS = ['reminder', 'start', 'auto_end', 'record_start'] as const;
+export const JOB_KINDS = ['reminder', 'start', 'auto_end', 'record_start', 'voice_create'] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
 export interface StatusTagIds {

@@ -31,6 +31,8 @@ export interface MeetingModalOptions {
   defaultDurationMin: number;
   /** Salon vocal imposé par la configuration : le choix du salon n'est alors pas proposé. */
   fixedVoiceChannelId: string | null;
+  /** Salon créé automatiquement avant la réunion : pas de choix non plus. */
+  autoVoice: boolean;
   now?: Date;
   defaults: Partial<MeetingInput>;
 }
@@ -63,7 +65,7 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
         .setDescription(m.modal.timeHint(m.card.minutes(d.durationMin ?? o.defaultDurationMin), o.timezone))
         .setTextInputComponent(time),
     );
-    if (!o.fixedVoiceChannelId) {
+    if (!o.fixedVoiceChannelId && !o.autoVoice) {
       const voice = new ChannelSelectMenuBuilder().setCustomId(F.voice).setChannelTypes(ChannelType.GuildVoice).setRequired(true);
       if (d.voiceChannelId) voice.setDefaultChannels(d.voiceChannelId);
       modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.voice).setChannelSelectMenuComponent(voice));
@@ -171,6 +173,7 @@ export function readMeetingModal(
     reschedulable: boolean;
     defaultDurationMin: number;
     fixedVoiceChannelId: string | null;
+    autoVoice: boolean;
     current?: MeetingInput;
   },
 ): MeetingInput {
@@ -187,8 +190,8 @@ export function readMeetingModal(
   const durationMin = rangeDuration ?? options.current?.durationMin ?? options.defaultDurationMin;
   if (!(durationMin >= DURATION_MIN && durationMin <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
 
-  let voiceChannelId = options.fixedVoiceChannelId;
-  if (!voiceChannelId) {
+  let voiceChannelId = options.autoVoice ? (options.current?.voiceChannelId ?? null) : options.fixedVoiceChannelId;
+  if (!voiceChannelId && !options.autoVoice) {
     const voice = interaction.fields.getSelectedChannels(F.voice, false, [ChannelType.GuildVoice])?.first();
     if (!voice) throw new UserError(m.errors.voiceRequired);
     if (voice.guildId !== interaction.guildId) throw new UserError(m.errors.voiceInvalid);

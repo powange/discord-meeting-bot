@@ -194,6 +194,7 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // la connexion au vocal peut prendre plusieurs secondes
+      await ctx.meetings.ensureVoice(meeting.id); // salon temporaire : créé à la demande s'il n'existe pas encore
       await ctx.recordings.start(meeting.id, interaction.user.id);
       await replyEphemeral(interaction, m.recording.started_reply);
       return;
@@ -335,6 +336,7 @@ export async function handleAction(
         timezone: scope.settings.timezone,
         defaultDurationMin: scope.settings.defaultDurationMin,
         fixedVoiceChannelId: scope.settings.voiceChannelId,
+        autoVoice: scope.settings.autoVoice,
         reschedulable: canReschedule(meeting.status),
         current: meeting,
       });
@@ -359,6 +361,7 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
       locale: scope.settings.locale,
       defaultDurationMin: scope.settings.defaultDurationMin,
       fixedVoiceChannelId: scope.settings.voiceChannelId,
+      autoVoice: scope.settings.autoVoice,
       defaults: meeting,
     }),
   );
@@ -382,6 +385,7 @@ export async function showCreateModal(
       locale: settings.locale,
       defaultDurationMin: settings.defaultDurationMin,
       fixedVoiceChannelId: settings.voiceChannelId,
+      autoVoice: settings.autoVoice,
       defaults: {},
     }),
   );
@@ -395,6 +399,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     reschedulable: true,
     defaultDurationMin: settings.defaultDurationMin,
     fixedVoiceChannelId: settings.voiceChannelId,
+    autoVoice: settings.autoVoice,
   });
   const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
   await replyEphemeral(interaction, m.replies.created(meeting.threadId!));

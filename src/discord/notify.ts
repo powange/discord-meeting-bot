@@ -11,7 +11,8 @@ import { chunkJoin } from '../lib/text.js';
 import type { Messages } from '../i18n/index.js';
 
 /** Nom du salon vocal en texte (les mentions `<#id>` s'affichent brutes dans les notifications mobiles). */
-export async function voiceName(client: Client, channelId: string, m: Messages): Promise<string> {
+export async function voiceName(client: Client, channelId: string | null, m: Messages): Promise<string> {
+  if (!channelId) return m.thread.voicePending;
   const channel = await client.channels.fetch(channelId).catch(() => null);
   return channel && 'name' in channel && channel.name ? channel.name : m.thread.voiceFallback;
 }
@@ -21,6 +22,11 @@ export async function displayName(client: Client, guildId: string, userId: strin
   const guild = await client.guilds.fetch(guildId).catch(() => null);
   const member = await guild?.members.fetch(userId).catch(() => null);
   return member?.displayName ?? null;
+}
+
+/** Bouton « Rejoindre le vocal », absent tant que le salon temporaire n'est pas créé. */
+export function joinVoiceRows(guildId: string, channelId: string | null, m: Messages): APIActionRowComponent<APIComponentInMessageActionRow>[] {
+  return channelId ? [joinVoiceRow(guildId, channelId, m)] : [];
 }
 
 /** Bouton lien qui ouvre le salon vocal. */
