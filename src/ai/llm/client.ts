@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { LlmConfig } from '../../config/index.js';
 import { fetchWithTimeout, isTimeout, trimSlash } from '../http.js';
 
@@ -20,10 +20,38 @@ export class LlmError extends Error {
 }
 
 /**
+ * Format de réponse demandé au serveur, du plus strict au plus permissif. Les serveurs ne
+ * supportent pas tous les mêmes : LM Studio exige `json_schema`, d'anciens serveurs ne
+ * connaissent que `json_object`. On descend d'un cran quand le serveur refuse le format.
+ */
+const FORMATS = ['json_schema', 'json_object', 'none'] as const;
+type ResponseFormat = (typeof FORMATS)[number];
+
+/** Schéma JSON envoyé au modèle : tous les champs requis (le modèle les remplit), sans bornes inutiles. */
+export function responseSchema(schema: z.ZodType): Record<string, unknown> {
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (node && typeof node === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node)) {
+        if (k === '$schema' || k === 'default' || k === 'minimum' || k === 'maximum') continue;
+        out[k] = strip(v);
+      }
+      return out;
+    }
+    return node;
+  };
+  return strip(z.toJSONSchema(schema, { io: 'output', unrepresentable: 'any' })) as Record<string, unknown>;
+}
+
+/**
  * Client chat/completions compatible OpenAI : LiteLLM (bascule et répartition entre machines)
  * ou Ollama / LM Studio en direct. Réponses en JSON, validées par un schéma zod.
  */
 export class LlmClient {
+  /** Format retenu pour ce serveur (mémorisé après un refus). */
+  private format: ResponseFormat = 'json_schema';
+
   constructor(private readonly config: LlmConfig) {
     if (!config.baseUrl) throw new LlmError('Aucun serveur LLM configuré (llm.baseUrl).');
   }
@@ -34,7 +62,7 @@ export class LlmClient {
 
   /** Demande une réponse JSON conforme à `schema` ; une seconde tentative corrige un JSON invalide. */
   async json<S extends z.ZodType>(messages: readonly ChatMessage[], schema: S, signal?: AbortSignal): Promise<JsonResult<z.infer<S>>> {
-    const first = await this.chat(messages, signal);
+    const first = await this.chat(messages, schema, signal);
     const parsed = parseJson(first.content, schema);
     if (parsed.ok) return { value: parsed.value, model: first.model, deployment: first.deployment };
 
@@ -44,6 +72,7 @@ export class LlmClient {
         { role: 'assistant', content: first.content },
         { role: 'user', content: `Ta réponse est invalide (${parsed.error}). Renvoie uniquement l'objet JSON corrigé, sans texte autour.` },
       ],
+      schema,
       signal,
     );
     const again = parseJson(retry.content, schema);
@@ -51,10 +80,35 @@ export class LlmClient {
     return { value: again.value, model: retry.model, deployment: retry.deployment ?? first.deployment };
   }
 
-  private async chat(messages: readonly ChatMessage[], signal?: AbortSignal): Promise<{ content: string; model: string; deployment: string | null }> {
-    let res: Response;
+  private async chat(messages: readonly ChatMessage[], schema: z.ZodType, signal?: AbortSignal): Promise<{ content: string; model: string; deployment: string | null }> {
+    for (;;) {
+      const res = await this.post(messages, this.responseFormat(schema), signal);
+      if (res.ok) {
+        const body = (await res.json()) as { model?: string; choices?: Array<{ message?: { content?: string } }> };
+        const content = body.choices?.[0]?.message?.content;
+        if (typeof content !== 'string') throw new LlmError('LLM : réponse sans contenu');
+        return { content, model: body.model ?? this.config.model, deployment: res.headers.get('x-litellm-model-id') };
+      }
+      const text = (await res.text().catch(() => '')).slice(0, 300);
+      // Format refusé (400/422 mentionnant response_format) : on essaie le suivant.
+      const next = FORMATS[FORMATS.indexOf(this.format) + 1];
+      if ((res.status === 400 || res.status === 422) && /response_format|json_schema|json_object/i.test(text) && next) {
+        this.format = next;
+        continue;
+      }
+      throw new LlmError(`LLM : erreur ${res.status} ${text}`);
+    }
+  }
+
+  private responseFormat(schema: z.ZodType): Record<string, unknown> | undefined {
+    if (this.format === 'json_schema') return { type: 'json_schema', json_schema: { name: 'reponse', strict: true, schema: responseSchema(schema) } };
+    if (this.format === 'json_object') return { type: 'json_object' };
+    return undefined; // la consigne JSON du prompt suffit, la réponse est validée de toute façon
+  }
+
+  private async post(messages: readonly ChatMessage[], responseFormat: Record<string, unknown> | undefined, signal?: AbortSignal): Promise<Response> {
     try {
-      res = await fetchWithTimeout(
+      return await fetchWithTimeout(
         `${trimSlash(this.config.baseUrl!)}/chat/completions`,
         {
           method: 'POST',
@@ -63,7 +117,7 @@ export class LlmClient {
             model: this.config.model,
             messages,
             temperature: this.config.temperature,
-            response_format: { type: 'json_object' },
+            ...(responseFormat ? { response_format: responseFormat } : {}),
           }),
         },
         this.config.timeoutSec * 1000,
@@ -73,11 +127,6 @@ export class LlmClient {
       if (isTimeout(err) && !signal?.aborted) throw new LlmError(`LLM : délai dépassé (${this.config.timeoutSec} s)`);
       throw new LlmError(`LLM injoignable : ${err instanceof Error ? err.message : err}`);
     }
-    if (!res.ok) throw new LlmError(`LLM : erreur ${res.status} ${(await res.text().catch(() => '')).slice(0, 300)}`);
-    const body = (await res.json()) as { model?: string; choices?: Array<{ message?: { content?: string } }> };
-    const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw new LlmError('LLM : réponse sans contenu');
-    return { content, model: body.model ?? this.config.model, deployment: res.headers.get('x-litellm-model-id') };
   }
 }
 

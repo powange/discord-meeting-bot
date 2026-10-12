@@ -7,6 +7,8 @@ import { sanitize, summarizeMeeting, type SummaryContext } from '../src/ai/llm/s
 
 /** Serveur chat/completions simulé : `reply` décide du contenu selon la requête. */
 let reply: (body: { messages: Array<{ role: string; content: string }> }) => string = () => '{}';
+/** Formats refusés par le serveur simulé (comme LM Studio qui refuse json_object). */
+let rejectFormats: string[] = [];
 const requests: Array<{ body: { model: string; messages: Array<{ role: string; content: string }>; response_format: unknown }; auth?: string }> = [];
 let server: Server;
 let base: string;
@@ -16,6 +18,11 @@ beforeAll(async () => {
     let raw = '';
     for await (const c of req) raw += c;
     const body = JSON.parse(raw);
+    const format = body.response_format?.type ?? 'none';
+    if (rejectFormats.includes(format)) {
+      requests.push({ body, ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
+      return res.writeHead(400, { 'content-type': 'application/json' }).end(`{"error":"'response_format.type' must be 'json_schema' or 'text'"}`);
+    }
     requests.push({ body, ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
     res
       .writeHead(200, { 'content-type': 'application/json', 'x-litellm-model-id': 'ollama-pc1' })
@@ -54,11 +61,28 @@ describe('extractJson', () => {
 });
 
 describe('LlmClient', () => {
-  it('mode JSON, modèle, clé, et trace du déploiement LiteLLM', async () => {
+  it('sortie structurée (json_schema), modèle, clé, et trace du déploiement LiteLLM', async () => {
+    rejectFormats = [];
     reply = () => JSON.stringify({ overview: 'ok', topics: [] });
     const r = await llm().json([{ role: 'user', content: 'x' }], meetingSummarySchema);
     expect(r).toMatchObject({ value: { overview: 'ok', topics: [] }, model: 'qwen3:14b', deployment: 'ollama-pc1' });
-    expect(requests.at(-1)).toMatchObject({ body: { model: 'summary', response_format: { type: 'json_object' } }, auth: 'Bearer k' });
+    const sent = requests.at(-1)!;
+    expect(sent).toMatchObject({ body: { model: 'summary', response_format: { type: 'json_schema' } }, auth: 'Bearer k' });
+    const schema = (sent.body.response_format as { json_schema: { schema: { required: string[] } } }).json_schema.schema;
+    expect(schema.required).toEqual(['overview', 'topics']); // tous les champs demandés au modèle
+  });
+
+  it('format refusé par le serveur : repli json_schema → json_object → sans format, puis mémorisé', async () => {
+    rejectFormats = ['json_schema', 'json_object'];
+    reply = () => '{"overview":"repli","topics":[]}';
+    const client = llm();
+    const before = requests.length;
+    expect((await client.json([{ role: 'user', content: 'x' }], meetingSummarySchema)).value.overview).toBe('repli');
+    const formats = requests.slice(before).map((r) => (r.body.response_format as { type?: string } | undefined)?.type ?? 'none');
+    expect(formats).toEqual(['json_schema', 'json_object', 'none']);
+    await client.json([{ role: 'user', content: 'x' }], meetingSummarySchema);
+    expect((requests.at(-1)!.body.response_format as unknown) ?? 'none').toBe('none'); // pas de nouvel essai inutile
+    rejectFormats = [];
   });
 
   it('JSON invalide : une correction est demandée', async () => {
