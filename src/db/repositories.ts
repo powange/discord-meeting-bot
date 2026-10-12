@@ -491,4 +491,55 @@ export class Repositories {
       .where(and(eq(transcriptionBackends.guildId, guildId), eq(transcriptionBackends.id, id)));
     return row;
   }
+
+  // ---------------------------------------------------------------- rétention
+
+  /** Sessions terminées et non purgées, avec ce qu'il faut pour décider de la purge. */
+  async listRawPurgeCandidates() {
+    const recs = await this.db
+      .select({
+        recordingId: recordings.id,
+        meetingId: recordings.meetingId,
+        guildId: recordings.guildId,
+        dataDir: recordings.dataDir,
+        endedAt: recordings.endedAt,
+        purgedAt: recordings.purgedAt,
+        meetingStatus: meetings.status,
+      })
+      .from(recordings)
+      .innerJoin(meetings, eq(meetings.id, recordings.meetingId))
+      .where(and(isNull(recordings.purgedAt), isNotNull(recordings.endedAt)));
+    const out = [];
+    for (const r of recs) {
+      const steps = await this.listPipeline(r.meetingId);
+      const [{ n } = { n: 0 }] = await this.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(audioSegments)
+        .where(eq(audioSegments.recordingId, r.recordingId));
+      out.push({
+        ...r,
+        mix: steps.find((x) => x.step === 'mix')?.status ?? null,
+        transcribe: steps.find((x) => x.step === 'transcribe')?.status ?? null,
+        hasSegments: n > 0,
+      });
+    }
+    return out;
+  }
+
+  async markRecordingPurged(id: string, at: Date): Promise<void> {
+    await this.db.update(recordings).set({ purgedAt: at }).where(eq(recordings.id, id));
+  }
+
+  /** Étapes « mix » terminées (audio complet local), avec le serveur de la réunion. */
+  async listMixOutputs() {
+    return this.db
+      .select({ meetingId: pipelineSteps.meetingId, guildId: meetings.guildId, finishedAt: pipelineSteps.finishedAt, output: pipelineSteps.output })
+      .from(pipelineSteps)
+      .innerJoin(meetings, eq(meetings.id, pipelineSteps.meetingId))
+      .where(and(eq(pipelineSteps.step, 'mix'), eq(pipelineSteps.status, 'done')));
+  }
+
+  async markMixPurged(meetingId: string, output: Record<string, unknown>, at: Date): Promise<void> {
+    await this.updateStep(meetingId, 'mix', { output: { ...output, purgedAt: at.toISOString() } });
+  }
 }

@@ -251,6 +251,8 @@ export const fr = {
     scheduled: 'Compte rendu programmé : il sera publié dans le post.',
     nothing: "Aucun enregistrement exploitable pour cette réunion.",
     running_reply: 'Un traitement est déjà en cours pour cette réunion.',
+    purged: (when: string) =>
+      `Les pistes audio de cette réunion ont été supprimées le ${when} (durée de conservation) : impossible de retranscrire. Le résumé peut être régénéré sans « retranscrire ».`,
   },
 
   format: {

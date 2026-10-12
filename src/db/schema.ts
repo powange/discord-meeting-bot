@@ -161,6 +161,8 @@ export const recordings = pgTable(
     stopReason: text(),
     /** Dossier local des pistes de cette session. */
     dataDir: text().notNull(),
+    /** Pistes brutes supprimées par la rétention (les métadonnées restent). */
+    purgedAt: tz(),
     createdAt: createdAt(),
   },
   (t) => [index().on(t.meetingId), index().on(t.status)],

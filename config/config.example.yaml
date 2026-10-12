@@ -27,6 +27,8 @@ ai:
 
 # Données locales (pistes audio). Dans Docker : /data (volume).
 dataDir: ${DATA_DIR:-data}
+# Alerte quand l'espace libre de dataDir passe sous ce seuil (Go).
+diskMinFreeGb: 5
 # ffmpeg : vide = ffmpeg-static en développement, `ffmpeg` de l'image en production.
 # ffmpegPath: /usr/bin/ffmpeg
 
@@ -49,6 +51,11 @@ defaults:
     endWhenEmptyMin: 5 # vocal vide depuis 5 min : clôture de la réunion (et de l'enregistrement), jamais sur l'heure de fin
     silenceMs: 1500 # silence qui clôt une prise de parole
     decryptionFailureTolerance: 48 # DAVE : échecs de déchiffrement tolérés avant réinitialisation
+
+  # Conservation des fichiers locaux (les copies publiées dans Discord restent). 0 = jamais supprimer.
+  retention:
+    rawTracksDays: 30 # prises de parole brutes, une fois la réunion close et traitée
+    mixDays: 365 # audio complet
 
   # Transcription (phase 3) : backends par ordre de priorité, bascule au suivant en cas d'erreur,
   # de délai dépassé ou de serveur occupé. Vibe : https://github.com/thewh1teagle/vibe (vibe-server).

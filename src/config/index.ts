@@ -13,6 +13,7 @@ export interface AppConfig {
   dataDir: string;
   ffmpegPath: string | undefined;
   owners: string[];
+  diskMinFreeGb: number;
   ai: { allowedHosts: string[] };
   scheduler: { tickSeconds: number };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
@@ -63,6 +64,7 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     dataDir: root.dataDir,
     ffmpegPath: root.ffmpegPath || undefined,
     owners: root.owners,
+    diskMinFreeGb: root.diskMinFreeGb,
     ai: root.ai,
     scheduler: root.scheduler,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,

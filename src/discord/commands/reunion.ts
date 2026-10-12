@@ -2,6 +2,7 @@ import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'disco
 import { DateTime } from 'luxon';
 import { canCreateMeeting } from '../../domain/permissions.js';
 import { messages } from '../../i18n/index.js';
+import { formatWhen } from '../../domain/time.js';
 import { UserError } from '../../lib/errors.js';
 import { meetingScopeFromChannel, replyEphemeral, requireManager } from '../interactions/common.js';
 import { showCreateModal, showEditModal } from '../interactions/components.js';
@@ -97,7 +98,11 @@ export const reunion: Command = {
         if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
         const recordings = await ctx.repos.listRecordingsForMeeting(meeting.id);
         if (recordings.length === 0) throw new UserError(m.pipeline.nothing);
-        await ctx.pipeline.regenerate(meeting.id, interaction.options.getBoolean('retranscrire') ?? false);
+        const retranscribe = interaction.options.getBoolean('retranscrire') ?? false;
+        // Retranscrire et refaire l'audio demandent les pistes brutes, peut-être déjà purgées.
+        const purged = recordings.find((r) => r.purgedAt);
+        if (retranscribe && purged) throw new UserError(m.pipeline.purged(formatWhen(purged.purgedAt!, scope.settings.timezone, scope.settings.locale, m.format.when)));
+        await ctx.pipeline.regenerate(meeting.id, retranscribe);
         await replyEphemeral(interaction, m.pipeline.scheduled);
         return;
       }

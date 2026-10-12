@@ -67,12 +67,21 @@ const llmSchema = z.strictObject({
   timeoutSec: z.int().min(10).max(3600).default(600),
 });
 
+/** Durée de conservation des fichiers locaux (les copies publiées dans Discord ne sont pas concernées). */
+const retentionSchema = z.strictObject({
+  /** Prises de parole brutes, une fois la réunion close et l'audio complet et la transcription faits. 0 = jamais. */
+  rawTracksDays: z.int().min(0).max(3650).default(30),
+  /** Audio complet de la réunion. 0 = jamais. */
+  mixDays: z.int().min(0).max(36500).default(365),
+});
+
 /** Bloc configurable par serveur (`defaults` puis surcharge `guilds.<id>`). Les phases suivantes y ajouteront transcription, llm, storage… */
 export const guildBlockSchema = z.strictObject({
   seed: guildSeedSchema.prefault({}),
   recording: recordingSchema.prefault({}),
   transcription: transcriptionSchema.prefault({}),
   llm: llmSchema.prefault({}),
+  retention: retentionSchema.prefault({}),
 });
 
 export const rootSchema = z.strictObject({
@@ -95,6 +104,8 @@ export const rootSchema = z.strictObject({
       allowedHosts: z.array(z.string().min(1)).default([]),
     })
     .prefault({}),
+  /** Alerte quand l'espace libre du dossier de données passe sous ce seuil (Go). */
+  diskMinFreeGb: z.number().min(0).default(5),
   /** Binaire ffmpeg (préparation de l'audio). Vide : ffmpeg-static en développement, sinon `ffmpeg` du PATH. */
   ffmpegPath: z.string().optional(),
   scheduler: z.strictObject({ tickSeconds: z.int().min(5).max(300).default(30) }).prefault({}),

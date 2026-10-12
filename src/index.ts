@@ -13,6 +13,7 @@ import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
 import { MeetingService } from './services/meetings.js';
 import { OwnersService } from './services/owners.js';
+import { RetentionService } from './services/retention.js';
 import { MeetingWatcher } from './services/meetingWatcher.js';
 import { RecordingService } from './services/recordings.js';
 import { SettingsService } from './services/settings.js';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
+  const retention = new RetentionService(repos, config, log);
   await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
     await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
     scheduler.start();
     watcher.start();
+    retention.start();
     await pipeline.resume().catch((err) => log.error({ err }, 'Reprise des comptes rendus impossible'));
     hub.startWatchdog();
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
@@ -88,6 +91,7 @@ async function main(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
     watcher.stop();
+    await retention.stop().catch(() => undefined);
     await pipeline.stop().catch(() => undefined);
     await recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet'));
     await hub.stopWatchdog().catch(() => undefined);

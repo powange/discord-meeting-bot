@@ -37,6 +37,12 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 
 Contrainte Discord : un bot ne peut être que dans **un vocal par serveur** à la fois, donc un seul enregistrement par serveur.
 
+**Conservation** : une purge quotidienne (4 h 17) supprime les fichiers locaux selon `retention` dans le YAML, réglable par serveur :
+- les prises de parole brutes 30 jours après la réunion, seulement si celle-ci est close et que l'audio complet et la transcription sont faits ;
+- l'audio complet au bout d'un an.
+
+Les copies publiées dans Discord restent. Une alerte est émise si l'espace libre passe sous `diskMinFreeGb`.
+
 Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisateur>/`, soit le volume `recordings` en Docker. Compter environ 1 Mo par 10 minutes de parole et par personne. Le transfert vers le NAS et Drive arrive en phase 4.
 
 **Écouter une session (debug)** : `npx tsx --env-file=.env scripts/assemble.ts <recordingId>`. Le script reconstitue une piste continue par participant et un mix dans `…/<session>/assembled/` ; il nécessite ffmpeg. L'id de session se trouve dans la table `recordings` (`npm run db:studio`).
