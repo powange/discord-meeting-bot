@@ -238,7 +238,8 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const current = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;
       const url = new TextInputBuilder().setCustomId('url').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(true).setPlaceholder('http://pc-main.tailnet:1234/v1');
       if (current.baseUrl) url.setValue(current.baseUrl);
-      const model = new TextInputBuilder().setCustomId('model').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(current.model);
+      const model = new TextInputBuilder().setCustomId('model').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(false);
+      if (current.baseUrl && current.model) model.setValue(current.model);
       const key = new TextInputBuilder().setCustomId('key').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false);
       await interaction.showModal(
         new ModalBuilder()
@@ -268,8 +269,21 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const apiKey = keyInput === '-' ? null : keyInput || settings.llmApiKey;
       await interaction.deferUpdate();
       await ctx.repos.updateSettings(guildId, { llmBaseUrl: url, llmModel: model || null, llmApiKey: apiKey });
-      const result = await testLlm(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
-      return show('summary', `${t.saved}\n${result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!)}`);
+      const llm = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;
+      // La liste des modèles s'affiche d'emblée : un modal ne peut pas la proposer.
+      let models: string[] = [];
+      let listError: string | undefined;
+      try {
+        models = await listModels(llm, ctx.config.ai.allowedHosts);
+      } catch (err) {
+        listError = err instanceof Error ? err.message : String(err);
+      }
+      if (!model) {
+        const hint = listError ? t.llmTestKo(listError) : models.length ? t.pickModelNow : t.noModels;
+        return show('summary', `${t.saved}\n${hint}`, undefined, models);
+      }
+      const result = await testLlm(llm, ctx.config.ai.allowedHosts);
+      return show('summary', `${t.saved}\n${result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!)}`, undefined, models);
     }
     case 'llmModels': {
       if (!interaction.isButton()) return;
