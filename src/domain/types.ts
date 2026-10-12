@@ -4,7 +4,7 @@ export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 export const RSVP_STATUSES = ['yes', 'maybe', 'no'] as const;
 export type RsvpStatus = (typeof RSVP_STATUSES)[number];
 
-export const JOB_KINDS = ['reminder', 'start', 'auto_end'] as const;
+export const JOB_KINDS = ['reminder', 'start', 'auto_end', 'record_start'] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
 export interface StatusTagIds {
@@ -27,3 +27,9 @@ export interface AgendaItem {
   detail: string;
   authorId: string;
 }
+
+export const RECORDING_STATUSES = ['recording', 'stopped', 'interrupted', 'failed'] as const;
+export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
+
+/** Raison de fin d'un enregistrement. */
+export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disconnected';

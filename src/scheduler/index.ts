@@ -68,6 +68,9 @@ export class Scheduler {
       case 'start':
         await this.ctx.meetings.start(job.meetingId);
         return;
+      case 'record_start':
+        await this.ctx.recordings.autoStart(job.meetingId);
+        return;
       case 'auto_end': {
         const meeting = await this.ctx.repos.getMeeting(job.meetingId);
         if (meeting?.status === 'live') await this.ctx.meetings.end(job.meetingId, null);

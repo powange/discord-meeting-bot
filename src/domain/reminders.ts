@@ -15,9 +15,11 @@ export interface PlannedJob {
  * Un rappel dont l'échéance est déjà passée est ignoré (pas de rappel « J-1 » envoyé à H-10 min).
  */
 export function planJobs(
-  meeting: { startsAt: Date; durationMin: number; status: MeetingStatus },
+  meeting: { startsAt: Date; durationMin: number; status: MeetingStatus; autoRecord?: boolean },
   reminderOffsetsMin: readonly number[],
   now: Date,
+  /** Avance du démarrage auto de l'enregistrement (le bot arrive avant les participants). */
+  recordLeadMin = 0,
 ): PlannedJob[] {
   const jobs: PlannedJob[] = [];
   const start = meeting.startsAt.getTime();
@@ -34,9 +36,12 @@ export function planJobs(
     const dueAt = new Date(start - offset * 60_000);
     if (dueAt.getTime() > now.getTime()) jobs.push({ kind: 'reminder', offsetMin: offset, dueAt });
   }
+  if (meeting.autoRecord) {
+    jobs.push({ kind: 'record_start', offsetMin: recordLeadMin, dueAt: new Date(Math.max(start - recordLeadMin * 60_000, now.getTime())) });
+  }
   jobs.push({ kind: 'start', offsetMin: 0, dueAt: new Date(Math.max(start, now.getTime())) });
   jobs.push(autoEnd);
-  return jobs;
+  return jobs.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
 }
 
 /** Un rappel arrivé après le début (bot éteint pendant l'échéance) n'est plus envoyé. */

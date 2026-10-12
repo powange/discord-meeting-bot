@@ -6,11 +6,17 @@ import type { MeetingStatus, RsvpStatus } from '../domain/types.js';
 import type { Db } from './client.js';
 import {
   agendaItems,
+  audioSegments,
+  recordingPresence,
+  recordings,
   guildSettings,
   meetings,
   rsvps,
   scheduledJobs,
   type AgendaItemRow,
+  type AudioSegmentRow,
+  type RecordingPresenceRow,
+  type RecordingRow,
   type GuildSettingsRow,
   type MeetingRow,
   type RsvpRow,
@@ -249,5 +255,67 @@ export class Repositories {
       .update(scheduledJobs)
       .set({ lastError: error.slice(0, 2000), lockedUntil: new Date(now.getTime() + backoffMs) })
       .where(eq(scheduledJobs.id, job.id));
+  }
+
+  // ---------------------------------------------------------------- recordings
+
+  async insertRecording(values: typeof recordings.$inferInsert): Promise<RecordingRow> {
+    const [row] = await this.db.insert(recordings).values(values).returning();
+    return row!;
+  }
+
+  async updateRecording(id: string, patch: Partial<typeof recordings.$inferInsert>): Promise<void> {
+    await this.db.update(recordings).set(patch).where(eq(recordings.id, id));
+  }
+
+  async getRecording(id: string): Promise<RecordingRow | undefined> {
+    const [row] = await this.db.select().from(recordings).where(eq(recordings.id, id));
+    return row;
+  }
+
+  async getActiveRecording(meetingId: string): Promise<RecordingRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(recordings)
+      .where(and(eq(recordings.meetingId, meetingId), eq(recordings.status, 'recording')));
+    return row;
+  }
+
+  async listRecordingsByStatus(status: RecordingRow['status']): Promise<RecordingRow[]> {
+    return this.db.select().from(recordings).where(eq(recordings.status, status));
+  }
+
+  async insertPresence(values: typeof recordingPresence.$inferInsert): Promise<void> {
+    await this.db.insert(recordingPresence).values(values);
+  }
+
+  /** Clôt le passage en cours d'un participant (ou de tous si `userId` est omis). */
+  async closePresence(recordingId: string, at: Date, userId?: string): Promise<void> {
+    await this.db
+      .update(recordingPresence)
+      .set({ leftAt: at })
+      .where(
+        and(
+          eq(recordingPresence.recordingId, recordingId),
+          isNull(recordingPresence.leftAt),
+          userId ? eq(recordingPresence.userId, userId) : undefined,
+        ),
+      );
+  }
+
+  async listPresence(recordingId: string): Promise<RecordingPresenceRow[]> {
+    return this.db.select().from(recordingPresence).where(eq(recordingPresence.recordingId, recordingId)).orderBy(asc(recordingPresence.joinedAt));
+  }
+
+  async insertSegment(values: typeof audioSegments.$inferInsert): Promise<void> {
+    await this.db.insert(audioSegments).values(values);
+  }
+
+  async listSegments(recordingId: string): Promise<AudioSegmentRow[]> {
+    return this.db
+      .select()
+      .from(audioSegments)
+      .where(eq(audioSegments.recordingId, recordingId))
+      .orderBy(asc(audioSegments.userId), asc(audioSegments.startMs));
   }
 }

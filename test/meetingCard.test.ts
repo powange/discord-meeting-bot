@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { renderAgendaManager, renderAgendaMessage, renderMeetingCard, type CardMeeting } from '../src/discord/embeds/meetingCard.js';
 import type { AgendaItem, Rsvp } from '../src/domain/types.js';
 import { messages } from '../src/i18n/index.js';
+import { decode } from '../src/domain/customId.js';
 
 const m = messages('fr');
 const meeting: CardMeeting = {
@@ -41,7 +42,7 @@ describe('renderMeetingCard', () => {
     expect(fields.find((f) => f.name.startsWith('✅'))!.value).toBe('<@1>');
     expect(fields.find((f) => f.name.startsWith('❌'))!.value).toBe(m.card.nobody);
     expect(fields.some((f) => f.name.includes(m.card.agenda))).toBe(false);
-    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier']);
+    expect(buttons(card).map((b) => b.label)).toEqual(['Présent (1)', 'Peut-être (1)', 'Absent (0)', 'Modifier', 'Enregistrer']);
   });
 
   it('reste sous les limites Discord même avec beaucoup de monde', () => {
@@ -55,6 +56,14 @@ describe('renderMeetingCard', () => {
     expect(embedLength(embed)).toBeLessThanOrEqual(6000);
     for (const f of embed.fields!) expect(f.value.length).toBeLessThanOrEqual(1024);
     expect(embed.fields!.find((f) => f.name.startsWith('✅'))!.value).toMatch(/… et \d+ de plus$/);
+  });
+
+  it('enregistrement en cours : mention et bouton d’arrêt', () => {
+    const card = renderMeetingCard(meeting, [], m, new Date('2026-10-15T16:02:00Z'));
+    expect(card.embeds[0]!.description).toContain('Enregistrement en cours');
+    const last = buttons(card).at(-1)!;
+    expect([last.label, last.disabled ?? false]).toEqual(["Arrêter l'enregistrement", false]);
+    expect(decode(last.custom_id)).toEqual({ type: 'rec.stop', meetingId: meeting.id });
   });
 
   it('désactive les boutons quand la réunion est close', () => {

@@ -17,6 +17,8 @@ describe('customId', () => {
     { type: 'agenda.lock', meetingId: id, locked: false },
     { type: 'meeting.edit', meetingId: id },
     { type: 'meeting.editSubmit', meetingId: id },
+    { type: 'rec.start', meetingId: id },
+    { type: 'rec.stop', meetingId: id },
     { type: 'meeting.create' },
     { type: 'meeting.createSubmit' },
   ];
@@ -43,6 +45,8 @@ describe('customId', () => {
     `v1:agenda:move:${id}:3:left`,
     `v1:agenda:lock:${id}:2`,
     `v1:agenda:explode:${id}`,
+    `v1:rec:pause:${id}`,
+    `v1:rec:start:${id}:x`,
     `v1:meeting:edit:${id}:x`,
     '',
   ])('rejette %s', (raw) => {

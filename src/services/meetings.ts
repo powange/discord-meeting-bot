@@ -1,4 +1,5 @@
 import { MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
+import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { applyStatusTag, ensureUnarchived } from '../discord/forum.js';
@@ -16,6 +17,13 @@ import type { Logger } from '../lib/logger.js';
 import type { CardService } from './cards.js';
 import type { SettingsService } from './settings.js';
 
+export interface MeetingHooks {
+  /** Réunion passée « En cours » (démarrage auto de l'enregistrement). */
+  afterStart(meeting: MeetingRow): Promise<unknown>;
+  /** Avant clôture ou annulation (arrêt de l'enregistrement, bilan avant le message de fin). */
+  beforeClose(meetingId: string): Promise<unknown>;
+}
+
 export interface MeetingInput {
   title: string;
   description: string;
@@ -31,8 +39,11 @@ export interface MeetingInput {
  */
 export class MeetingService {
   private readonly events: ScheduledEvents;
+  /** Branchements de l'enregistrement (phase 2), renseignés au démarrage. */
+  hooks: MeetingHooks = { afterStart: async () => undefined, beforeClose: async () => undefined };
 
   constructor(
+    private readonly config: AppConfig,
     private readonly client: Client,
     private readonly repos: Repositories,
     private readonly settings: SettingsService,
@@ -142,6 +153,7 @@ export class MeetingService {
     const guild = await this.guild(meeting);
     if (guild) await this.events.start(guild, meeting.scheduledEventId);
     this.onChange(meeting.guildId);
+    await this.hooks.afterStart(meeting).catch((err) => this.warn(meeting, 'Démarrage auto de l’enregistrement impossible', err));
     return true;
   }
 
@@ -152,6 +164,7 @@ export class MeetingService {
       agendaLocked: true,
     });
     if (!meeting) return false;
+    await this.hooks.beforeClose(meeting.id).catch((err) => this.warn(meeting, 'Arrêt de l’enregistrement impossible', err));
     const settings = await this.settings.get(meeting.guildId);
     const m = messages(settings.locale);
     await this.repos.cancelPendingJobs(meeting.id);
@@ -169,6 +182,7 @@ export class MeetingService {
   async cancel(meetingId: string, by: string, reason: string | null, options: { silent?: boolean } = {}): Promise<boolean> {
     const meeting = await this.repos.transitionMeeting(meetingId, ['scheduled', 'live'], 'cancelled', { endedAt: new Date() });
     if (!meeting) return false;
+    await this.hooks.beforeClose(meeting.id).catch((err) => this.warn(meeting, 'Arrêt de l’enregistrement impossible', err));
     const settings = await this.settings.get(meeting.guildId);
     const m = messages(settings.locale);
     await this.repos.cancelPendingJobs(meeting.id);
@@ -192,6 +206,14 @@ export class MeetingService {
     if (meeting) await this.cancel(meeting.id, this.client.user?.id ?? 'system', null, { silent: true });
   }
 
+  /** Active ou désactive l'enregistrement automatique d'une réunion. */
+  async setAutoRecord(meetingId: string, autoRecord: boolean): Promise<void> {
+    const meeting = await this.repos.updateMeeting(meetingId, { autoRecord });
+    if (!meeting) return;
+    await this.replan(meeting, await this.settings.get(meeting.guildId));
+    this.cards.refresh(meetingId, ['card']);
+  }
+
   /** Recalcule les échéances des réunions à venir ou en cours (après un changement des rappels). */
   async replanGuild(guildId: string): Promise<void> {
     const settings = await this.settings.get(guildId);
@@ -209,7 +231,8 @@ export class MeetingService {
   }
 
   private async replan(meeting: MeetingRow, settings: GuildSettingsRow): Promise<void> {
-    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date()));
+    const lead = this.config.guild(meeting.guildId).recording.autoJoinLeadMin;
+    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead));
   }
 
   /** Carte, tag et message dans le post après un changement de statut. */

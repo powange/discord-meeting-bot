@@ -22,6 +22,35 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 
 Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionnaire**, et ceux qui ont la permission **Gérer les événements**.
 
+## Phase 2 — Enregistrement
+
+| Fonction | Détail |
+|---|---|
+| Démarrer | Bouton **🔴 Enregistrer** sur la carte (organisateur ou gestionnaire). Enregistrer avant l'heure fait passer la réunion « En cours ». |
+| Automatique | `/reunion enregistrement-auto actif:True` dans le post, ou par défaut pour le serveur avec `/config general enregistrement-auto:True`. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
+| Pendant | Le bot est dans le vocal, micro coupé. Avertissement dans le post et dans le chat du vocal. La carte affiche « Enregistrement en cours » et le bouton **⏹️ Arrêter l'enregistrement**. |
+| Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
+| Opt-out | Rôle « ne pas m'enregistrer » (`/config roles ne-pas-enregistrer:`). Chacun peut le prendre ou le rendre avec `/enregistrement refuser` / `accepter`. La présence est notée, pas la voix. |
+| Fin | Bouton Arrêter, `/reunion terminer`, clôture automatique, ou **vocal vide depuis 5 min** après l'heure de début, ce qui clôt aussi la réunion. |
+| Bilan | Message silencieux dans le post : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
+| Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
+
+Contrainte Discord : un bot ne peut être que dans **un vocal par serveur** à la fois, donc un seul enregistrement par serveur.
+
+Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisateur>/`, soit le volume `recordings` en Docker. Compter environ 1 Mo par 10 minutes de parole et par personne. Le transfert vers le NAS et Drive arrive en phase 4.
+
+**Écouter une session (debug)** : `npx tsx --env-file=.env scripts/assemble.ts <recordingId>`. Le script reconstitue une piste continue par participant et un mix dans `…/<session>/assembled/` ; il nécessite ffmpeg. L'id de session se trouve dans la table `recordings` (`npm run db:studio`).
+
+### Tester la phase 2
+
+1. Activer **Server Members Intent** (déjà requis), et vérifier que le bot voit le salon vocal et peut s'y connecter.
+2. Optionnel : `/config roles ne-pas-enregistrer:@NePasEnregistrer`, puis placer ce rôle sous celui du bot.
+3. Créer une réunion dans quelques minutes, rejoindre le vocal à deux, puis cliquer **🔴 Enregistrer**.
+4. Parler à tour de rôle, faire `/enregistrement refuser` avec un compte et vérifier que sa voix n'est plus captée.
+5. **⏹️ Arrêter l'enregistrement** : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
+6. Tester l'automatique : `/reunion enregistrement-auto actif:True` sur une réunion dans 5 min. Le bot arrive à H-2.
+7. Quitter le vocal : 5 min après, l'enregistrement s'arrête et la réunion est close.
+
 ## 1. Créer l'application Discord
 
 1. Sur https://discord.com/developers/applications, créer une application puis ouvrir l'onglet **Bot**.
@@ -29,14 +58,15 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
-   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892834896912
+   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17893103332368
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
    - Voir les salons, Envoyer des messages, Envoyer des messages dans les fils
    - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Voir l'historique
    - Créer et gérer les événements
-   - Se connecter, en prévision de la phase 2
+   - Se connecter (enregistrement)
+   - Gérer les rôles : uniquement pour `/enregistrement refuser|accepter`. Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
 5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) et lancer `/config forum salon:#réunions`.
 
 > Discord ne sait pas trier les posts d'un forum selon la date de la réunion : seulement par activité récente ou par date de création. L'ordre chronologique se lit dans le post épinglé.

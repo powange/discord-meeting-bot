@@ -5,6 +5,7 @@ import type { Logger } from './lib/logger.js';
 import type { CardService } from './services/cards.js';
 import type { HubService } from './services/hub.js';
 import type { MeetingService } from './services/meetings.js';
+import type { RecordingService } from './services/recordings.js';
 import type { SettingsService } from './services/settings.js';
 
 export interface AppContext {
@@ -16,4 +17,5 @@ export interface AppContext {
   cards: CardService;
   hub: HubService;
   meetings: MeetingService;
+  recordings: RecordingService;
 }

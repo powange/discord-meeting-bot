@@ -10,6 +10,7 @@ import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
 import { MeetingService } from './services/meetings.js';
+import { RecordingService } from './services/recordings.js';
 import { SettingsService } from './services/settings.js';
 
 async function main(): Promise<void> {
@@ -25,8 +26,14 @@ async function main(): Promise<void> {
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
   const hub = new HubService(client, repos, settings, log);
-  const meetings = new MeetingService(client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
-  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings };
+  const meetings = new MeetingService(config, client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
+  const recordings = new RecordingService(client, repos, settings, cards, config, log);
+  recordings.setEndMeeting((meetingId) => meetings.end(meetingId, null));
+  meetings.hooks = {
+    afterStart: (meeting) => recordings.autoStart(meeting.id),
+    beforeClose: (meetingId) => recordings.stop(meetingId, 'meeting_end'),
+  };
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings };
   const scheduler = new Scheduler(ctx);
   await hub.load();
 
@@ -37,6 +44,7 @@ async function main(): Promise<void> {
     } catch (err) {
       log.error({ err }, 'Enregistrement des commandes impossible');
     }
+    await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
     scheduler.start();
     hub.startWatchdog();
   });
@@ -48,6 +56,7 @@ async function main(): Promise<void> {
     meetings.onThreadDeleted(thread.id).catch((err) => log.error({ err, threadId: thread.id }, 'Suppression de post non traitée'));
     hub.onThreadDelete(thread.id, thread.guildId).catch((err) => log.error({ err, threadId: thread.id }, 'Recréation du post épinglé impossible'));
   });
+  client.on(Events.VoiceStateUpdate, (oldState, newState) => recordings.onVoiceStateUpdate(oldState, newState));
   client.on(Events.ThreadUpdate, (_old, thread) => {
     hub.onThreadUpdate(thread).catch((err) => log.warn({ err, threadId: thread.id }, 'Rétablissement du post épinglé impossible'));
   });
@@ -60,6 +69,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'Arrêt en cours');
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
+    await recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet'));
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);
     await hub.flush().catch(() => undefined);

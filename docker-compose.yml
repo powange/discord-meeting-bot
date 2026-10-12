@@ -11,10 +11,14 @@ services:
       # Mot de passe alphanumérique : il est inséré tel quel dans l'URL.
       DATABASE_URL: postgres://bot:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@postgres:5432/meetingbot
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /data
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
       # CONFIG_PATH: /app/config/config.yaml
-    # volumes:
-    #   - ${CONFIG_DIR:-/srv/meeting-bot/config}:/app/config:ro
+    volumes:
+      # Pistes audio des réunions (prévoir de la place : ~1 Mo / 10 min / participant)
+      - recordings:/data
+      # Décommenter pour utiliser un fichier de configuration :
+      # - ${CONFIG_DIR:-/srv/meeting-bot/config}:/app/config:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,3 +41,4 @@ services:
 
 volumes:
   pgdata:
+  recordings:

@@ -112,6 +112,26 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
       return;
     }
 
+    case 'rec.start': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // la connexion au vocal peut prendre plusieurs secondes
+      await ctx.recordings.start(meeting.id, interaction.user.id);
+      // Enregistrer avant l'heure, c'est que la réunion a commencé.
+      if (meeting.status === 'scheduled') await ctx.meetings.start(meeting.id);
+      await replyEphemeral(interaction, m.recording.started_reply);
+      return;
+    }
+
+    case 'rec.stop': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const stopped = await ctx.recordings.stop(meeting.id, 'manual');
+      await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.errors.notRecording);
+      return;
+    }
+
     case 'meeting.edit': {
       if (!interaction.isButton()) return;
       await showEditModal(interaction, scope);

@@ -122,6 +122,30 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect(retried.map((j) => [j.attempts, j.lastError])).toEqual([[2, 'boom']]);
   });
 
+  it('enregistrement : session active, présences, segments', async () => {
+    const m = await newMeeting();
+    const t0 = new Date('2026-10-15T16:00:00Z');
+    const rec = await repos.insertRecording({ meetingId: m.id, guildId: 'g', voiceChannelId: 'v', startedAt: t0, dataDir: '/data/x' });
+    expect((await repos.getActiveRecording(m.id))?.id).toBe(rec.id);
+
+    await repos.insertPresence({ recordingId: rec.id, userId: 'a', displayName: 'A', joinedAt: t0 });
+    await repos.insertPresence({ recordingId: rec.id, userId: 'b', displayName: 'B', joinedAt: t0, excluded: true });
+    await repos.closePresence(rec.id, new Date('2026-10-15T16:10:00Z'), 'a');
+    await repos.closePresence(rec.id, new Date('2026-10-15T16:30:00Z'));
+    const presence = await repos.listPresence(rec.id);
+    expect(presence.map((p) => [p.userId, p.leftAt?.toISOString(), p.excluded])).toEqual([
+      ['a', '2026-10-15T16:10:00.000Z', false],
+      ['b', '2026-10-15T16:30:00.000Z', true],
+    ]);
+
+    await repos.insertSegment({ recordingId: rec.id, userId: 'a', startMs: 5000, endMs: 7000, packets: 100, filePath: '/x/a/2.ogg' });
+    await repos.insertSegment({ recordingId: rec.id, userId: 'a', startMs: 1000, endMs: 2000, packets: 50, filePath: '/x/a/1.ogg' });
+    expect((await repos.listSegments(rec.id)).map((s) => s.startMs)).toEqual([1000, 5000]);
+
+    await repos.updateRecording(rec.id, { status: 'stopped', endedAt: new Date() });
+    expect(await repos.getActiveRecording(m.id)).toBeUndefined();
+  });
+
   it('suppression en cascade', async () => {
     const m = await newMeeting();
     await repos.setRsvp(m.id, 'u', 'yes');

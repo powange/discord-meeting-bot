@@ -14,6 +14,9 @@ database:
 
 logLevel: ${LOG_LEVEL:-info}
 
+# Données locales (pistes audio). Dans Docker : /data (volume).
+dataDir: ${DATA_DIR:-data}
+
 scheduler:
   tickSeconds: 30
 
@@ -27,6 +30,12 @@ defaults:
     reminderOffsetsMin: [1440, 15] # J-1 et 15 min avant
     defaultDurationMin: 60
     autoRecordDefault: false
+  # Enregistrement (phase 2)
+  recording:
+    autoJoinLeadMin: 2 # en auto, le bot rejoint le vocal 2 min avant l'heure
+    endWhenEmptyMin: 5 # vocal vide 5 min (après l'heure de début) : fin de l'enregistrement et de la réunion
+    silenceMs: 1500 # silence qui clôt une prise de parole
+    decryptionFailureTolerance: 48 # DAVE : échecs de déchiffrement tolérés avant réinitialisation
 
 # … surchargées serveur par serveur (fusion profonde avec `defaults`).
 guilds: {}

@@ -16,6 +16,8 @@ export type Action =
   | { type: 'agenda.lock'; meetingId: string; locked: boolean }
   | { type: 'meeting.edit'; meetingId: string }
   | { type: 'meeting.editSubmit'; meetingId: string }
+  | { type: 'rec.start'; meetingId: string }
+  | { type: 'rec.stop'; meetingId: string }
   | { type: 'meeting.create' }
   | { type: 'meeting.createSubmit' };
 
@@ -75,6 +77,13 @@ export function decode(customId: string): Action | null {
     if (rest.length !== 2) return null;
     if (verb === 'edit') return { type: 'meeting.edit', meetingId };
     if (verb === 'editSubmit') return { type: 'meeting.editSubmit', meetingId };
+    return null;
+  }
+
+  if (group === 'rec') {
+    if (rest.length !== 2) return null;
+    if (verb === 'start') return { type: 'rec.start', meetingId };
+    if (verb === 'stop') return { type: 'rec.stop', meetingId };
     return null;
   }
 

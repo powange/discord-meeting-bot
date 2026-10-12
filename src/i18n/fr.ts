@@ -27,6 +27,7 @@ export const fr = {
     nobody: '—',
     more: (n: number) => `… et ${n} de plus`,
     autoRecord: '🔴 Enregistrement automatique au démarrage',
+    recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}`,
     footer: (status: string) => `Statut : ${status}`,
     minutes: (n: number) => (n % 60 === 0 ? `${n / 60} h` : n > 60 ? `${Math.floor(n / 60)} h ${n % 60}` : `${n} min`),
   },
@@ -41,6 +42,9 @@ export const fr = {
     lock: "Verrouiller l'ODJ",
     unlock: "Déverrouiller l'ODJ",
     joinVoice: 'Rejoindre le vocal',
+    record: 'Enregistrer',
+    stopRecording: "Arrêter l'enregistrement",
+    resumeRecording: "Reprendre l'enregistrement",
   },
 
   modal: {
@@ -108,6 +112,38 @@ export const fr = {
     voiceFallback: 'le salon vocal',
   },
 
+  recording: {
+    warning: (optoutRole: string | null) =>
+      '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.' +
+      (optoutRole
+        ? `\nPour ne pas être enregistré : \`/enregistrement refuser\` (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
+        : ''),
+    started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
+    summaryTitle: (reason: string) => `⏹️ Enregistrement terminé (${reason})`,
+    reasons: {
+      manual: 'arrêt manuel',
+      empty: 'vocal vide',
+      meeting_end: 'réunion close',
+      shutdown: 'redémarrage du bot',
+      disconnected: 'déconnexion du vocal',
+      crash: 'arrêt inattendu du bot',
+    } as Record<string, string>,
+    summaryLine: (duration: string, speakers: number, segments: number) =>
+      `Durée ${duration} · ${speakers} personne(s) enregistrée(s) · ${segments} prise(s) de parole`,
+    came: 'Inscrits présents',
+    noShow: 'Inscrits absents',
+    unannounced: 'Venus sans inscription',
+    notRecorded: 'Non enregistrés (opt-out)',
+    interrupted: "⚠️ L'enregistrement a été interrompu. Les prises de parole déjà captées sont conservées.",
+    autoStartFailed: (reason: string) => `⚠️ Démarrage automatique de l'enregistrement impossible : ${reason}`,
+    started_reply: 'Enregistrement démarré.',
+    stopped_reply: 'Enregistrement arrêté.',
+    autoSet: (on: boolean) =>
+      on ? 'Enregistrement automatique activé pour cette réunion.' : 'Enregistrement automatique désactivé pour cette réunion.',
+    optoutAdded: (role: string) => `Vous ne serez plus enregistré (rôle « ${role} » ajouté). Votre présence reste notée.`,
+    optoutRemoved: (role: string) => `Rôle « ${role} » retiré : vous serez de nouveau enregistré.`,
+  },
+
   format: {
     /** Format Luxon d'une date lisible : « lundi 12/10 à 18h00 ». */
     when: "cccc dd/MM 'à' HH'h'mm",
@@ -150,6 +186,13 @@ export const fr = {
       `Délais illisibles : « ${input} ». Exemples : \`1j, 15min\`, \`1 jour et 15 minutes\`, \`24h, 1h30\` ou \`aucun\` (5 délais max, 14 jours max).`,
     timezone: 'Fuseau horaire inconnu (ex. `Europe/Paris`).',
     forumPermissions: (perms: string) => `Il me manque des permissions sur ce forum : ${perms}.`,
+    recordingBusy: 'Un enregistrement est déjà en cours sur ce serveur (un bot ne peut être que dans un vocal à la fois).',
+    alreadyRecording: 'Cette réunion est déjà en cours d’enregistrement.',
+    notRecording: "Cette réunion n'est pas en cours d'enregistrement.",
+    voicePermissions: (perms: string) => `Il me manque des permissions sur le salon vocal : ${perms}.`,
+    voiceJoinFailed: 'Connexion au salon vocal impossible (délai dépassé). Réessayez dans un instant.',
+    optoutNotConfigured: "Aucun rôle « ne pas m'enregistrer » n'est configuré : un administrateur doit utiliser `/config roles`.",
+    optoutRoleUnmanageable: "Je ne peux pas attribuer ce rôle : il doit être placé sous mon rôle et j'ai besoin de la permission « Gérer les rôles ».",
   },
 
   config: {

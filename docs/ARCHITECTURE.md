@@ -1,6 +1,6 @@
 # Bot réunions — proposition d'architecture
 
-> Statut : **phase 1 livrée**. Doc des libs vérifiée le 2026-10-12.
+> Statut : **phases 1 et 2 livrées**. Doc des libs vérifiée le 2026-10-12.
 >
 > Écarts entre cette proposition et l'implémentation de la phase 1 :
 > - **npm** au lieu de pnpm (pas de pnpm dans l'environnement ; aucun impact fonctionnel).
@@ -9,6 +9,11 @@
 > - Les points d'ODJ retirés sont supprimés, sans suppression logique (`removed_at`).
 > - `scheduled_jobs.kind` vaut `reminder | start | auto_end` en phase 1. La relance des non-répondants accompagne le premier rappel et cible un rôle choisi (`nudge_role_id`).
 > - Toutes les tables du schéma ci-dessous n'existent pas encore : chaque phase ajoute les siennes par migration.
+>
+> Écarts de la phase 2 :
+> - **Pas de prism-media** : sa version 2 (seule à écrire de l'OGG) exige `node-crc`, un module natif. Un muxer OGG/Opus d'environ 150 lignes ([src/recording/ogg.ts](../src/recording/ogg.ts)) le remplace. Il comble aussi les courtes pauses au sein d'une prise de parole par des trames de silence, ce qui garde la durée fidèle.
+> - Plusieurs sessions d'enregistrement par réunion (reprise après coupure) : `recordings` → `recording_presence`, `audio_segments`. `lost_packets` n'existe pas : les paquets que DAVE n'arrive pas à déchiffrer sont jetés sans signal par la lib.
+> - Paramètres techniques dans le YAML (`recording.autoJoinLeadMin`, `endWhenEmptyMin`, `silenceMs`, `decryptionFailureTolerance`), avec la même surcharge par serveur que le reste.
 
 ## 0. Décisions actées
 

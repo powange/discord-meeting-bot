@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
-import { JOB_KINDS, MEETING_STATUSES, RSVP_STATUSES, type StatusTagIds } from '../domain/types.js';
+import { JOB_KINDS, MEETING_STATUSES, RECORDING_STATUSES, RSVP_STATUSES, type StatusTagIds } from '../domain/types.js';
 
 const tz = (name?: string) => (name ? timestamp(name, { withTimezone: true }) : timestamp({ withTimezone: true }));
 const createdAt = () => tz().notNull().defaultNow();
@@ -13,6 +13,7 @@ const updatedAt = () =>
 export const meetingStatus = pgEnum('meeting_status', MEETING_STATUSES);
 export const rsvpStatus = pgEnum('rsvp_status', RSVP_STATUSES);
 export const jobKind = pgEnum('job_kind', JOB_KINDS);
+export const recordingStatus = pgEnum('recording_status', RECORDING_STATUSES);
 
 /** Réglages Discord d'un serveur, modifiés via /config. */
 export const guildSettings = pgTable('guild_settings', {
@@ -115,6 +116,67 @@ export const scheduledJobs = pgTable(
   ],
 );
 
+/** Une session d'enregistrement (une réunion peut en avoir plusieurs : reprise après coupure). */
+export const recordings = pgTable(
+  'recordings',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    meetingId: uuid()
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    guildId: text().notNull(),
+    voiceChannelId: text().notNull(),
+    /** null = démarrage automatique. */
+    startedBy: text(),
+    startedAt: tz().notNull(),
+    endedAt: tz(),
+    status: recordingStatus().notNull().default('recording'),
+    stopReason: text(),
+    /** Dossier local des pistes de cette session. */
+    dataDir: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.meetingId), index().on(t.status)],
+);
+
+/** Présence réelle dans le vocal pendant l'enregistrement (une ligne par passage). */
+export const recordingPresence = pgTable(
+  'recording_presence',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    recordingId: uuid()
+      .notNull()
+      .references(() => recordings.id, { onDelete: 'cascade' }),
+    userId: text().notNull(),
+    displayName: text().notNull(),
+    joinedAt: tz().notNull(),
+    leftAt: tz(),
+    /** Rôle « ne pas m'enregistrer » : présence notée, voix jamais enregistrée. */
+    excluded: boolean().notNull().default(false),
+  },
+  (t) => [index().on(t.recordingId)],
+);
+
+/** Une prise de parole = un fichier OGG/Opus 48 kHz. Les temps sont relatifs au début de la session. */
+export const audioSegments = pgTable(
+  'audio_segments',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    recordingId: uuid()
+      .notNull()
+      .references(() => recordings.id, { onDelete: 'cascade' }),
+    userId: text().notNull(),
+    startMs: integer().notNull(),
+    endMs: integer().notNull(),
+    packets: integer().notNull(),
+    filePath: text().notNull(),
+  },
+  (t) => [index().on(t.recordingId, t.userId, t.startMs)],
+);
+
+export type RecordingRow = typeof recordings.$inferSelect;
+export type RecordingPresenceRow = typeof recordingPresence.$inferSelect;
+export type AudioSegmentRow = typeof audioSegments.$inferSelect;
 export type GuildSettingsRow = typeof guildSettings.$inferSelect;
 export type MeetingRow = typeof meetings.$inferSelect;
 export type AgendaItemRow = typeof agendaItems.$inferSelect;

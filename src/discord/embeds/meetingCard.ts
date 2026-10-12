@@ -48,13 +48,20 @@ const AGENDA_BUDGET = 4000;
 const AGENDA_DETAIL_PREVIEW = 300;
 
 /** Carte de la réunion (premier message du post) : infos et présences, reconstruite depuis la BDD. */
-export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], m: Messages): RenderedMessage {
+export function renderMeetingCard(
+  meeting: CardMeeting,
+  rsvps: readonly Rsvp[],
+  m: Messages,
+  /** Enregistrement en cours (début), ou null. */
+  recordingSince: Date | null = null,
+): RenderedMessage {
   const groups = groupRsvps(rsvps);
   const mentions = (ids: string[]) =>
     ids.length === 0 ? m.card.nobody : joinLinesWithin(ids.map((id) => `<@${id}>`), RSVP_FIELD_BUDGET, m.card.more, ' ');
 
   const descriptionParts = [truncate(meeting.description, DESCRIPTION_BUDGET)];
-  if (meeting.autoRecord && isOpen(meeting.status)) descriptionParts.push(m.card.autoRecord);
+  if (recordingSince) descriptionParts.push(m.card.recording(discordTimestamp(recordingSince, 't')));
+  else if (meeting.autoRecord && isOpen(meeting.status)) descriptionParts.push(m.card.autoRecord);
   const description = descriptionParts.filter(Boolean).join('\n\n');
 
   const embed = new EmbedBuilder()
@@ -84,6 +91,18 @@ export function renderMeetingCard(meeting: CardMeeting, rsvps: readonly Rsvp[], 
       .setEmoji('✏️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!open),
+    recordingSince
+      ? new ButtonBuilder()
+          .setCustomId(encode({ type: 'rec.stop', meetingId: meeting.id }))
+          .setLabel(m.buttons.stopRecording)
+          .setEmoji('⏹️')
+          .setStyle(ButtonStyle.Danger)
+      : new ButtonBuilder()
+          .setCustomId(encode({ type: 'rec.start', meetingId: meeting.id }))
+          .setLabel(m.buttons.record)
+          .setEmoji('🔴')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!open),
   );
 
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };

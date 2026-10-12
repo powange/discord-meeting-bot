@@ -4,12 +4,13 @@ import { z } from 'zod';
 import { deepMerge, interpolateEnv } from './env.js';
 import { guildBlockSchema, rootSchema, type GuildBlock } from './schema.js';
 
-export type { GuildBlock, GuildSeed } from './schema.js';
+export type { GuildBlock, GuildSeed, RecordingConfig } from './schema.js';
 
 export interface AppConfig {
   discord: { token: string; commandGuildIds: string[] };
   database: { url: string };
   logLevel: string;
+  dataDir: string;
   scheduler: { tickSeconds: number };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
   guild(guildId: string): GuildBlock;
@@ -20,6 +21,7 @@ const FALLBACK = {
   discord: { token: '${DISCORD_TOKEN}' },
   database: { url: '${DATABASE_URL}' },
   logLevel: '${LOG_LEVEL:-info}',
+  dataDir: '${DATA_DIR:-data}',
 };
 
 export class ConfigError extends Error {
@@ -51,6 +53,7 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     discord: root.discord,
     database: root.database,
     logLevel: root.logLevel,
+    dataDir: root.dataDir,
     scheduler: root.scheduler,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,
   };

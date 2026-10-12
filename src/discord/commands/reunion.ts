@@ -30,6 +30,12 @@ const data = new SlashCommandBuilder()
   .addSubcommand((s) => s.setName('terminer').setDescription('Clore la réunion de ce post'))
   .addSubcommand((s) =>
     s
+      .setName('enregistrement-auto')
+      .setDescription("Enregistrer automatiquement cette réunion dès son début (le bot rejoint le vocal)")
+      .addBooleanOption((o) => o.setName('actif').setDescription('Oui pour enregistrer automatiquement').setRequired(true)),
+  )
+  .addSubcommand((s) =>
+    s
       .setName('dupliquer')
       .setDescription('Créer une nouvelle réunion identique à une autre date')
       .addStringOption((o) => o.setName('quand').setDescription('Date et heure, ex. 22/10/2026 18:30').setRequired(true).setMaxLength(40))
@@ -76,6 +82,14 @@ export const reunion: Command = {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const ok = await ctx.meetings.end(meeting.id, interaction.user.id);
         await replyEphemeral(interaction, ok ? m.replies.ended : m.errors.meetingClosed);
+        return;
+      }
+
+      case 'enregistrement-auto': {
+        requireManager(scope);
+        const on = interaction.options.getBoolean('actif', true);
+        await ctx.meetings.setAutoRecord(meeting.id, on);
+        await replyEphemeral(interaction, m.recording.autoSet(on));
         return;
       }
 
