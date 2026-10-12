@@ -182,6 +182,17 @@ export async function handleAction(
       return;
     }
 
+    case 'report.regen': {
+      // Nouveau résumé à partir de la même transcription, sans consigne supplémentaire.
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      if (ctx.recordings.isRecording(meeting.id)) throw new UserError(m.errors.alreadyRecording);
+      if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
+      await ctx.pipeline.regenerate(meeting.id, false);
+      await replyEphemeral(interaction, m.pipeline.scheduled);
+      return;
+    }
+
     case 'report.retry': {
       if (!interaction.isButton()) return;
       requireManager(scope);

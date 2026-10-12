@@ -76,6 +76,7 @@ describe('renderReport', () => {
     const row = out.at(-1)!.components.at(-1) as { type: number; components: Array<{ custom_id: string }> };
     expect(row.type).toBe(ComponentType.ActionRow);
     expect(row.components[0]!.custom_id).toBe('v1:report:correct:3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b');
+    expect(row.components[1]!.custom_id).toBe('v1:report:regen:3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b');
     expect(renderReport(base, m).at(-1)!.components.some((c) => c.type === ComponentType.ActionRow)).toBe(false);
   });
 

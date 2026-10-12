@@ -240,6 +240,7 @@ export const fr = {
     noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
     listen: "Écouter l'audio",
     correct: 'Corriger',
+    regen: 'Régénérer',
     correctModal: 'Corriger le compte rendu',
     correctField: 'Consigne de correction',
     correctHint: 'Ex. « Pol et non Paul », « la décision était de reporter à janvier ». Le résumé sera régénéré.',

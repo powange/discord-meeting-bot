@@ -133,6 +133,11 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
             .setLabel(r.correct)
             .setEmoji('✏️')
             .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(encode({ type: 'report.regen', meetingId: input.correctMeetingId! }))
+            .setLabel(r.regen)
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary),
         ),
       );
     }
