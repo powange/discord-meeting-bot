@@ -16,17 +16,16 @@ import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { renderRecordingControl } from '../discord/embeds/recordingControl.js';
+import { renderRecordingSummary } from '../discord/embeds/recordingSummary.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { displayName } from '../discord/notify.js';
 import { fetchThread } from '../discord/threads.js';
 import { encode } from '../domain/customId.js';
 import { isOpen } from '../domain/meeting.js';
-import { attendanceReport } from '../domain/recording.js';
 import type { StopReason } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
-import { joinLinesWithin } from '../lib/text.js';
 import { RecordingSession } from '../recording/session.js';
 import type { CardService } from './cards.js';
 import type { SettingsService } from './settings.js';
@@ -390,18 +389,18 @@ export class RecordingService {
       this.repos.listRsvps(meetingId),
       this.repos.getRecording(recordingId),
     ]);
-    const endedAt = recording?.endedAt ?? new Date();
-    const report = attendanceReport(rsvps, presence, endedAt);
-    const durationMin = recording ? Math.round((endedAt.getTime() - recording.startedAt.getTime()) / 60_000) : 0;
-    const speakers = new Set(segments.map((s) => s.userId)).size;
-
-    const list = (ids: string[]) => joinLinesWithin(ids.map((id) => `<@${id}>`), 900, m.card.more, ' ');
-    const lines = [`**${m.recording.summaryTitle(m.recording.reasons[reason] ?? reason)}**`, m.recording.summaryLine(m.card.minutes(durationMin), speakers, segments.length)];
-    if (report.came.length) lines.push(`✅ ${m.recording.came} : ${list(report.came)}`);
-    if (report.noShow.length) lines.push(`❌ ${m.recording.noShow} : ${list(report.noShow)}`);
-    if (report.unannounced.length) lines.push(`➕ ${m.recording.unannounced} : ${list(report.unannounced)}`);
-    if (report.notRecorded.length) lines.push(`🔇 ${m.recording.notRecorded} : ${list(report.notRecorded)}`);
-    if (interrupted) lines.push(m.recording.interrupted);
+    if (!recording) return;
+    const embed = renderRecordingSummary(
+      {
+        reason: m.recording.reasons[reason] ?? reason,
+        startedAt: recording.startedAt,
+        endedAt: recording.endedAt ?? new Date(),
+        segments,
+        presence,
+        rsvps,
+      },
+      m,
+    );
 
     const components =
       interrupted && isOpen(meeting.status)
@@ -420,7 +419,8 @@ export class RecordingService {
 
     await ensureUnarchived(thread);
     await thread.send({
-      content: lines.join('\n').slice(0, 2000),
+      embeds: [embed],
+      ...(interrupted ? { content: m.recording.interrupted } : {}),
       components,
       allowedMentions: { parse: [] },
       flags: MessageFlags.SuppressNotifications,

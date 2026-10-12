@@ -29,7 +29,7 @@ export const fr = {
     autoRecord: '🔴 Enregistrement automatique au démarrage',
     recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}`,
     footer: (status: string) => `Statut : ${status}`,
-    minutes: (n: number) => (n % 60 === 0 ? `${n / 60} h` : n > 60 ? `${Math.floor(n / 60)} h ${n % 60}` : `${n} min`),
+    minutes: (n: number) => (n > 0 && n % 60 === 0 ? `${n / 60} h` : n > 60 ? `${Math.floor(n / 60)} h ${n % 60}` : `${n} min`),
   },
 
   buttons: {
@@ -125,7 +125,6 @@ export const fr = {
         ? `\nPour ne pas être enregistré : \`/enregistrement refuser\` (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
         : ''),
     started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
-    summaryTitle: (reason: string) => `⏹️ Enregistrement terminé (${reason})`,
     reasons: {
       manual: 'arrêt manuel',
       empty: 'vocal vide',
@@ -134,12 +133,6 @@ export const fr = {
       disconnected: 'déconnexion du vocal',
       crash: 'arrêt inattendu du bot',
     } as Record<string, string>,
-    summaryLine: (duration: string, speakers: number, segments: number) =>
-      `Durée ${duration} · ${speakers} personne(s) enregistrée(s) · ${segments} prise(s) de parole`,
-    came: 'Inscrits présents',
-    noShow: 'Inscrits absents',
-    unannounced: 'Venus sans inscription',
-    notRecorded: 'Non enregistrés (opt-out)',
     interrupted: "⚠️ L'enregistrement a été interrompu. Les prises de parole déjà captées sont conservées.",
     autoStartFailed: (reason: string) => `⚠️ Démarrage automatique de l'enregistrement impossible : ${reason}`,
     started_reply: 'Enregistrement démarré.',
@@ -150,7 +143,28 @@ export const fr = {
     optoutRemoved: (role: string) => `Rôle « ${role} » retiré : vous serez de nouveau enregistré.`,
   },
 
+  summary: {
+    title: '⏹️ Enregistrement terminé',
+    header: (reason: string, from: string, to: string, duration: string, segments: number) =>
+      `${reason} · ${from} → ${to} (${duration}) · ${segments} prise${segments > 1 ? 's' : ''} de parole`,
+    participants: (n: number) => `Participants (${n})`,
+    participantLine: (who: string, bar: string, speech: string, speechPct: number, presence: string, presencePct: number) =>
+      `${who}\n\`${bar}\` 🗣️ ${speech} (**${speechPct} %** de la parole) · présent ${presence} (${presencePct} %)`,
+    notRecordedLine: (who: string, presence: string, presencePct: number) => `${who} · 🔇 non enregistré · présent ${presence} (${presencePct} %)`,
+    unannounced: 'non inscrit',
+    noShow: (n: number) => `Inscrits absents (${n})`,
+    nobody: "Personne n'a été enregistré.",
+  },
+
   format: {
+    /** Durée précise : « 45 s », « 12 min 30 s », « 1 h 05 ». */
+    duration: (ms: number) => {
+      const s = Math.round(ms / 1000);
+      if (s < 60) return `${s} s`;
+      const min = Math.floor(s / 60);
+      if (min < 60) return s % 60 ? `${min} min ${String(s % 60).padStart(2, '0')} s` : `${min} min`;
+      return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+    },
     /** Format Luxon d'une date lisible : « lundi 12/10 à 18h00 ». */
     when: "cccc dd/MM 'à' HH'h'mm",
     startsIn: (min: number) =>
