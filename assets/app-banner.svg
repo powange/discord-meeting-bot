@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="480" viewBox="0 0 1360 480">
+  <defs>
+    <radialGradient id="bg" cx="70%" cy="20%" r="95%">
+      <stop offset="0" stop-color="#2a3b66"/>
+      <stop offset="1" stop-color="#0e1424"/>
+    </radialGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0e1424" stop-opacity="0.9"/>
+      <stop offset="0.35" stop-color="#0e1424" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gridFade" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="640" y2="0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="gridMask"><rect width="1360" height="480" fill="url(#gridFade)"/></mask>
+  </defs>
+  <rect width="1360" height="480" fill="url(#bg)"/>
+  <!-- trame discrète de grille d'agenda (planification), à gauche -->
+  <g stroke="#ffffff" stroke-opacity="0.06" stroke-width="2" mask="url(#gridMask)">
+    <line x1="40" y1="0" x2="40" y2="480"/><line x1="100" y1="0" x2="100" y2="480"/><line x1="160" y1="0" x2="160" y2="480"/><line x1="220" y1="0" x2="220" y2="480"/><line x1="280" y1="0" x2="280" y2="480"/><line x1="340" y1="0" x2="340" y2="480"/><line x1="400" y1="0" x2="400" y2="480"/><line x1="460" y1="0" x2="460" y2="480"/><line x1="520" y1="0" x2="520" y2="480"/><line x1="580" y1="0" x2="580" y2="480"/><line x1="640" y1="0" x2="640" y2="480"/>
+    <line x1="0" y1="40" x2="640" y2="40"/><line x1="0" y1="100" x2="640" y2="100"/><line x1="0" y1="160" x2="640" y2="160"/><line x1="0" y1="220" x2="640" y2="220"/><line x1="0" y1="280" x2="640" y2="280"/><line x1="0" y1="340" x2="640" y2="340"/><line x1="0" y1="400" x2="640" y2="400"/><line x1="0" y1="460" x2="640" y2="460"/>
+  </g>
+  <rect width="1360" height="480" fill="url(#fade)"/>
+  <rect x="470" y="365.0" width="9" height="14.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.35"/>
+  <rect x="487" y="359.4" width="9" height="25.1" rx="4.5" fill="#2dd4bf" fill-opacity="0.42"/>
+  <rect x="504" y="360.0" width="9" height="24.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.47"/>
+  <rect x="521" y="356.2" width="9" height="31.5" rx="4.5" fill="#2dd4bf" fill-opacity="0.52"/>
+  <rect x="538" y="350.4" width="9" height="43.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.56"/>
+  <rect x="555" y="346.3" width="9" height="51.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.60"/>
+  <rect x="572" y="354.1" width="9" height="35.9" rx="4.5" fill="#2dd4bf" fill-opacity="0.64"/>
+  <rect x="589" y="330.5" width="9" height="83.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.68"/>
+  <rect x="606" y="335.8" width="9" height="72.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.71"/>
+  <rect x="623" y="339.1" width="9" height="65.7" rx="4.5" fill="#2dd4bf" fill-opacity="0.74"/>
+  <rect x="640" y="341.7" width="9" height="60.6" rx="4.5" fill="#2dd4bf" fill-opacity="0.77"/>
+  <rect x="657" y="321.1" width="9" height="101.8" rx="4.5" fill="#2dd4bf" fill-opacity="0.80"/>
+  <rect x="674" y="323.5" width="9" height="96.9" rx="4.5" fill="#2dd4bf" fill-opacity="0.83"/>
+  <rect x="691" y="346.2" width="9" height="51.6" rx="4.5" fill="#2dd4bf" fill-opacity="0.85"/>
+  <rect x="708" y="326.5" width="9" height="91.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.88"/>
+  <rect x="725" y="337.2" width="9" height="69.6" rx="4.5" fill="#2dd4bf" fill-opacity="0.90"/>
+  <rect x="742" y="315.3" width="9" height="113.5" rx="4.5" fill="#2dd4bf" fill-opacity="0.92"/>
+  <rect x="759" y="339.2" width="9" height="65.6" rx="4.5" fill="#2dd4bf" fill-opacity="0.93"/>
+  <rect x="776" y="318.1" width="9" height="107.8" rx="4.5" fill="#2dd4bf" fill-opacity="0.95"/>
+  <rect x="793" y="320.8" width="9" height="102.3" rx="4.5" fill="#2dd4bf" fill-opacity="0.96"/>
+  <rect x="810" y="336.5" width="9" height="71.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.97"/>
+  <rect x="827" y="342.8" width="9" height="58.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.98"/>
+  <rect x="844" y="294.4" width="9" height="155.3" rx="4.5" fill="#2dd4bf" fill-opacity="0.99"/>
+  <rect x="861" y="292.1" width="9" height="159.8" rx="4.5" fill="#2dd4bf" fill-opacity="1.00"/>
+  <rect x="878" y="338.4" width="9" height="67.2" rx="4.5" fill="#2dd4bf" fill-opacity="1.00"/>
+  <rect x="895" y="320.6" width="9" height="102.9" rx="4.5" fill="#2dd4bf" fill-opacity="1.00"/>
+  <rect x="912" y="292.6" width="9" height="158.9" rx="4.5" fill="#2dd4bf" fill-opacity="1.00"/>
+  <rect x="929" y="334.8" width="9" height="74.4" rx="4.5" fill="#2dd4bf" fill-opacity="1.00"/>
+  <rect x="946" y="322.6" width="9" height="98.9" rx="4.5" fill="#2dd4bf" fill-opacity="0.99"/>
+  <rect x="963" y="316.0" width="9" height="112.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.98"/>
+  <rect x="980" y="310.3" width="9" height="123.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.97"/>
+  <rect x="997" y="331.6" width="9" height="80.9" rx="4.5" fill="#2dd4bf" fill-opacity="0.96"/>
+  <rect x="1014" y="337.9" width="9" height="68.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.95"/>
+  <rect x="1031" y="298.2" width="9" height="147.5" rx="4.5" fill="#2dd4bf" fill-opacity="0.93"/>
+  <rect x="1048" y="326.1" width="9" height="91.8" rx="4.5" fill="#2dd4bf" fill-opacity="0.92"/>
+  <rect x="1065" y="337.3" width="9" height="69.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.90"/>
+  <rect x="1082" y="324.3" width="9" height="95.3" rx="4.5" fill="#2dd4bf" fill-opacity="0.88"/>
+  <rect x="1099" y="335.4" width="9" height="73.3" rx="4.5" fill="#2dd4bf" fill-opacity="0.85"/>
+  <rect x="1116" y="344.0" width="9" height="56.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.83"/>
+  <rect x="1133" y="321.4" width="9" height="101.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.80"/>
+  <rect x="1150" y="339.3" width="9" height="65.4" rx="4.5" fill="#2dd4bf" fill-opacity="0.77"/>
+  <rect x="1167" y="341.2" width="9" height="61.7" rx="4.5" fill="#2dd4bf" fill-opacity="0.74"/>
+  <rect x="1184" y="351.4" width="9" height="41.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.71"/>
+  <rect x="1201" y="329.2" width="9" height="85.7" rx="4.5" fill="#2dd4bf" fill-opacity="0.68"/>
+  <rect x="1218" y="350.1" width="9" height="43.8" rx="4.5" fill="#2dd4bf" fill-opacity="0.64"/>
+  <rect x="1235" y="338.2" width="9" height="67.6" rx="4.5" fill="#2dd4bf" fill-opacity="0.60"/>
+  <rect x="1252" y="349.9" width="9" height="44.1" rx="4.5" fill="#2dd4bf" fill-opacity="0.56"/>
+  <rect x="1269" y="356.4" width="9" height="31.3" rx="4.5" fill="#2dd4bf" fill-opacity="0.52"/>
+  <rect x="1286" y="354.9" width="9" height="34.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.47"/>
+  <rect x="1303" y="360.4" width="9" height="23.2" rx="4.5" fill="#2dd4bf" fill-opacity="0.42"/>
+  <rect x="1320" y="365.0" width="9" height="14.0" rx="4.5" fill="#2dd4bf" fill-opacity="0.35"/>
+  <!-- titre et accroche (en haut à droite : le coin bas gauche reçoit l'avatar) -->
+  <circle cx="574" cy="128" r="17" fill="#ef4444"/>
+  <circle cx="574" cy="128" r="30" fill="#ef4444" fill-opacity="0.22"/>
+  <text x="616" y="152" font-family="DejaVu Sans" font-weight="700" font-size="70" fill="#ffffff" letter-spacing="-1">Meeting Recorder</text>
+  <text x="618" y="214" font-family="DejaVu Sans" font-weight="400" font-size="30" fill="#c9d4e6">Planifier · Enregistrer · Transcrire · Résumer</text>
+</svg>

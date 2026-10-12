@@ -97,7 +97,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 ## 1. Créer l'application Discord
 
-1. Sur https://discord.com/developers/applications, créer une application (icône prête à l'emploi : [assets/app-icon.png](assets/app-icon.png), 1024 × 1024), puis ouvrir l'onglet **Bot**.
+1. Sur https://discord.com/developers/applications, créer une application (icône prête à l'emploi : [assets/app-icon.png](assets/app-icon.png), 1024 × 1024 ; bannière : [assets/app-banner.png](assets/app-banner.png), 1360 × 480, à déposer dans **Bot → Banner**), puis ouvrir l'onglet **Bot**.
 2. Copier le token : c'est `DISCORD_TOKEN`.
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
