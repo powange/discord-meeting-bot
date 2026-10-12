@@ -4,7 +4,7 @@ name: meeting-bot
 
 services:
   bot:
-    image: ghcr.io/powange/discord-meeting-bot:${BOT_TAG:-latest}
+    image: ghcr.io/powange/meeting-recorder:${BOT_TAG:-latest}
     restart: unless-stopped
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?DISCORD_TOKEN requis}

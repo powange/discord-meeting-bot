@@ -1,4 +1,4 @@
-# discord-meeting-bot
+# meeting-recorder
 
 Bot Discord auto-hébergé de gestion de réunions : planification dans un forum, inscriptions, ordre du jour, rappels, événements Discord natifs. L'enregistrement, la transcription, les résumés et l'archivage arrivent dans les phases suivantes.
 
@@ -97,7 +97,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 ## 1. Créer l'application Discord
 
-1. Sur https://discord.com/developers/applications, créer une application puis ouvrir l'onglet **Bot**.
+1. Sur https://discord.com/developers/applications, créer une application (icône prête à l'emploi : [assets/app-icon.png](assets/app-icon.png), 1024 × 1024), puis ouvrir l'onglet **Bot**.
 2. Copier le token : c'est `DISCORD_TOKEN`.
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
@@ -151,11 +151,11 @@ Commandes utiles :
 
 ## 3. Déploiement Portainer
 
-L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/discord-meeting-bot` (tags `latest`, `sha-…` et versions `vX.Y.Z`). La stack se contente de la récupérer.
+L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/meeting-recorder` (tags `latest`, `sha-…` et versions `vX.Y.Z`). La stack se contente de la récupérer.
 
 1. L'image est publique (elle hérite de la visibilité du dépôt) : Portainer la récupère sans identifiants.
 2. Dans Portainer : *Stacks* → *Add stack* → **Repository**.
-   - Repository URL : `https://github.com/powange/discord-meeting-bot`
+   - Repository URL : `https://github.com/powange/meeting-recorder`
    - Compose path : `docker-compose.yml`
    - Variables d'environnement :
      - `DISCORD_TOKEN`

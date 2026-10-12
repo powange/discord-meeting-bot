@@ -52,7 +52,7 @@ export function opusHead(channels = 2, sampleRate = 48_000, preSkip = 0): Buffer
   return head;
 }
 
-export function opusTags(vendor = 'discord-meeting-bot'): Buffer {
+export function opusTags(vendor = 'meeting-recorder'): Buffer {
   const v = Buffer.from(vendor, 'utf8');
   const tags = Buffer.alloc(8 + 4 + v.length + 4);
   tags.write('OpusTags', 0, 'ascii');

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0" stop-color="#26355c"/>
+      <stop offset="1" stop-color="#101727"/>
+    </radialGradient>
+    <linearGradient id="mic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9e2ef"/>
+    </linearGradient>
+  </defs>
+  <!-- fond (Discord affiche l'icône dans un cercle : tout l'utile tient dans un rayon de ~400 px) -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- ondes sonores -->
+  <g fill="none" stroke="#2dd4bf" stroke-linecap="round">
+    <path d="M 708 380 A 230 230 0 0 1 708 600" stroke-width="34"/>
+    <path d="M 316 380 A 230 230 0 0 0 316 600" stroke-width="34"/>
+    <path d="M 780 320 A 310 310 0 0 1 780 660" stroke-width="30" stroke-opacity="0.5"/>
+    <path d="M 244 320 A 310 310 0 0 0 244 660" stroke-width="30" stroke-opacity="0.5"/>
+  </g>
+
+  <!-- micro -->
+  <rect x="427" y="230" width="170" height="320" rx="85" fill="url(#mic)"/>
+  <g stroke="#9fb0c8" stroke-width="10" stroke-linecap="round" opacity="0.8">
+    <line x1="470" y1="330" x2="554" y2="330"/>
+    <line x1="470" y1="380" x2="554" y2="380"/>
+    <line x1="470" y1="430" x2="554" y2="430"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="38" stroke-linecap="round">
+    <path d="M 362 470 A 150 150 0 0 0 662 470"/>
+    <line x1="512" y1="622" x2="512" y2="716"/>
+    <line x1="418" y1="744" x2="606" y2="744"/>
+  </g>
+
+  <!-- voyant d'enregistrement -->
+  <circle cx="676" cy="250" r="86" fill="#ef4444" fill-opacity="0.22"/>
+  <circle cx="676" cy="250" r="54" fill="#ef4444"/>
+  <circle cx="660" cy="234" r="14" fill="#ffffff" fill-opacity="0.45"/>
+</svg>
