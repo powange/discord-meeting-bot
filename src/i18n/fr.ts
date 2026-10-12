@@ -179,6 +179,8 @@ export const fr = {
     testAll: 'Tout tester',
     testing: '🧪 Test en cours…',
     forbidden: "Réservé aux membres ayant la permission « Gérer le serveur ».",
+    ownersOnly: 'Seuls les propriétaires du bot peuvent modifier les serveurs de transcription (ce sont des adresses que le bot appelle sur leur réseau).',
+    readOnly: 'Consultation seule : la liste est gérée par les propriétaires du bot.',
     modalAdd: 'Ajouter un serveur de transcription',
     modalEdit: 'Modifier le serveur',
     fieldName: 'Nom',

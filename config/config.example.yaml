@@ -14,6 +14,17 @@ database:
 
 logLevel: ${LOG_LEVEL:-info}
 
+# Propriétaires du bot (ids Discord) : seuls à pouvoir modifier les serveurs IA depuis Discord.
+# Le propriétaire de l'application Discord (ou son équipe) est toujours reconnu.
+owners: []
+
+# Hôtes que le bot a le droit d'appeler pour l'IA (transcription, résumé). Vide : aucune restriction.
+# Noms exacts, *.domaine, IPv4 ou plages CIDR. Vérifié à l'enregistrement et à chaque appel,
+# après résolution DNS ; aucune redirection n'est suivie.
+ai:
+  allowedHosts: []
+  # allowedHosts: ["*.tailnet.ts.net", "192.168.1.0/24", "100.64.0.0/10"]
+
 # Données locales (pistes audio). Dans Docker : /data (volume).
 dataDir: ${DATA_DIR:-data}
 # ffmpeg : vide = ffmpeg-static en développement, `ffmpeg` de l'image en production.

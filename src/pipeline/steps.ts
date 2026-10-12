@@ -119,7 +119,7 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
 
   const { backends } = await effectiveBackends(repos, config, meeting.guildId);
   const pool = new TranscriptionPool(
-    backends.map((b) => new HttpTranscriptionBackend(b)),
+    backends.map((b) => new HttpTranscriptionBackend(b, config.ai.allowedHosts)),
     ctx.log,
   );
   const ffmpeg = ffmpegPath(config.ffmpegPath);
@@ -188,7 +188,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
     return { passes: 0 };
   }
 
-  const llm = new LlmClient(cfg);
+  const llm = new LlmClient(cfg, config.ai.allowedHosts);
   const agenda = await repos.listAgenda(meeting.id);
   const result = await summarizeMeeting(
     llm,

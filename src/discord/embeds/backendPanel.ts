@@ -20,6 +20,8 @@ export interface PanelState {
   confirmDeleteId?: number | null;
   /** Serveurs du YAML, affichés tant qu'aucun serveur n'est géré depuis Discord. */
   yamlFallback?: ReadonlyArray<{ name: string; type: string; url: string }>;
+  /** Faux pour un administrateur qui n'est pas propriétaire du bot : consultation et tests seulement. */
+  canEdit?: boolean;
 }
 
 const tx = (action: TxAction, backendId: number | null = null) => encode({ type: 'tx', action, backendId });
@@ -29,9 +31,12 @@ const button = (action: TxAction, id: number | null, emoji: string, label: strin
 /** Panneau des serveurs de transcription : un bloc par serveur avec ses boutons d'action. */
 export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], state: PanelState, m: Messages): APIContainerComponent {
   const p = m.backendPanel;
+  const canEdit = state.canEdit ?? true;
   const container = new ContainerBuilder()
     .setAccentColor(0x5865f2)
-    .addTextDisplayComponents((t) => t.setContent(`## ${p.title}\n-# ${p.footer}${state.notice ? `\n\n${state.notice}` : ''}`));
+    .addTextDisplayComponents((t) =>
+      t.setContent(`## ${p.title}\n-# ${p.footer}${canEdit ? '' : `\n-# 🔒 ${p.readOnly}`}${state.notice ? `\n\n${state.notice}` : ''}`),
+    );
 
   if (rows.length === 0) {
     const fallback = state.yamlFallback ?? [];
@@ -48,10 +53,14 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
       ...(notice ? [notice] : []),
     ].join('\n');
     container.addSectionComponents((s) =>
-      s.addTextDisplayComponents((t) => t.setContent(text)).setButtonAccessory(button('edit', r.id, '✏️', p.edit, ButtonStyle.Primary)),
+      s
+        .addTextDisplayComponents((t) => t.setContent(text))
+        .setButtonAccessory(canEdit ? button('edit', r.id, '✏️', p.edit, ButtonStyle.Primary) : button('test', r.id, '🧪', p.test)),
     );
 
-    if (state.confirmDeleteId === r.id) {
+    if (!canEdit) {
+      // Consultation : le test est dans l'accessoire, pas de rangée d'actions.
+    } else if (state.confirmDeleteId === r.id) {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
         row.addComponents(button('confirmDelete', r.id, '🗑️', p.confirmDelete(truncate(r.name, 40)), ButtonStyle.Danger), button('select', null, '↩️', p.cancel)),
       );
@@ -69,10 +78,13 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
   });
 
   container.addSeparatorComponents((s) => s.setSpacing(SeparatorSpacingSize.Large));
-  container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => {
-    row.addComponents(button('add', null, '➕', p.add, ButtonStyle.Success).setDisabled(rows.length >= MAX_BACKENDS));
-    if (rows.some((r) => r.enabled) || (rows.length === 0 && state.yamlFallback?.length)) row.addComponents(button('testAll', null, '🧪', p.testAll));
-    return row;
-  });
+  const canTestAll = rows.some((r) => r.enabled) || (rows.length === 0 && Boolean(state.yamlFallback?.length));
+  if (canEdit || canTestAll) {
+    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => {
+      if (canEdit) row.addComponents(button('add', null, '➕', p.add, ButtonStyle.Success).setDisabled(rows.length >= MAX_BACKENDS));
+      if (canTestAll) row.addComponents(button('testAll', null, '🧪', p.testAll));
+      return row;
+    });
+  }
   return container.toJSON();
 }

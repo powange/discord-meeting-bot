@@ -1,6 +1,7 @@
 import type { BackendConfig } from '../../config/index.js';
 import type { RawSegment } from '../../domain/transcript.js';
-import { fetchWithTimeout, isTimeout, trimSlash } from '../http.js';
+import { assertUrlAllowed, HostNotAllowedError } from '../../lib/hosts.js';
+import { fetchWithTimeout, isTimeout, RedirectError, trimSlash } from '../http.js';
 
 export interface TranscribeOptions {
   language: string;
@@ -51,7 +52,11 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
   /** Modèle chargé annoncé par vibe-server (/ready), qui ne le renvoie pas dans ses transcriptions. */
   private loadedModel: string | undefined;
 
-  constructor(private readonly config: BackendConfig) {
+  constructor(
+    private readonly config: BackendConfig,
+    /** Hôtes autorisés (ai.allowedHosts), vérifiés avant chaque appel. */
+    private readonly allowedHosts: readonly string[] = [],
+  ) {
     this.name = config.name;
     this.concurrency = config.type === 'vibe' ? 1 : config.concurrency;
     this.base = config.type === 'vibe' ? `${trimSlash(config.url)}/v1` : trimSlash(config.url);
@@ -61,6 +66,7 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     // vibe : /ready répond 503 tant qu'aucun modèle n'est chargé ; openai : /models.
     const url = this.config.type === 'vibe' ? `${trimSlash(this.config.url)}/ready` : `${this.base}/models`;
     try {
+      await assertUrlAllowed(url, this.allowedHosts);
       const res = await fetchWithTimeout(url, { headers: this.headers() }, this.config.healthTimeoutSec * 1000, signal);
       if (this.config.type === 'vibe' && res.ok) {
         const body = (await res.json().catch(() => ({}))) as { model?: unknown };
@@ -85,8 +91,10 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
 
     let res: Response;
     try {
+      await assertUrlAllowed(this.base, this.allowedHosts);
       res = await fetchWithTimeout(`${this.base}/audio/transcriptions`, { method: 'POST', body: form, headers: this.headers() }, this.config.timeoutSec * 1000, signal);
     } catch (err) {
+      if (err instanceof HostNotAllowedError || err instanceof RedirectError) throw new BackendError(`${this.name} : ${err.message}`, 'rejected');
       if (isTimeout(err) && !signal?.aborted) throw new BackendError(`${this.name} : délai dépassé (${this.config.timeoutSec} s)`, 'timeout');
       throw new BackendError(`${this.name} : injoignable (${err instanceof Error ? err.message : err})`, 'unavailable');
     }

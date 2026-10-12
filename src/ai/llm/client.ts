@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { LlmConfig } from '../../config/index.js';
+import { assertUrlAllowed } from '../../lib/hosts.js';
 import { fetchWithTimeout, isTimeout, trimSlash } from '../http.js';
 
 export interface ChatMessage {
@@ -52,7 +53,10 @@ export class LlmClient {
   /** Format retenu pour ce serveur (mémorisé après un refus). */
   private format: ResponseFormat = 'json_schema';
 
-  constructor(private readonly config: LlmConfig) {
+  constructor(
+    private readonly config: LlmConfig,
+    private readonly allowedHosts: readonly string[] = [],
+  ) {
     if (!config.baseUrl) throw new LlmError('Aucun serveur LLM configuré (llm.baseUrl).');
   }
 
@@ -107,6 +111,9 @@ export class LlmClient {
   }
 
   private async post(messages: readonly ChatMessage[], responseFormat: Record<string, unknown> | undefined, signal?: AbortSignal): Promise<Response> {
+    await assertUrlAllowed(this.config.baseUrl!, this.allowedHosts).catch((err: Error) => {
+      throw new LlmError(err.message);
+    });
     try {
       return await fetchWithTimeout(
         `${trimSlash(this.config.baseUrl!)}/chat/completions`,

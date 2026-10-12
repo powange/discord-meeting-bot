@@ -87,6 +87,14 @@ export const rootSchema = z.strictObject({
   logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   /** Données locales (pistes audio…). Monté en volume dans Docker. */
   dataDir: z.string().min(1).default('data'),
+  /** Propriétaires du bot (ids Discord) : seuls à pouvoir configurer les serveurs IA. Le propriétaire de l'application Discord l'est toujours. */
+  owners: z.array(snowflake).default([]),
+  ai: z
+    .strictObject({
+      /** Hôtes que le bot a le droit d'appeler (noms, *.domaine, IPv4, CIDR). Vide : pas de restriction. */
+      allowedHosts: z.array(z.string().min(1)).default([]),
+    })
+    .prefault({}),
   /** Binaire ffmpeg (préparation de l'audio). Vide : ffmpeg-static en développement, sinon `ffmpeg` du PATH. */
   ffmpegPath: z.string().optional(),
   scheduler: z.strictObject({ tickSeconds: z.int().min(5).max(300).default(30) }).prefault({}),

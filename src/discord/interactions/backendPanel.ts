@@ -15,6 +15,7 @@ import type { TranscriptionBackendRow } from '../../db/schema.js';
 import { encode, type TxAction } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
+import { assertUrlAllowed } from '../../lib/hosts.js';
 import { moveTo, rowToConfig, testBackend, type BackendTest } from '../../services/transcriptionBackends.js';
 import { MAX_BACKENDS, renderBackendPanel, type PanelState } from '../embeds/backendPanel.js';
 
@@ -25,15 +26,21 @@ const F = { name: 'name', type: 'type', url: 'url', model: 'model', key: 'key' }
 /** `/config transcription` : ouvre le panneau (message éphémère). */
 export async function openBackendPanel(ctx: AppContext, interaction: ChatInputCommandInteraction<'cached'>): Promise<void> {
   const m = await ctx.settings.messages(interaction.guildId);
-  await interaction.reply({ ...(await panel(ctx, interaction.guildId, {}, m)), flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+  const canEdit = ctx.owners.isOwner(interaction.user.id);
+  await interaction.reply({ ...(await panel(ctx, interaction.guildId, { canEdit }, m)), flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
 }
+
+/** Actions de consultation, permises aux administrateurs ; tout le reste est réservé aux propriétaires du bot. */
+const READ_ONLY_ACTIONS: readonly TxAction[] = ['select', 'test', 'testAll'];
 
 /** Boutons et formulaires du panneau. Chaque action revérifie la permission « Gérer le serveur ». */
 export async function handleBackendPanel(ctx: AppContext, interaction: PanelInteraction, action: TxAction, backendId: number | null): Promise<void> {
   const guildId = interaction.guildId;
   const m = await ctx.settings.messages(guildId);
   const p = m.backendPanel;
-  if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild)) throw new UserError(p.forbidden);
+  const canEdit = ctx.owners.isOwner(interaction.user.id);
+  if (!canEdit && !interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild)) throw new UserError(p.forbidden);
+  if (!canEdit && !READ_ONLY_ACTIONS.includes(action)) throw new UserError(p.ownersOnly);
   const language = ctx.config.guild(guildId).transcription.language;
   const rows = await ctx.repos.listBackends(guildId);
   const target = backendId === null ? undefined : rows.find((r) => r.id === backendId);
@@ -42,7 +49,7 @@ export async function handleBackendPanel(ctx: AppContext, interaction: PanelInte
     return target;
   };
   const refresh = async (state: PanelState) => {
-    const payload = await panel(ctx, guildId, state, m);
+    const payload = await panel(ctx, guildId, { ...state, canEdit }, m);
     if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
     else if (interaction.isButton()) await interaction.update(payload);
     else if (interaction.isFromMessage()) await interaction.update(payload);
@@ -116,6 +123,11 @@ export async function handleBackendPanel(ctx: AppContext, interaction: PanelInte
       const editing = action === 'editSubmit' ? needTarget() : null;
       const input = readBackendModal(interaction, m, editing);
       if (rows.some((r) => r.name === input.name && r.id !== editing?.id)) throw new UserError(m.transcriptionConfig.exists(input.name));
+      try {
+        await assertUrlAllowed(input.url, ctx.config.ai.allowedHosts);
+      } catch (err) {
+        throw new UserError(err instanceof Error ? err.message : String(err));
+      }
       if (!editing && rows.length >= MAX_BACKENDS) throw new UserError(p.full(MAX_BACKENDS));
       await interaction.deferUpdate();
 

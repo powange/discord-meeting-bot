@@ -101,6 +101,7 @@ describe('HttpTranscriptionBackend (serveur simulé)', () => {
       const path = req.url ?? '';
       if (path === '/ready') return res.writeHead(mode === 'notready' ? 503 : 200).end('{"status":"ready","model":"ggml-large-v3-turbo.bin"}');
       if (path === '/v1/models') return res.writeHead(200).end('{"data":[]}');
+      if (path.startsWith('/redirige')) return res.writeHead(302, { location: 'http://169.254.169.254/' }).end();
       if (path === '/v1/audio/transcriptions') {
         const { fields, file } = await readForm(req);
         received.push({ path, fields, ...(file ? { file } : {}), ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
@@ -170,6 +171,23 @@ describe('HttpTranscriptionBackend (serveur simulé)', () => {
     mode = 'slow';
     const backend = new HttpTranscriptionBackend({ name: 'lent', type: 'vibe', url: base, model: 'w', timeoutSec: 1, healthTimeoutSec: 1, concurrency: 1 });
     await expect(backend.transcribe(audio, 'b.wav', opts)).rejects.toMatchObject({ kind: 'timeout' });
+  });
+
+  it('hôte hors de ai.allowedHosts : refusé avant tout appel', async () => {
+    const before = received.length;
+    const backend = new HttpTranscriptionBackend({ name: 'v', type: 'vibe', url: base, model: 'w', timeoutSec: 5, healthTimeoutSec: 1, concurrency: 1 }, ['*.tailnet.ts.net']);
+    expect(await backend.health()).toBe(false);
+    await expect(backend.transcribe(audio, 'b.wav', opts)).rejects.toMatchObject({ kind: 'rejected', message: expect.stringMatching(/non autorisé/) });
+    expect(received.length).toBe(before);
+    const allowed = new HttpTranscriptionBackend({ name: 'v', type: 'vibe', url: base, model: 'w', timeoutSec: 5, healthTimeoutSec: 1, concurrency: 1 }, ['127.0.0.0/8']);
+    mode = 'ok';
+    expect(await allowed.health()).toBe(true);
+  });
+
+  it('redirection : jamais suivie', async () => {
+    const backend = new HttpTranscriptionBackend({ name: 'r', type: 'openai', url: `${base}/redirige/v1`, model: 'w', timeoutSec: 5, healthTimeoutSec: 1, concurrency: 1 });
+    expect(await backend.health()).toBe(false);
+    await expect(backend.transcribe(audio, 'b.wav', opts)).rejects.toMatchObject({ kind: 'rejected', message: expect.stringMatching(/Redirection refusée/) });
   });
 
   it('serveur injoignable → « unavailable »', async () => {

@@ -12,6 +12,8 @@ export interface AppConfig {
   logLevel: string;
   dataDir: string;
   ffmpegPath: string | undefined;
+  owners: string[];
+  ai: { allowedHosts: string[] };
   scheduler: { tickSeconds: number };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
   guild(guildId: string): GuildBlock;
@@ -60,6 +62,8 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     logLevel: root.logLevel,
     dataDir: root.dataDir,
     ffmpegPath: root.ffmpegPath || undefined,
+    owners: root.owners,
+    ai: root.ai,
     scheduler: root.scheduler,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,
   };

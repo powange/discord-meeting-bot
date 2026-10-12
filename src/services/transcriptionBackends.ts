@@ -6,6 +6,7 @@ import type { AppConfig, BackendConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { TranscriptionBackendRow } from '../db/schema.js';
 import { ffmpegPath, runFfmpeg } from '../lib/ffmpeg.js';
+import { assertUrlAllowed } from '../lib/hosts.js';
 
 export interface EffectiveBackends {
   /** `discord` : liste gérée par /config transcription ; `yaml` : valeur par défaut du fichier. */
@@ -46,7 +47,12 @@ export interface BackendTest {
 
 /** Essai de bout en bout : health check, puis transcription d'une seconde de silence. */
 export async function testBackend(backend: BackendConfig, config: AppConfig, language: string): Promise<BackendTest> {
-  const client = new HttpTranscriptionBackend({ ...backend, timeoutSec: Math.min(backend.timeoutSec, 120) });
+  const client = new HttpTranscriptionBackend({ ...backend, timeoutSec: Math.min(backend.timeoutSec, 120) }, config.ai.allowedHosts);
+  try {
+    await assertUrlAllowed(backend.url, config.ai.allowedHosts);
+  } catch (err) {
+    return { healthy: false, error: err instanceof Error ? err.message : String(err) };
+  }
   if (!(await client.health())) return { healthy: false, error: 'health check en échec (serveur injoignable ou modèle non chargé)' };
   const dir = await mkdtemp(join(tmpdir(), 'mb-test-'));
   try {

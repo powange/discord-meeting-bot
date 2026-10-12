@@ -12,6 +12,7 @@ import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
 import { MeetingService } from './services/meetings.js';
+import { OwnersService } from './services/owners.js';
 import { MeetingWatcher } from './services/meetingWatcher.js';
 import { RecordingService } from './services/recordings.js';
 import { SettingsService } from './services/settings.js';
@@ -39,13 +40,15 @@ async function main(): Promise<void> {
     afterEnd: (meetingId) => pipeline.processIfNeeded(meetingId),
   };
   recordings.setOnStopped((meetingId) => pipeline.refresh(meetingId));
-  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline };
+  const owners = new OwnersService(config.owners);
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
     log.info({ user: ready.user.tag, guilds: ready.guilds.cache.size }, 'Connecté à Discord');
+    await owners.load(ready, log);
     try {
       await registerCommands(ready, config.discord.commandGuildIds, log);
     } catch (err) {

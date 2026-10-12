@@ -72,6 +72,13 @@ describe('renderBackendPanel', () => {
     expect(buttons(panel).some((x) => action(x) === 'testAll:-')).toBe(false); // aucun serveur actif
   });
 
+  it('administrateur non propriétaire : consultation et tests seulement', () => {
+    const panel = renderBackendPanel([row(1, 'a'), row(2, 'b', { enabled: false })], { canEdit: false }, m);
+    expect(buttons(panel).map(action)).toEqual(['test:1', 'test:2', 'testAll:-']);
+    const texts = flatten(panel).filter((x) => x.type === ComponentType.TextDisplay).map((x) => x.content).join('\n');
+    expect(texts).toContain(m.backendPanel.readOnly);
+  });
+
   it('aucun serveur : serveurs du YAML affichés, test possible', () => {
     const panel = renderBackendPanel([], { yamlFallback: [{ name: 'yaml-vibe', type: 'vibe', url: 'http://y:8080' }] }, m);
     const texts = flatten(panel).filter((x) => x.type === ComponentType.TextDisplay).map((x) => x.content).join('\n');
