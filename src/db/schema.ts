@@ -18,6 +18,8 @@ export const jobKind = pgEnum('job_kind', JOB_KINDS);
 export const guildSettings = pgTable('guild_settings', {
   guildId: text().primaryKey(),
   forumChannelId: text(),
+  /** Post épinglé du forum : bouton « Nouvelle réunion » et liste des prochaines réunions. */
+  hubThreadId: text(),
   tagIds: jsonb().$type<StatusTagIds>(),
   managerRoleId: text(),
   optoutRoleId: text(),

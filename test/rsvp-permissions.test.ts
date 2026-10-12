@@ -59,8 +59,10 @@ describe('cycle de vie', () => {
     expect([isOpen('scheduled'), isOpen('live'), isOpen('ended'), isOpen('cancelled')]).toEqual([true, true, false, false]);
     expect([canReschedule('scheduled'), canReschedule('live')]).toEqual([true, false]);
   });
-  it('nom du post limité à 100 caractères', () => {
-    expect(threadName('Bureau', '15/10')).toBe('15/10 · Bureau');
-    expect(threadName('x'.repeat(200), '15/10')).toHaveLength(100);
+  it('nom du post : jour, date, heure, titre (100 caractères max)', () => {
+    const start = new Date('2026-10-12T16:00:00Z');
+    expect(threadName('Bureau', start, 'Europe/Paris', 'fr')).toBe('Lun. 12/10 · 18h00 · Bureau');
+    expect(threadName('Bureau', new Date('2026-10-17T07:05:00Z'), 'Europe/Paris', 'fr')).toBe('Sam. 17/10 · 09h05 · Bureau');
+    expect(threadName('x'.repeat(200), start, 'Europe/Paris', 'fr')).toHaveLength(100);
   });
 });

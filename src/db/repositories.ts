@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { GuildSeed } from '../config/index.js';
 import { reindex } from '../domain/agenda.js';
 import type { PlannedJob } from '../domain/reminders.js';
@@ -34,6 +34,11 @@ export class Repositories {
       .onConflictDoNothing();
     const [created] = await this.db.select().from(guildSettings).where(eq(guildSettings.guildId, guildId));
     return created!;
+  }
+
+  async listHubThreadIds(): Promise<string[]> {
+    const rows = await this.db.select({ id: guildSettings.hubThreadId }).from(guildSettings).where(isNotNull(guildSettings.hubThreadId));
+    return rows.map((r) => r.id!);
   }
 
   async updateSettings(guildId: string, patch: SettingsPatch): Promise<void> {

@@ -9,8 +9,12 @@ import type { AppContext } from '../../context.js';
 import { checkAddItem, moveItem } from '../../domain/agenda.js';
 import { encode, type Action } from '../../domain/customId.js';
 import { canReschedule, isOpen } from '../../domain/meeting.js';
+import { canCreateMeeting } from '../../domain/permissions.js';
+import { messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
+import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
+import { fetchForum } from '../threads.js';
 import { agendaItemModal, meetingModal, readAgendaItemModal, readMeetingModal } from '../modals.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
 
@@ -18,6 +22,10 @@ type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuIntera
 
 /** Traite un bouton, menu ou formulaire dont le customId a été décodé. */
 export async function handleAction(ctx: AppContext, interaction: ComponentInteraction, action: Action): Promise<void> {
+  if (action.type === 'meeting.create') {
+    if (!interaction.isButton()) return;
+    return showCreateModal(ctx, interaction);
+  }
   if (action.type === 'meeting.createSubmit') {
     if (!interaction.isModalSubmit()) return;
     return createSubmit(ctx, interaction);
@@ -113,9 +121,9 @@ export async function handleAction(ctx: AppContext, interaction: ComponentIntera
     case 'meeting.editSubmit': {
       if (!interaction.isModalSubmit()) return;
       requireManager(scope);
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const input = readMeetingModal(interaction, m, {
         timezone: scope.settings.timezone,
+        defaultDurationMin: scope.settings.defaultDurationMin,
         reschedulable: canReschedule(meeting.status),
         current: meeting,
       });
@@ -137,16 +145,44 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
       heading: m.modal.editTitle,
       reschedulable: canReschedule(meeting.status),
       timezone: scope.settings.timezone,
+      locale: scope.settings.locale,
+      defaultDurationMin: scope.settings.defaultDurationMin,
       defaults: meeting,
+    }),
+  );
+}
+
+/** Ouvre le formulaire de création (bouton du post épinglé ou `/reunion creer`). */
+export async function showCreateModal(
+  ctx: AppContext,
+  interaction: ButtonInteraction<'cached'> | ChatInputCommandInteraction<'cached'>,
+  startsAt?: Date,
+): Promise<void> {
+  const settings = await ctx.settings.get(interaction.guildId);
+  const m = messages(settings.locale);
+  if (!canCreateMeeting(actorOf(interaction), settings)) throw new UserError(m.errors.cannotCreate);
+  if (!settings.forumChannelId || !(await fetchForum(ctx.client, settings.forumChannelId))) throw new UserError(m.errors.forumNotConfigured);
+  await interaction.showModal(
+    meetingModal(m, {
+      customId: encode({ type: 'meeting.createSubmit' }),
+      heading: m.modal.createTitle,
+      reschedulable: true,
+      timezone: settings.timezone,
+      locale: settings.locale,
+      defaultDurationMin: settings.defaultDurationMin,
+      defaults: startsAt ? { startsAt } : {},
     }),
   );
 }
 
 async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction<'cached'>): Promise<void> {
   const settings = await ctx.settings.get(interaction.guildId);
-  const m = await ctx.settings.messages(interaction.guildId);
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const input = readMeetingModal(interaction, m, { timezone: settings.timezone, reschedulable: true });
+  const m = messages(settings.locale);
+  const input = readMeetingModal(interaction, m, {
+    timezone: settings.timezone,
+    reschedulable: true,
+    defaultDurationMin: settings.defaultDurationMin,
+  });
   const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
   await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
 }

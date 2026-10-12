@@ -8,6 +8,7 @@ import { registerCommands } from './discord/registerCommands.js';
 import { createLogger } from './lib/logger.js';
 import { Scheduler } from './scheduler/index.js';
 import { CardService } from './services/cards.js';
+import { HubService } from './services/hub.js';
 import { MeetingService } from './services/meetings.js';
 import { SettingsService } from './services/settings.js';
 
@@ -23,9 +24,11 @@ async function main(): Promise<void> {
   const repos = new Repositories(db);
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
-  const meetings = new MeetingService(client, repos, settings, cards, log);
-  const ctx: AppContext = { config, client, log, repos, settings, cards, meetings };
+  const hub = new HubService(client, repos, settings, log);
+  const meetings = new MeetingService(client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings };
   const scheduler = new Scheduler(ctx);
+  await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
     log.info({ user: ready.user.tag, guilds: ready.guilds.cache.size }, 'Connecté à Discord');
@@ -37,6 +40,9 @@ async function main(): Promise<void> {
     scheduler.start();
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
+  client.on(Events.MessageCreate, (message) => {
+    hub.onMessage(message).catch((err) => log.warn({ err }, 'Filtrage du post épinglé impossible'));
+  });
   client.on(Events.ThreadDelete, (thread) => {
     meetings.onThreadDeleted(thread.id).catch((err) => log.error({ err, threadId: thread.id }, 'Suppression de post non traitée'));
   });
@@ -50,6 +56,7 @@ async function main(): Promise<void> {
     const force = setTimeout(() => process.exit(1), 15_000).unref();
     await scheduler.stop().catch(() => undefined);
     await cards.flush().catch(() => undefined);
+    await hub.flush().catch(() => undefined);
     await client.destroy();
     await pool.end();
     clearTimeout(force);

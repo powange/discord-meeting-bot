@@ -3,6 +3,7 @@ import {
   ChannelType,
   LabelBuilder,
   ModalBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
   type ModalSubmitInteraction,
@@ -10,12 +11,15 @@ import {
 import { DateTime } from 'luxon';
 import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX } from '../domain/agenda.js';
 import { DESCRIPTION_MAX, DURATION_MAX, DURATION_MIN, TITLE_MAX } from '../domain/meeting.js';
-import { formatDateTimeInput, parseDateTime } from '../domain/time.js';
+import { combineDayTime, dayChoices, dayOf, formatTimeRange, parseDateTime, parseTimeRange } from '../domain/time.js';
 import type { Messages } from '../i18n/index.js';
 import { UserError } from '../lib/errors.js';
 import type { MeetingInput } from '../services/meetings.js';
 
-const F = { title: 'title', when: 'when', duration: 'duration', voice: 'voice', description: 'description', detail: 'detail' } as const;
+const F = { title: 'title', day: 'day', time: 'time', voice: 'voice', description: 'description', detail: 'detail' } as const;
+
+/** Nombre de jours proposés (limite Discord d'un menu déroulant). */
+const DAY_CHOICES = 25;
 
 export interface MeetingModalOptions {
   customId: string;
@@ -23,6 +27,9 @@ export interface MeetingModalOptions {
   /** Faux pour une réunion commencée : seuls le titre et la description restent modifiables. */
   reschedulable: boolean;
   timezone: string;
+  locale: string;
+  defaultDurationMin: number;
+  now?: Date;
   defaults: Partial<MeetingInput>;
 }
 
@@ -35,15 +42,38 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
   modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.title).setTextInputComponent(title));
 
   if (o.reschedulable) {
-    const when = new TextInputBuilder().setCustomId(F.when).setStyle(TextInputStyle.Short).setMaxLength(40).setRequired(true).setPlaceholder('15/10/2026 18:30');
-    if (d.startsAt) when.setValue(formatDateTimeInput(d.startsAt, o.timezone));
-    const duration = new TextInputBuilder().setCustomId(F.duration).setStyle(TextInputStyle.Short).setMaxLength(4).setRequired(true);
-    if (d.durationMin) duration.setValue(String(d.durationMin));
+    const now = o.now ?? new Date();
+    const selectedDay = d.startsAt ? dayOf(d.startsAt, o.timezone) : undefined;
+    const today = dayOf(now, o.timezone);
+    const day = new StringSelectMenuBuilder()
+      .setCustomId(F.day)
+      .setPlaceholder(m.modal.dayPlaceholder)
+      .setRequired(true)
+      .addOptions(
+        dayChoices(o.timezone, now, DAY_CHOICES, selectedDay).map((iso) => ({
+          label: dayLabel(iso, today, o.timezone, o.locale, m),
+          value: iso,
+          default: iso === selectedDay,
+        })),
+      );
+
+    const time = new TextInputBuilder()
+      .setCustomId(F.time)
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(30)
+      .setRequired(true)
+      .setPlaceholder(m.modal.timePlaceholder);
+    if (d.startsAt) time.setValue(formatTimeRange(d.startsAt, d.durationMin ?? o.defaultDurationMin, o.timezone));
+
     const voice = new ChannelSelectMenuBuilder().setCustomId(F.voice).setChannelTypes(ChannelType.GuildVoice).setRequired(true);
     if (d.voiceChannelId) voice.setDefaultChannels(d.voiceChannelId);
+
     modal.addLabelComponents(
-      new LabelBuilder().setLabel(m.modal.when).setDescription(`${m.modal.whenHint} (${o.timezone})`).setTextInputComponent(when),
-      new LabelBuilder().setLabel(m.modal.duration).setTextInputComponent(duration),
+      new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(day),
+      new LabelBuilder()
+        .setLabel(m.modal.time)
+        .setDescription(m.modal.timeHint(m.card.minutes(d.durationMin ?? o.defaultDurationMin), o.timezone))
+        .setTextInputComponent(time),
       new LabelBuilder().setLabel(m.modal.voice).setChannelSelectMenuComponent(voice),
     );
   }
@@ -59,6 +89,16 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
   return modal;
 }
 
+/** « lundi 12/10 (aujourd'hui) » */
+function dayLabel(iso: string, today: string, zone: string, locale: string, m: Messages): string {
+  const date = DateTime.fromISO(iso, { zone }).setLocale(locale);
+  const label = date.toFormat('cccc dd/MM');
+  const diff = Math.round(date.diff(DateTime.fromISO(today, { zone }), 'days').days);
+  if (diff === 0) return `${label} (${m.modal.today})`;
+  if (diff === 1) return `${label} (${m.modal.tomorrow})`;
+  return date.year === DateTime.fromISO(today, { zone }).year ? label : date.toFormat('cccc dd/MM/yyyy');
+}
+
 /**
  * Lit et valide le formulaire de réunion. Pour une réunion non replanifiable, date, durée et
  * salon sont repris de `current`.
@@ -66,7 +106,7 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
 export function readMeetingModal(
   interaction: ModalSubmitInteraction<'cached'>,
   m: Messages,
-  options: { timezone: string; reschedulable: boolean; current?: MeetingInput; now?: DateTime },
+  options: { timezone: string; reschedulable: boolean; defaultDurationMin: number; current?: MeetingInput },
 ): MeetingInput {
   const title = interaction.fields.getTextInputValue(F.title).trim();
   if (!title) throw new UserError(m.errors.titleRequired);
@@ -77,9 +117,13 @@ export function readMeetingModal(
     return { ...options.current, title, description };
   }
 
-  const startsAt = parseWhen(interaction.fields.getTextInputValue(F.when), options.timezone, m, options.now ?? DateTime.now());
-  const durationRaw = interaction.fields.getTextInputValue(F.duration).trim();
-  const durationMin = /^\d+$/.test(durationRaw) ? Number(durationRaw) : NaN;
+  const day = interaction.fields.getStringSelectValues(F.day)[0];
+  if (!day) throw new UserError(m.errors.dayRequired);
+  const range = parseTimeRange(interaction.fields.getTextInputValue(F.time));
+  if (!range.ok) throw new UserError(m.errors.timeFormat);
+  const startsAt = combineDayTime(day, range.hour, range.minute, options.timezone);
+  if (!startsAt) throw new UserError(m.errors.dateInvalid);
+  const durationMin = range.durationMin ?? options.current?.durationMin ?? options.defaultDurationMin;
   if (!(durationMin >= DURATION_MIN && durationMin <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
 
   const voice = interaction.fields.getSelectedChannels(F.voice, false, [ChannelType.GuildVoice])?.first();

@@ -1,5 +1,4 @@
 import { ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
-import { DateTime } from 'luxon';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { applyStatusTag, ensureUnarchived } from '../discord/forum.js';
@@ -37,6 +36,8 @@ export class MeetingService {
     private readonly settings: SettingsService,
     private readonly cards: CardService,
     private readonly log: Logger,
+    /** Appelé après tout changement visible dans la liste des réunions (post épinglé). */
+    private readonly onChange: (guildId: string) => void = () => undefined,
   ) {
     this.events = new ScheduledEvents(log);
   }
@@ -59,7 +60,7 @@ export class MeetingService {
       if (options.copyAgendaFrom) await this.repos.copyAgenda(options.copyAgendaFrom, meeting.id);
       const card = await this.cards.render(meeting);
       thread = await forum.threads.create({
-        name: threadName(input.title, dayMonth(input.startsAt, settings.timezone)),
+        name: threadName(input.title, input.startsAt, settings.timezone, settings.locale),
         autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
         appliedTags: [settings.tagIds.upcoming],
         message: { ...card, allowedMentions: { parse: [] } },
@@ -75,6 +76,7 @@ export class MeetingService {
     const eventId = await this.events.create(guild, this.eventData(meeting, thread.url, m));
     if (eventId) meeting = (await this.repos.updateMeeting(meeting.id, { scheduledEventId: eventId }))!;
     await this.replan(meeting, settings);
+    this.onChange(guild.id);
     this.log.info({ guildId: guild.id, meetingId: meeting.id, threadId: thread.id }, 'Réunion créée');
     return meeting;
   }
@@ -92,7 +94,7 @@ export class MeetingService {
     const thread = await fetchThread(this.client, updated.threadId);
     if (thread) {
       await ensureUnarchived(thread);
-      const name = threadName(updated.title, dayMonth(updated.startsAt, settings.timezone));
+      const name = threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
       if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
       if (input.startsAt.getTime() !== meeting.startsAt.getTime()) {
         await thread.send({ content: m.thread.rescheduled(discordTimestamp(updated.startsAt, 'F')), allowedMentions: { parse: [] } });
@@ -104,6 +106,7 @@ export class MeetingService {
     }
     if (rescheduled) await this.replan(updated, settings);
     await this.cards.refreshNow(updated.id);
+    this.onChange(updated.guildId);
     this.log.info({ meetingId: updated.id, by, rescheduled }, 'Réunion modifiée');
     return updated;
   }
@@ -120,6 +123,7 @@ export class MeetingService {
     );
     const guild = await this.guild(meeting);
     if (guild) await this.events.start(guild, meeting.scheduledEventId);
+    this.onChange(meeting.guildId);
     return true;
   }
 
@@ -136,6 +140,7 @@ export class MeetingService {
     await this.afterStatusChange(meeting, settings, (thread) => thread.send({ content: m.thread.ended(by), allowedMentions: { parse: [] } }));
     const guild = await this.guild(meeting);
     if (guild) await this.events.complete(guild, meeting.scheduledEventId);
+    this.onChange(meeting.guildId);
     this.log.info({ meetingId, by }, 'Réunion close');
     return true;
   }
@@ -154,6 +159,7 @@ export class MeetingService {
         await thread.setArchived(true, 'Réunion annulée');
       });
     }
+    this.onChange(meeting.guildId);
     this.log.info({ meetingId, by }, 'Réunion annulée');
     return true;
   }
@@ -213,6 +219,3 @@ export class MeetingService {
   }
 }
 
-function dayMonth(date: Date, zone: string): string {
-  return DateTime.fromJSDate(date, { zone }).toFormat('dd/MM');
-}

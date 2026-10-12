@@ -1,21 +1,25 @@
 import { InteractionContextType, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { DateTime } from 'luxon';
-import { encode } from '../../domain/customId.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
 import { messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
-import { actorOf } from '../actor.js';
 import { meetingScopeFromChannel, replyEphemeral, requireManager } from '../interactions/common.js';
-import { showEditModal } from '../interactions/components.js';
-import { meetingModal, parseWhen } from '../modals.js';
-import { fetchForum } from '../threads.js';
+import { showCreateModal, showEditModal } from '../interactions/components.js';
+import { parseWhen } from '../modals.js';
 import type { Command } from './types.js';
 
 const data = new SlashCommandBuilder()
   .setName('reunion')
   .setDescription('Gérer les réunions')
   .setContexts(InteractionContextType.Guild)
-  .addSubcommand((s) => s.setName('creer').setDescription('Planifier une nouvelle réunion'))
+  .addSubcommand((s) =>
+    s
+      .setName('creer')
+      .setDescription('Planifier une nouvelle réunion')
+      .addStringOption((o) =>
+        o.setName('quand').setDescription('Optionnel, pour une date lointaine : ex. 15/01/2027 18:30').setMaxLength(40),
+      ),
+  )
   .addSubcommand((s) => s.setName('modifier').setDescription('Modifier la réunion de ce post'))
   .addSubcommand((s) =>
     s
@@ -39,19 +43,15 @@ export const reunion: Command = {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'creer') {
-      const settings = await ctx.settings.get(interaction.guildId);
-      const m = messages(settings.locale);
-      if (!canCreateMeeting(actorOf(interaction), settings)) throw new UserError(m.errors.cannotCreate);
-      if (!settings.forumChannelId || !(await fetchForum(ctx.client, settings.forumChannelId))) throw new UserError(m.errors.forumNotConfigured);
-      await interaction.showModal(
-        meetingModal(m, {
-          customId: encode({ type: 'meeting.createSubmit' }),
-          heading: m.modal.createTitle,
-          reschedulable: true,
-          timezone: settings.timezone,
-          defaults: { durationMin: settings.defaultDurationMin },
-        }),
-      );
+      const when = interaction.options.getString('quand');
+      let startsAt: Date | undefined;
+      if (when) {
+        const settings = await ctx.settings.get(interaction.guildId);
+        const m = messages(settings.locale);
+        startsAt = parseWhen(when, settings.timezone, m, DateTime.now());
+        if (startsAt.getTime() <= Date.now()) throw new UserError(m.errors.datePast);
+      }
+      await showCreateModal(ctx, interaction, startsAt);
       return;
     }
 

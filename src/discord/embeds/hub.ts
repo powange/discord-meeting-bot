@@ -1,0 +1,34 @@
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { encode } from '../../domain/customId.js';
+import { discordTimestamp } from '../../domain/time.js';
+import type { MeetingStatus } from '../../domain/types.js';
+import type { Messages } from '../../i18n/index.js';
+import { joinLinesWithin } from '../../lib/text.js';
+import type { RenderedMessage } from './meetingCard.js';
+
+export interface HubMeeting {
+  threadId: string;
+  startsAt: Date;
+  status: MeetingStatus;
+}
+
+/** Message du post épinglé : mode d'emploi, prochaines réunions, bouton de création. */
+export function renderHub(upcoming: readonly HubMeeting[], m: Messages): RenderedMessage {
+  const lines = [...upcoming]
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+    .map((meeting) => {
+      const live = meeting.status === 'live' ? ` · 🟢 **${m.hub.live}**` : '';
+      return `${discordTimestamp(meeting.startsAt, 'f')} · <#${meeting.threadId}>${live}`;
+    });
+
+  const embed = new EmbedBuilder()
+    .setTitle(m.hub.title)
+    .setColor(0x5865f2)
+    .setDescription(m.hub.intro)
+    .addFields({ name: m.hub.upcoming, value: lines.length > 0 ? joinLinesWithin(lines, 1024, m.card.more) : m.hub.none });
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(encode({ type: 'meeting.create' })).setLabel(m.hub.create).setEmoji('📅').setStyle(ButtonStyle.Primary),
+  );
+  return { embeds: [embed.toJSON()], components: [row.toJSON()] };
+}

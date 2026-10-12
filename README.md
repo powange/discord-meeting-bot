@@ -8,7 +8,9 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 
 | Fonction | Détail |
 |---|---|
-| `/reunion creer` | Formulaire : titre, date et heure, durée, salon vocal, description. Crée un post dans le forum et un événement Discord. |
+| Post épinglé | Créé par `/config forum` : bouton **Nouvelle réunion** et liste chronologique des réunions à venir. Personne ne peut y écrire. |
+| `/reunion creer` | Même formulaire que le bouton : titre, jour (25 prochains jours), horaire (`18h` ou `18h-19h30`), salon vocal, description. Pour une date plus lointaine : `/reunion creer quand:15/01/2027 18h`. |
+| Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
 | Réponses | Boutons Présent / Peut-être / Absent, modifiables à tout moment. |
 | Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ODJ** (organisateur ou gestionnaire) : monter, descendre, retirer, verrouiller. |
@@ -27,15 +29,17 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
-   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892834888720
+   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892834896912
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
    - Voir les salons, Envoyer des messages, Envoyer des messages dans les fils
-   - Gérer les fils, Intégrer des liens, Voir l'historique
+   - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Voir l'historique
    - Créer et gérer les événements
    - Se connecter, en prévision de la phase 2
 5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) et lancer `/config forum salon:#réunions`.
+
+> Discord ne sait pas trier les posts d'un forum selon la date de la réunion : seulement par activité récente ou par date de création. L'ordre chronologique se lit dans le post épinglé.
 
 ## 2. Développement local
 

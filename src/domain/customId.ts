@@ -16,6 +16,7 @@ export type Action =
   | { type: 'agenda.lock'; meetingId: string; locked: boolean }
   | { type: 'meeting.edit'; meetingId: string }
   | { type: 'meeting.editSubmit'; meetingId: string }
+  | { type: 'meeting.create' }
   | { type: 'meeting.createSubmit' };
 
 const VERSION = 'v1';
@@ -35,6 +36,9 @@ export function encode(action: Action): string {
       break;
     case 'agenda.lock':
       parts.push('agenda', 'lock', action.meetingId, action.locked ? 1 : 0);
+      break;
+    case 'meeting.create':
+      parts.push('meeting', 'create');
       break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
@@ -61,7 +65,10 @@ export function decode(customId: string): Action | null {
   }
 
   const [verb, meetingId, a, b] = rest;
-  if (group === 'meeting' && verb === 'createSubmit' && rest.length === 1) return { type: 'meeting.createSubmit' };
+  if (group === 'meeting' && rest.length === 1) {
+    if (verb === 'create') return { type: 'meeting.create' };
+    if (verb === 'createSubmit') return { type: 'meeting.createSubmit' };
+  }
   if (!isUuid(meetingId)) return null;
 
   if (group === 'meeting') {

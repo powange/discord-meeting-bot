@@ -105,7 +105,8 @@ export const config: Command = {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const tagIds = await ensureStatusTags(forum, m);
         await ctx.repos.updateSettings(guildId, { forumChannelId: forum.id, tagIds });
-        await replyEphemeral(interaction, m.config.forumReady(forum.id));
+        const hubId = await ctx.hub.ensure(forum, m);
+        await replyEphemeral(interaction, m.config.forumReady(forum.id, hubId));
         return;
       }
 

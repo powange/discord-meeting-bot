@@ -45,9 +45,13 @@ export const fr = {
     createTitle: 'Nouvelle réunion',
     editTitle: 'Modifier la réunion',
     title: 'Titre',
-    when: 'Date et heure',
-    whenHint: 'ex. 15/10/2026 18:30 · 15/10 18h',
-    duration: 'Durée (minutes)',
+    day: 'Jour',
+    dayPlaceholder: 'Choisir un jour',
+    today: "aujourd'hui",
+    tomorrow: 'demain',
+    time: 'Horaire',
+    timePlaceholder: '18h ou 18h-19h30',
+    timeHint: (duration: string, tz: string) => `Début, ou début-fin. Sans heure de fin : ${duration}. (${tz})`,
     voice: 'Salon vocal',
     description: 'Description',
     descriptionHint: 'Optionnel : contexte, documents à lire…',
@@ -55,6 +59,18 @@ export const fr = {
     itemTitle: 'Titre du point',
     itemDetail: 'Détail',
     itemDetailHint: 'Optionnel',
+  },
+
+  hub: {
+    threadName: '📌 Planifier une réunion',
+    title: 'Réunions',
+    intro:
+      'Cliquez sur **Nouvelle réunion** pour planifier une réunion (ou utilisez `/reunion creer`).\n' +
+      'Chaque réunion a son propre post : inscriptions, ordre du jour et rappels.',
+    upcoming: 'Prochaines réunions',
+    none: 'Aucune réunion prévue.',
+    live: 'en cours',
+    create: 'Nouvelle réunion',
   },
 
   agendaManager: {
@@ -99,6 +115,8 @@ export const fr = {
     cannotCreate: 'La création de réunions est réservée aux gestionnaires.',
     dateFormat: 'Date illisible. Format attendu : `JJ/MM/AAAA HH:MM` (ex. `15/10/2026 18:30`).',
     dateInvalid: "Cette date n'existe pas.",
+    dayRequired: 'Choisissez un jour.',
+    timeFormat: 'Horaire illisible. Exemples : `18h`, `18:30`, `18h-19h30`.',
     datePast: 'La date doit être dans le futur.',
     duration: (min: number, max: number) => `Durée invalide : un nombre de minutes entre ${min} et ${max}.`,
     voiceRequired: 'Choisissez un salon vocal.',
@@ -133,7 +151,8 @@ export const fr = {
     none: 'non défini',
     yes: 'Oui',
     no: 'Non',
-    forumReady: (forumId: string) => `Forum configuré : <#${forumId}>. Les tags de statut ont été créés ou retrouvés.`,
+    forumReady: (forumId: string, hubId: string) =>
+      `Forum configuré : <#${forumId}>. Tags de statut prêts, post épinglé <#${hubId}> créé avec le bouton « Nouvelle réunion ».`,
   },
 };
 

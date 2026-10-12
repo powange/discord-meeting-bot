@@ -17,6 +17,7 @@ export const FORUM_PERMISSIONS = {
   SendMessages: PermissionFlagsBits.SendMessages,
   SendMessagesInThreads: PermissionFlagsBits.SendMessagesInThreads,
   ManageThreads: PermissionFlagsBits.ManageThreads,
+  ManageMessages: PermissionFlagsBits.ManageMessages,
   ManageChannels: PermissionFlagsBits.ManageChannels,
   EmbedLinks: PermissionFlagsBits.EmbedLinks,
   ReadMessageHistory: PermissionFlagsBits.ReadMessageHistory,

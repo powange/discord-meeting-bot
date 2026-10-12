@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import type { MeetingStatus } from './types.js';
 
 const TRANSITIONS: Record<MeetingStatus, readonly MeetingStatus[]> = {
@@ -26,8 +27,11 @@ export const DESCRIPTION_MAX = 2000;
 export const DURATION_MIN = 5;
 export const DURATION_MAX = 24 * 60;
 
-/** Nom du post de forum : « 15/10 · Titre » (100 caractères max côté Discord). */
-export function threadName(title: string, dayMonth: string): string {
-  const name = `${dayMonth} · ${title}`;
+/** Nom du post de forum : « Lun. 12/10 · 18h00 · Titre » (100 caractères max côté Discord). */
+export function threadName(title: string, startsAt: Date, zone: string, locale: string): string {
+  const start = DateTime.fromJSDate(startsAt, { zone }).setLocale(locale);
+  const weekday = start.toFormat('ccc');
+  const prefix = `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${start.toFormat("dd/MM · HH'h'mm")}`;
+  const name = `${prefix} · ${title}`;
   return name.length <= 100 ? name : `${name.slice(0, 99)}…`;
 }
