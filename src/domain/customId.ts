@@ -17,10 +17,15 @@ export type Action =
   | { type: 'meeting.edit'; meetingId: string }
   | { type: 'meeting.editSubmit'; meetingId: string }
   | { type: 'report.retry'; meetingId: string }
+  | { type: 'tx'; action: TxAction; backendId: number | null }
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
   | { type: 'meeting.create' }
   | { type: 'meeting.createSubmit' };
+
+/** Actions du panneau des serveurs de transcription (`backendId` : serveur visé, sinon null). */
+export const TX_ACTIONS = ['select', 'up', 'down', 'toggle', 'test', 'delete', 'confirmDelete', 'edit', 'editSubmit', 'add', 'addSubmit', 'testAll'] as const;
+export type TxAction = (typeof TX_ACTIONS)[number];
 
 const VERSION = 'v1';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -42,6 +47,9 @@ export function encode(action: Action): string {
       break;
     case 'meeting.create':
       parts.push('meeting', 'create');
+      break;
+    case 'tx':
+      parts.push('tx', action.action, action.backendId ?? '-');
       break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
@@ -65,6 +73,14 @@ export function decode(customId: string): Action | null {
     const [meetingId, status] = rest;
     if (!isUuid(meetingId) || !RSVP_STATUSES.includes(status as RsvpStatus) || rest.length !== 2) return null;
     return { type: 'rsvp', meetingId, status: status as RsvpStatus };
+  }
+
+  if (group === 'tx') {
+    const [action, id] = rest;
+    if (rest.length !== 2 || !TX_ACTIONS.includes(action as TxAction)) return null;
+    if (id === '-') return { type: 'tx', action: action as TxAction, backendId: null };
+    const backendId = toId(id);
+    return backendId === null ? null : { type: 'tx', action: action as TxAction, backendId };
   }
 
   const [verb, meetingId, a, b] = rest;

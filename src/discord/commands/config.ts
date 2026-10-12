@@ -14,7 +14,7 @@ import { messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { ensureStatusTags, missingForumPermissions } from '../forum.js';
 import { replyEphemeral } from '../interactions/common.js';
-import { autocompleteBackendName, handleTranscriptionConfig, transcriptionGroup } from './configTranscription.js';
+import { openBackendPanel } from '../interactions/backendPanel.js';
 import type { Command } from './types.js';
 
 const ROLE_KEYS = { gestionnaire: 'managerRoleId', 'ne-pas-enregistrer': 'optoutRoleId', relance: 'nudgeRoleId' } as const;
@@ -26,7 +26,7 @@ const data = new SlashCommandBuilder()
   .setContexts(InteractionContextType.Guild)
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .addSubcommand((s) => s.setName('voir').setDescription('Afficher la configuration'))
-  .addSubcommandGroup(transcriptionGroup)
+  .addSubcommand((s) => s.setName('transcription').setDescription('Gérer les serveurs de transcription (Vibe, compatibles OpenAI)'))
   .addSubcommand((s) =>
     s
       .setName('forum')
@@ -73,8 +73,7 @@ const data = new SlashCommandBuilder()
 export const config: Command = {
   data,
 
-  async autocomplete(ctx, interaction) {
-    if (interaction.options.getFocused(true).name === 'nom') return autocompleteBackendName(ctx, interaction);
+  async autocomplete(_ctx, interaction) {
     const query = interaction.options.getFocused().toLowerCase();
     const matches = TIMEZONES.filter((tz) => tz.toLowerCase().includes(query)).slice(0, 25);
     await interaction.respond(matches.map((tz) => ({ name: tz, value: tz })));
@@ -84,10 +83,12 @@ export const config: Command = {
     const guildId = interaction.guildId;
     const settings = await ctx.settings.get(guildId);
     const m = messages(settings.locale);
-    if (interaction.options.getSubcommandGroup(false) === 'transcription') return handleTranscriptionConfig(ctx, interaction, m);
     const sub = interaction.options.getSubcommand();
 
     switch (sub) {
+      case 'transcription':
+        return openBackendPanel(ctx, interaction);
+
       case 'voir': {
         const c = m.config;
         const role = (id: string | null) => (id ? `<@&${id}>` : `*${c.none}*`);

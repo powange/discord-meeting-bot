@@ -483,4 +483,12 @@ export class Repositories {
       }
     });
   }
+
+  async getBackend(guildId: string, id: number): Promise<TranscriptionBackendRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(transcriptionBackends)
+      .where(and(eq(transcriptionBackends.guildId, guildId), eq(transcriptionBackends.id, id)));
+    return row;
+  }
 }

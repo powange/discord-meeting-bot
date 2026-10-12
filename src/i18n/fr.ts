@@ -158,26 +158,58 @@ export const fr = {
     footnote: '-# % : part du temps de parole total · 🗣️ temps de parole · ⏱️ présence dans le vocal (part de la durée).',
   },
 
+  backendPanel: {
+    title: '🎙️ Serveurs de transcription',
+    footer: "L'ordre de la liste est l'ordre de bascule : en cas d'erreur, de lenteur ou de serveur occupé, le suivant prend le relais.",
+    empty: 'Aucun serveur. Cliquez sur « Ajouter ».',
+    fromYaml: '*Serveurs du fichier de configuration (le premier ajout ici les remplace) :*',
+    withKey: '🔑 clé',
+    disabled: 'désactivé',
+    full: (max: number) => `Maximum ${max} serveurs : supprimez-en un pour en ajouter un autre.`,
+    up: 'Monter',
+    down: 'Descendre',
+    enable: 'Activer',
+    disable: 'Désactiver',
+    test: 'Tester',
+    delete: 'Supprimer',
+    confirmDelete: (name: string) => `Supprimer « ${name} »`,
+    cancel: 'Annuler',
+    add: 'Ajouter',
+    edit: 'Modifier',
+    testAll: 'Tout tester',
+    testing: '🧪 Test en cours…',
+    forbidden: "Réservé aux membres ayant la permission « Gérer le serveur ».",
+    modalAdd: 'Ajouter un serveur de transcription',
+    modalEdit: 'Modifier le serveur',
+    fieldName: 'Nom',
+    fieldType: 'Type',
+    typeVibe: 'Vibe (vibe-server)',
+    typeVibeHint: 'http://hôte:8080 — modèle préchargé, une requête à la fois',
+    typeOpenai: 'Compatible OpenAI',
+    typeOpenaiHint: 'speaches, faster-whisper… — http://hôte:8000/v1',
+    fieldUrl: 'URL',
+    fieldUrlHint: 'Vibe : http://hôte:8080 · OpenAI : http://hôte:8000/v1',
+    fieldModel: 'Modèle (serveur compatible OpenAI)',
+    fieldModelHint: 'Ignoré par Vibe. Ex. Systran/faster-whisper-large-v3',
+    fieldKey: "Clé d'API",
+    fieldKeyHint: 'Optionnelle',
+    fieldKeyEditHint: 'Vide : clé inchangée · « - » : supprimer la clé',
+    deleted: (name: string) => `🗑️ « ${name} » supprimé.`,
+    verdict: (r: { healthy: boolean; transcribeMs?: number; model?: string; error?: string }) =>
+      !r.healthy
+        ? `❌ ${r.error}`
+        : r.error
+          ? `⚠️ Joignable, mais la transcription a échoué : ${r.error}`
+          : `✅ Opérationnel · transcription en ${((r.transcribeMs ?? 0) / 1000).toFixed(1)} s${r.model ? ` · ${r.model}` : ''}`,
+    saved: (name: string) => `✏️ « ${name} » mis à jour.`,
+  },
+
   transcriptionConfig: {
-    title: '🎙️ Serveurs de transcription (ordre de bascule)',
-    none: 'Aucun serveur de transcription. Ajoutez-en un : `/config transcription ajouter`.',
-    fromYaml: 'fichier de config',
-    footerDiscord: 'Liste gérée par /config transcription. Désactivés (⚪) : ignorés.',
-    footerYaml: 'Valeurs du fichier de configuration : la première commande « ajouter » les remplace.',
     badUrl: 'URL invalide : http(s)://hôte:port (vibe) ou http(s)://hôte:port/v1 (openai).',
     exists: (name: string) => `Un serveur « ${name} » existe déjà.`,
     unknown: (name: string) => `Serveur « ${name} » introuvable.`,
-    added: (name: string, position: number) => `Serveur « ${name} » ajouté en position ${position}.`,
-    removed: (name: string) => `Serveur « ${name} » retiré.`,
-    backToYaml: "Plus aucun serveur ajouté par commande : ceux du fichier de configuration s'appliquent de nouveau.",
-    reordered: (order: readonly string[]) => `Ordre de bascule : ${order.map((n, i) => `${i + 1}. ${n}`).join(' → ')}`,
-    toggled: (name: string, on: boolean) => `Serveur « ${name} » ${on ? 'activé' : 'désactivé'}.`,
-    result: (name: string, r: { healthy: boolean; transcribeMs?: number; model?: string; error?: string }) =>
-      !r.healthy
-        ? `❌ **${name}** : ${r.error}`
-        : r.error
-          ? `⚠️ **${name}** : joignable, mais la transcription a échoué : ${r.error}`
-          : `✅ **${name}** : opérationnel · transcription en ${((r.transcribeMs ?? 0) / 1000).toFixed(1)} s${r.model ? ` · ${r.model}` : ''}`,
+    added: (name: string, position: number) => `➕ « ${name} » ajouté en position ${position}.`,
+    backToYaml: "Plus aucun serveur ici : ceux du fichier de configuration s'appliquent de nouveau.",
   },
 
   report: {

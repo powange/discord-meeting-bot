@@ -5,6 +5,7 @@ import { decode } from '../../domain/customId.js';
 import { messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { commands } from '../commands/index.js';
+import { handleBackendPanel } from './backendPanel.js';
 import { handleAction } from './components.js';
 import { replyEphemeral } from './common.js';
 
@@ -31,6 +32,11 @@ export async function routeInteraction(ctx: AppContext, interaction: Interaction
         return;
       }
       log.debug({ action: action.type }, 'Interaction');
+      if (action.type === 'tx') {
+        if (interaction.isStringSelectMenu()) return;
+        await handleBackendPanel(ctx, interaction, action.action, action.backendId);
+        return;
+      }
       // Un formulaire doit être acquitté en moins de 3 s : on le fait avant tout accès à la BDD.
       // Toutes les réponses aux formulaires sont éphémères (replyEphemeral gère l'état « différé »).
       if (interaction.isModalSubmit()) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
