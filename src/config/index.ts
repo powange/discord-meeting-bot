@@ -28,7 +28,7 @@ const FALLBACK = {
   dataDir: '${DATA_DIR:-data}',
   ffmpegPath: '${FFMPEG_PATH:-}',
   defaults: {
-    llm: { baseUrl: '${LLM_BASE_URL:-http://litellm:4000/v1}', apiKey: '${LLM_API_KEY:-}', model: '${LLM_MODEL:-summary}' },
+    llm: { baseUrl: '${LLM_BASE_URL:-}', apiKey: '${LLM_API_KEY:-}', model: '${LLM_MODEL:-summary}' },
   },
 };
 

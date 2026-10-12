@@ -81,7 +81,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 2. **Secours** (optionnel) : un serveur compatible OpenAI (speaches / faster-whisper) sur une autre machine, ajouté après Vibe dans la liste.
 3. **Résumé** : `/config` → Résumé. Le propriétaire du bot y saisit l'adresse du serveur compatible OpenAI (LM Studio `http://hôte:1234/v1`, Ollama `http://hôte:11434/v1` ou LiteLLM), choisit le modèle dans la liste proposée et teste. Le résumé peut aussi y être désactivé ; à défaut, le bloc `llm` du YAML s'applique.
    Côté machine : **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
-4. **LiteLLM** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), et ajouter `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, définir `LLM_BASE_URL=http://hôte-ollama:11434/v1` et `LLM_MODEL=qwen3:14b`.
+4. **LiteLLM (facultatif)** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), puis ajouter `COMPOSE_PROFILES=litellm` et `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, il suffit de régler le serveur dans `/config` → Résumé.
 5. **Serveurs de transcription** : `/config` → Transcription. **Seuls les propriétaires du bot peuvent modifier la liste** : le propriétaire de l'application Discord, plus la liste `owners` du YAML. Les administrateurs des serveurs peuvent consulter et tester. Avec `ai.allowedHosts`, le bot n'appelle que les hôtes autorisés (par exemple `*.tailnet.ts.net`, `192.168.1.0/24`), et il ne suit jamais une redirection.
    - **Ajouter** un serveur, jusqu'à 4, avec un formulaire : nom, type Vibe ou compatible OpenAI, URL, modèle, clé d'API.
    - **Gérer chaque serveur** avec ses boutons : ✏️ Modifier · ⬆️ Monter · ⏸️ Désactiver / ▶️ Activer · 🧪 Tester · 🗑️ Supprimer (avec confirmation). L'ordre de la liste est l'ordre de bascule.
@@ -160,7 +160,7 @@ L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/meeti
    - Variables d'environnement :
      - `DISCORD_TOKEN`
      - `POSTGRES_PASSWORD` (alphanumérique)
-     - optionnelles : `LOG_LEVEL`, `BOT_TAG` (pour épingler une version, ex. `sha-abc1234`)
+     - optionnelles : `LOG_LEVEL`, `BOT_TAG` (pour épingler une version, ex. `sha-abc1234`), `COMPOSE_PROFILES=litellm` + `LITELLM_MASTER_KEY` (LiteLLM dans la stack)
    - Activer **GitOps updates → Webhook** et cocher **Re-pull image**.
 3. Redéploiement automatique : copier l'URL du webhook Portainer dans le secret GitHub `PORTAINER_WEBHOOK` du dépôt. Chaque push sur `main` déclenche alors tests → image → redéploiement.
 4. Configuration avancée (surcharges par serveur) : déposer un `config.yaml` sur l'hôte, par exemple `/srv/meeting-bot/config/config.yaml`. Décommenter ensuite `CONFIG_PATH` et le volume dans [docker-compose.yml](docker-compose.yml).

@@ -1,5 +1,6 @@
 # Stack Portainer (déploiement depuis le dépôt Git).
-# Variables à définir dans Portainer : DISCORD_TOKEN, POSTGRES_PASSWORD, LITELLM_MASTER_KEY (+ optionnelles ci-dessous).
+# Variables obligatoires dans Portainer : DISCORD_TOKEN, POSTGRES_PASSWORD (+ optionnelles ci-dessous).
+# LiteLLM est facultatif : ajouter COMPOSE_PROFILES=litellm et LITELLM_MASTER_KEY pour le lancer.
 name: meeting-bot
 
 services:
@@ -14,8 +15,9 @@ services:
       DATA_DIR: /data
       # Port interne du healthcheck (jamais publié) ; à changer seulement en cas de conflit.
       HEALTH_PORT: ${HEALTH_PORT:-3000}
-      # Résumés (phase 3) : LiteLLM de la stack, ou directement un Ollama (http://hôte:11434/v1)
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://litellm:4000/v1}
+      # Résumés : se règle dans /config → Résumé. À défaut, ces variables servent de valeur par
+      # défaut (LiteLLM de la stack : http://litellm:4000/v1 ; Ollama : http://hôte:11434/v1).
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LITELLM_MASTER_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-summary}
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
@@ -70,12 +72,14 @@ services:
       postgres:
         condition: service_healthy
 
+  # Facultatif : lancé seulement avec COMPOSE_PROFILES=litellm.
   litellm:
     image: ghcr.io/berriai/litellm:v1.105.0
+    profiles: [litellm]
     restart: unless-stopped
     command: ['--config', '/app/config.yaml', '--port', '4000']
     environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY requis}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
     volumes:
       # Fichier à créer sur l'hôte à partir de config/litellm.example.yaml
       - ${LITELLM_CONFIG:-/srv/meeting-bot/litellm.yaml}:/app/config.yaml:ro

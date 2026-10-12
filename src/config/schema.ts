@@ -62,7 +62,7 @@ const transcriptionSchema = z.strictObject({
 
 const llmSchema = z.strictObject({
   /** Serveur compatible OpenAI : LiteLLM (recommandé, bascule entre machines) ou Ollama directement. */
-  baseUrl: z.url().optional(),
+  baseUrl: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
   apiKey: z.string().optional(),
   /** Nom du modèle (model_name LiteLLM, ou nom Ollama). */
   model: z.string().default('summary'),
