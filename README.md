@@ -56,6 +56,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 | Fonction | Détail |
 |---|---|
 | Déclenchement | À la **clôture** de la réunion (manuelle ou vocal vide), s'il y a de la parole enregistrée. Une réunion à la fois. |
+| Audio complet | Première étape : toutes les prises de parole replacées sur une même ligne de temps, autrement dit ce que tout le monde a entendu, en **Opus mono**, publiées aussitôt dans le post avec le lecteur Discord. Le débit est ajusté pour tenir dans la limite d'envoi du serveur (10, 50 ou 100 Mo selon le boost, ≈ 55 min sans boost). Si le fichier est trop lourd, il est conservé sur le serveur (`dataDir/meetings/…`). L'audio est publié même si la transcription échoue. |
 | Suivi | Message **📝 Compte rendu** dans le post : ⬜ ⏳ ✅ ❌ par étape, avec la progression (blocs transcrits, passes de résumé). |
 | Transcription | Prises de parole regroupées en blocs par personne, assemblées en WAV 16 kHz par ffmpeg, puis envoyées au **premier backend disponible** de `transcription.backends`. Health check court, puis bascule au suivant en cas d'erreur, de délai dépassé ou de « occupé » (Vibe ne traite qu'une requête à la fois). Les hallucinations connues de Whisper sont filtrées. Pas de diarisation nécessaire : chaque piste a son auteur. |
 | Résumé | Via LiteLLM (ou Ollama directement). Structuré **par point d'ordre du jour** : synthèse, décisions, actions (qui / échéance), questions ouvertes, sujets hors ODJ, points non traités. Une réunion longue est résumée **en plusieurs passes** (morceaux, puis fusion). |

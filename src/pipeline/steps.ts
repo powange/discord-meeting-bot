@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MessageFlags } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
@@ -12,16 +12,76 @@ import { fetchThread } from '../discord/threads.js';
 import { formatWhen } from '../domain/time.js';
 import { buildBlocks, cleanSegments, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
 import type { PipelineStep } from '../domain/types.js';
-import { assembleWav, ffmpegPath } from '../lib/ffmpeg.js';
+import { bitrateForLimit, uploadLimitBytes } from '../domain/audio.js';
+import { assembleWav, ffmpegPath, mixPlaced, type PlacedInput } from '../lib/ffmpeg.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
 /** Étapes du traitement post-réunion (phase 3). */
 export function createSteps(deps: PipelineDeps): Record<PipelineStep, StepFn> {
   return {
+    mix: (ctx) => mix(deps, ctx),
     transcribe: (ctx) => transcribe(deps, ctx),
     summarize: (ctx) => summarize(deps, ctx),
     publish: (ctx) => publish(deps, ctx),
   };
+}
+
+// ---------------------------------------------------------------- audio complet
+
+/**
+ * Audio complet de la réunion : toutes les prises de parole (de toutes les sessions) replacées
+ * sur une même ligne de temps, en Opus mono. Publié aussitôt dans le post (lecteur Discord) si
+ * le fichier tient dans la limite d'envoi du serveur ; sinon conservé sur le serveur.
+ */
+async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
+  const { repos, config, client } = deps;
+  const { meeting, settings, m, signal } = ctx;
+  const recordings = await repos.listRecordingsForMeeting(meeting.id);
+  const origin = recordings[0]?.startedAt.getTime();
+  const inputs: PlacedInput[] = [];
+  let endMs = 0;
+  for (const rec of recordings) {
+    const shift = rec.startedAt.getTime() - origin!;
+    for (const seg of await repos.listSegments(rec.id)) {
+      inputs.push({ file: seg.filePath, offsetMs: shift + seg.startMs });
+      endMs = Math.max(endMs, shift + seg.endMs);
+    }
+  }
+  if (inputs.length === 0) return { empty: true };
+
+  const thread = await fetchThread(client, meeting.threadId);
+  const guild = await client.guilds.fetch(meeting.guildId).catch(() => null);
+  const limit = uploadLimitBytes(guild?.premiumTier ?? 0);
+  const kbps = bitrateForLimit(endMs, limit);
+
+  // Republication (retranscription complète) : l'ancien message audio est remplacé.
+  const previous = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
+  if (thread && typeof previous?.messageId === 'string') await thread.messages.delete(previous.messageId).catch(() => undefined);
+
+  const dir = join(config.dataDir, 'meetings', meeting.guildId, meeting.id);
+  const tmp = join(dir, 'tmp');
+  await mkdir(tmp, { recursive: true });
+  const fileName = `reunion-${formatWhen(meeting.startsAt, settings.timezone, settings.locale, 'yyyy-MM-dd-HH\'h\'mm')}.ogg`;
+  const file = join(dir, fileName);
+  ctx.progress(m.pipeline.progressMix(m.format.duration(endMs)));
+  try {
+    await mixPlaced(ffmpegPath(config.ffmpegPath), inputs, file, ['-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${kbps ?? 24}k`, '-application', 'voip'], tmp, signal);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+  const size = (await stat(file)).size;
+  const output: Record<string, unknown> = { file, sizeBytes: size, durationMs: endMs, bitrateKbps: kbps ?? 24 };
+  if (!thread) return output;
+
+  await ensureUnarchived(thread);
+  const attach = kbps !== null && size <= limit;
+  const message = await thread.send({
+    content: attach ? m.audio.published(m.format.duration(endMs)) : m.audio.tooLarge(m.format.duration(endMs), Math.round(size / 1024 / 1024)),
+    ...(attach ? { files: [{ attachment: file, name: fileName }] } : {}),
+    flags: MessageFlags.SuppressNotifications,
+    allowedMentions: { parse: [] },
+  });
+  return { ...output, attached: attach, messageId: message.id, url: message.url };
 }
 
 // ---------------------------------------------------------------- transcription
@@ -181,6 +241,8 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const people = new Map([...names].map(([id, name]) => [name, id]));
   const llmTrace = summary.llmDeployments.length ? summary.llmDeployments.join(', ') : summary.llmModel;
   const transcriptFile = `transcription-${meeting.startsAt.toISOString().slice(0, 10)}.md`;
+  const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
+  const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
 
   const containers = renderReport(
     {
@@ -191,6 +253,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       people,
       trace: m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
       transcriptFile,
+      ...(audioUrl ? { audioUrl } : {}),
     },
     m,
   );

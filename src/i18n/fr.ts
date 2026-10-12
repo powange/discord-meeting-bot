@@ -170,11 +170,19 @@ export const fr = {
     trace: (transcription: string, llm: string, passes: number) =>
       `Transcription : ${transcription} · Résumé : ${llm} · ${passes} passe${passes > 1 ? 's' : ''}`,
     noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
+    listen: "Écouter l'audio",
+  },
+
+  audio: {
+    published: (duration: string) => `🎧 **Audio complet de la réunion** · ${duration}`,
+    tooLarge: (duration: string, mb: number) =>
+      `🎧 Audio complet de la réunion (${duration}, ${mb} Mo) : trop lourd pour être envoyé sur Discord, il est conservé sur le serveur.`,
   },
 
   pipeline: {
     title: '## 📝 Compte rendu',
-    steps: { transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication' } as Record<string, string>,
+    steps: { mix: 'Audio complet', transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication' } as Record<string, string>,
+    progressMix: (duration: string) => `assemblage de ${duration} d'audio`,
     pending: '⬜',
     running: '⏳',
     done: '✅',

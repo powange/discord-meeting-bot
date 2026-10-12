@@ -114,7 +114,8 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       },
       {},
     );
-    return { client: {} as Client, repos, settings: new SettingsService(repos, config), config, log };
+    const client = { guilds: { fetch: async () => ({ premiumTier: 0 }) } } as unknown as Client;
+    return { client, repos, settings: new SettingsService(repos, config), config, log };
   }
 
   it('transcription (bascule) puis résumé', async () => {
@@ -150,6 +151,18 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(llmPrompts.at(-1)).toContain('Participants : Alice, Bob');
   }, 60_000);
 
+  it('audio complet : toutes les prises de parole sur une même ligne de temps, en Opus', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const settings = await d.settings.get('g');
+    const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
+    const out = await createSteps(d).mix(ctx);
+    expect(out).toMatchObject({ durationMs: 11_500, bitrateKbps: 32 }); // bob finit à 10 s + 1,5 s
+    const { ffmpegPath, runFfmpeg } = await import('../src/lib/ffmpeg.js');
+    await runFfmpeg(ffmpegPath(), ['-v', 'error', '-i', out.file as string, '-f', 'null', '-']); // décodable sans erreur
+    expect(out.sizeBytes as number).toBeGreaterThan(0);
+  }, 60_000);
+
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];
@@ -160,6 +173,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       return { ok: true };
     };
     const engine = new PipelineService(deps(), {
+      mix: fake('mix'),
       transcribe: fake('transcribe'),
       summarize: fake('summarize', () => failSummarize),
       publish: fake('publish'),
@@ -167,8 +181,9 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
 
     await engine.schedule(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toEqual(['transcribe', 'summarize']);
+    expect(calls).toEqual(['mix', 'transcribe', 'summarize']);
     expect((await repos.listPipeline(meeting.id)).map((r) => [r.step, r.status, r.error])).toEqual([
+      ['mix', 'done', null],
       ['transcribe', 'done', null],
       ['summarize', 'failed', 'summarize KO'],
       ['publish', 'pending', null],
@@ -177,7 +192,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     failSummarize = false;
     await engine.retry(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toEqual(['transcribe', 'summarize', 'summarize', 'publish']);
+    expect(calls).toEqual(['mix', 'transcribe', 'summarize', 'summarize', 'publish']);
     expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
 
     // Reprise : une étape restée « en cours » (arrêt brutal) est refaite au démarrage.

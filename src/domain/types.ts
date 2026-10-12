@@ -34,8 +34,11 @@ export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
 /** Raison de fin d'un enregistrement. */
 export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disconnected';
 
-/** Étapes du traitement post-réunion (la phase 4 ajoutera mix et upload). */
-export const PIPELINE_STEPS = ['transcribe', 'summarize', 'publish'] as const;
+/**
+ * Étapes du traitement post-réunion, dans l'ordre d'exécution. Le mix passe en premier : l'audio
+ * est publié même si la transcription ou le résumé échouent. (La phase 4 ajoutera l'upload.)
+ */
+export const PIPELINE_STEPS = ['mix', 'transcribe', 'summarize', 'publish'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 
 export const STEP_STATUSES = ['pending', 'running', 'done', 'failed'] as const;

@@ -50,6 +50,13 @@
       "when": 1791826776823,
       "tag": "0006_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791827834023,
+      "tag": "0007_mix_step",
+      "breakpoints": true
     }
   ]
 }

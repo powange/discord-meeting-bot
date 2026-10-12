@@ -18,6 +18,8 @@ export interface ReportInput {
   trace: string;
   /** Nom de la pièce jointe de transcription (référencée dans le dernier message). */
   transcriptFile?: string;
+  /** Lien vers le message de l'audio complet. */
+  audioUrl?: string;
 }
 
 const normalize = (s: string) =>
@@ -85,7 +87,9 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
   const covered = new Set(topics.map((t) => t.agendaItemId));
   const notCovered = input.agenda.filter((a) => !covered.has(a.id));
 
-  const sections: string[] = [`## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}`];
+  const sections: string[] = [
+    `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}`,
+  ];
   if (input.summary.overview) sections.push(input.summary.overview);
   topics.forEach((t, i) => sections.push(topicSection(t, i + 1, input, m)));
   if (topics.length === 0) sections.push(r.empty);
