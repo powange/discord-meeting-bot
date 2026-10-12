@@ -104,3 +104,8 @@ export function dayChoices(zone: string, now: Date, count: number, include?: str
 export function discordTimestamp(date: Date, style: 'F' | 'f' | 'R' | 't' | 'D' | 'd' = 'F'): string {
   return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
 }
+
+/** Date lisible dans le fuseau du serveur (format fourni par la langue), ex. « lundi 12/10 à 18h00 ». */
+export function formatWhen(date: Date, zone: string, locale: string, format: string): string {
+  return DateTime.fromJSDate(date, { zone }).setLocale(locale).toFormat(format);
+}

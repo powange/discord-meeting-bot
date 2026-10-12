@@ -40,6 +40,7 @@ export const fr = {
     remove: 'Retirer',
     lock: "Verrouiller l'ODJ",
     unlock: "Déverrouiller l'ODJ",
+    joinVoice: 'Rejoindre le vocal',
   },
 
   modal: {
@@ -92,15 +93,28 @@ export const fr = {
     configSaved: 'Configuration enregistrée.',
   },
 
+  // Messages postés dans le fil. Ceux qui notifient restent lisibles dans une notification push :
+  // pas de markdown, ni de mention de salon, ni de timestamp Discord (affichés bruts sur mobile).
   thread: {
-    cancelled: (by: string, reason: string | null) => `❌ Réunion annulée par <@${by}>.${reason ? `\n> ${reason}` : ''}`,
-    started: (voiceId: string) => `🟢 La réunion commence dans <#${voiceId}> !`,
-    ended: (by: string | null) => (by ? `✅ Réunion close par <@${by}>.` : '✅ Réunion close automatiquement.'),
-    rescheduled: (when: string) => `📅 Nouvelle date : ${when}`,
-    reminder: (title: string, relative: string, voiceId: string) => `⏰ **${title}** commence ${relative} dans <#${voiceId}>.`,
+    cancelled: (title: string, by: string | null, reason: string | null) =>
+      `❌ « ${title} » est annulée${by ? ` par ${by}` : ''}.${reason ? `\nRaison : ${reason}` : ''}`,
+    started: (title: string, voice: string) => `🟢 « ${title} » commence maintenant dans 🔊 ${voice} !`,
+    ended: (by: string | null) => (by ? `✅ Réunion close par ${by}.` : '✅ Réunion close automatiquement.'),
+    rescheduled: (title: string, when: string) => `📅 « ${title} » est déplacée au ${when}.`,
+    reminder: (title: string, startsIn: string, when: string, voice: string) => `⏰ « ${title} » commence ${startsIn} (${when}) dans 🔊 ${voice}.`,
     reminderTargets: 'Inscrits :',
     nudge: "Pas encore de réponse — merci d'indiquer votre présence :",
+    voiceFallback: 'le salon vocal',
   },
+
+  format: {
+    /** Format Luxon d'une date lisible : « lundi 12/10 à 18h00 ». */
+    when: "cccc dd/MM 'à' HH'h'mm",
+    startsIn: (min: number) =>
+      min < 1 ? 'maintenant' : min < 90 ? `dans ${min} min` : min < 36 * 60 ? `dans ${Math.round(min / 60)} h` : `dans ${Math.round(min / 1440)} jours`,
+  },
+
+
 
   event: {
     description: (url: string, description: string) => `Inscriptions et ordre du jour : ${url}${description ? `\n\n${description}` : ''}`,

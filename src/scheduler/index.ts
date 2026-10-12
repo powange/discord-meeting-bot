@@ -5,7 +5,8 @@ import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
 import { nonResponders, reminderTargets } from '../domain/rsvp.js';
-import { discordTimestamp } from '../domain/time.js';
+import { formatWhen } from '../domain/time.js';
+import { joinVoiceRow, voiceName } from '../discord/notify.js';
 import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
 import { chunkJoin } from '../lib/text.js';
@@ -87,7 +88,14 @@ export class Scheduler {
     const m = messages(settings.locale);
     const rsvps = await this.ctx.repos.listRsvps(meeting.id);
 
-    const intro = m.thread.reminder(meeting.title, discordTimestamp(meeting.startsAt, 'R'), meeting.voiceChannelId);
+    // Première ligne lisible telle quelle dans une notification push ; mentions sur la ligne suivante.
+    const minutesLeft = Math.round((meeting.startsAt.getTime() - now.getTime()) / 60_000);
+    const intro = m.thread.reminder(
+      meeting.title,
+      m.format.startsIn(minutesLeft),
+      formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when),
+      await voiceName(this.ctx.client, meeting.voiceChannelId, m),
+    );
     const targets = reminderTargets(rsvps);
     const batches: Array<{ content: string; users: string[] }> = [];
     batches.push(...mentionBatches(targets.length > 0 ? `${intro}\n${m.thread.reminderTargets} ` : intro, targets));
@@ -102,8 +110,12 @@ export class Scheduler {
     }
 
     await ensureUnarchived(thread);
-    for (const batch of batches) {
-      await thread.send({ content: batch.content, allowedMentions: { users: batch.users } });
+    for (const [i, batch] of batches.entries()) {
+      await thread.send({
+        content: batch.content,
+        allowedMentions: { users: batch.users },
+        ...(i === 0 ? { components: [joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m)] } : {}),
+      });
     }
   }
 }

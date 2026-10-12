@@ -1,4 +1,4 @@
-import type { Client, ThreadChannel } from 'discord.js';
+import { MessageFlags, type Client, type ThreadChannel } from 'discord.js';
 import type { Repositories } from '../db/repositories.js';
 import type { MeetingRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -96,7 +96,7 @@ export class CardService {
   private async updateAgenda(meeting: MeetingRow, thread: ThreadChannel): Promise<boolean> {
     const payload = await this.renderAgenda(meeting);
     if (meeting.agendaMessageId && (await this.edit(thread, meeting.agendaMessageId, payload, meeting.id))) return false;
-    const message = await thread.send({ ...payload, allowedMentions: { parse: [] } });
+    const message = await thread.send({ ...payload, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
     await this.repos.updateMeeting(meeting.id, { agendaMessageId: message.id });
     return true;
   }

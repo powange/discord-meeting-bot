@@ -1,4 +1,4 @@
-import { ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
+import { MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
 import { applyStatusTag, ensureUnarchived } from '../discord/forum.js';
@@ -6,7 +6,8 @@ import { ScheduledEvents, type EventData } from '../discord/scheduledEvent.js';
 import { fetchForum, fetchThread } from '../discord/threads.js';
 import { canReschedule, threadName } from '../domain/meeting.js';
 import { planJobs } from '../domain/reminders.js';
-import { discordTimestamp } from '../domain/time.js';
+import { formatWhen } from '../domain/time.js';
+import { displayName, joinVoiceRow, voiceName } from '../discord/notify.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage, UserError } from '../lib/errors.js';
@@ -66,7 +67,11 @@ export class MeetingService {
         message: { ...card, allowedMentions: { parse: [] } },
         reason: `Réunion créée par ${organizerId}`,
       });
-      const agenda = await thread.send({ ...(await this.cards.renderAgenda(meeting)), allowedMentions: { parse: [] } });
+      const agenda = await thread.send({
+        ...(await this.cards.renderAgenda(meeting)),
+        allowedMentions: { parse: [] },
+        flags: MessageFlags.SuppressNotifications,
+      });
       meeting = (await this.repos.updateMeeting(meeting.id, { threadId: thread.id, agendaMessageId: agenda.id }))!;
     } catch (err) {
       await this.repos.deleteMeeting(meeting.id);
@@ -98,7 +103,8 @@ export class MeetingService {
       const name = threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
       if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
       if (input.startsAt.getTime() !== meeting.startsAt.getTime()) {
-        await thread.send({ content: m.thread.rescheduled(discordTimestamp(updated.startsAt, 'F')), allowedMentions: { parse: [] } });
+        const when = formatWhen(updated.startsAt, settings.timezone, settings.locale, m.format.when);
+        await thread.send({ content: m.thread.rescheduled(updated.title, when), allowedMentions: { parse: [] } });
       }
     }
     if (updated.status === 'scheduled') {
@@ -119,8 +125,13 @@ export class MeetingService {
     const settings = await this.settings.get(meeting.guildId);
     const m = messages(settings.locale);
     await this.replan(meeting, settings);
+    const voice = await voiceName(this.client, meeting.voiceChannelId, m);
     await this.afterStatusChange(meeting, settings, (thread) =>
-      thread.send({ content: m.thread.started(meeting.voiceChannelId), allowedMentions: { parse: [] } }),
+      thread.send({
+        content: m.thread.started(meeting.title, voice),
+        components: [joinVoiceRow(meeting.guildId, meeting.voiceChannelId, m)],
+        allowedMentions: { parse: [] },
+      }),
     );
     const guild = await this.guild(meeting);
     if (guild) await this.events.start(guild, meeting.scheduledEventId);
@@ -138,7 +149,10 @@ export class MeetingService {
     const settings = await this.settings.get(meeting.guildId);
     const m = messages(settings.locale);
     await this.repos.cancelPendingJobs(meeting.id);
-    await this.afterStatusChange(meeting, settings, (thread) => thread.send({ content: m.thread.ended(by), allowedMentions: { parse: [] } }));
+    const byName = by ? ((await displayName(this.client, meeting.guildId, by)) ?? null) : null;
+    await this.afterStatusChange(meeting, settings, (thread) =>
+      thread.send({ content: m.thread.ended(byName), allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications }),
+    );
     const guild = await this.guild(meeting);
     if (guild) await this.events.complete(guild, meeting.scheduledEventId);
     this.onChange(meeting.guildId);
@@ -156,7 +170,8 @@ export class MeetingService {
     if (guild) await this.events.cancel(guild, meeting.scheduledEventId);
     if (!options.silent) {
       await this.afterStatusChange(meeting, settings, async (thread) => {
-        await thread.send({ content: m.thread.cancelled(by, reason), allowedMentions: { parse: [] } });
+        const byName = await displayName(this.client, meeting.guildId, by);
+        await thread.send({ content: m.thread.cancelled(meeting.title, byName, reason), allowedMentions: { parse: [] } });
         await thread.setArchived(true, 'Réunion annulée');
       });
     }
