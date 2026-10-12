@@ -30,7 +30,7 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 | Automatique | Carte → ⚙️ Gérer → « Enregistrer automatiquement », ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
 | Pendant | Le bot est dans le vocal, micro coupé, et **renommé « 🔴 Enregistrement »** (pseudo restauré à l'arrêt). Avertissement dans le post et dans le chat du vocal au démarrage, puis à **chaque personne qui arrive en cours de route** (une fois par session). La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
-| Opt-out | Rôle « ne pas m'enregistrer » (`/config` → Rôles). Chacun le prend ou le rend avec le bouton **🎙️ Mon choix d'enregistrement** : sur le post épinglé, sous l'avertissement de démarrage et dans le message aux arrivants. La présence est notée, pas la voix. |
+| Opt-out | Bouton **🎙️ Mon choix d'enregistrement** (post épinglé, avertissement de démarrage, message aux arrivants) : chacun refuse ou accepte. Le choix est **gardé par le bot, invisible des autres membres** ; aucun rôle n'est nécessaire. Les admins voient la liste dans `/config` → Enregistrement. La présence est notée, pas la voix. |
 | Fin | Bouton Arrêter, carte → ⚙️ Gérer → « Clore maintenant », ou clôture automatique de la réunion (vocal vide depuis 5 min). |
 | Bilan | Message silencieux dans le post. Il signale « ⚠️ audio possiblement incomplet » quand une part notable des paquets d'une personne n'a pas pu être déchiffrée (DAVE) ; `recording.debugVoice: true` journalise les détails de la connexion vocale. Il indique aussi : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
@@ -50,7 +50,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 ### Tester la phase 2
 
 1. Activer **Server Members Intent** (déjà requis), et vérifier que le bot voit le salon vocal et peut s'y connecter.
-2. Optionnel : choisir le rôle « ne pas m'enregistrer » dans `/config` → Rôles, puis placer ce rôle sous celui du bot.
+2. Optionnel : avec un second compte, cliquer « Mon choix d'enregistrement » sur le post épinglé.
 3. Créer une réunion dans quelques minutes et rejoindre le vocal à deux. À l'heure prévue, le message **🎙️ Enregistrement** apparaît : cliquer **🔴 Enregistrer**.
 4. Parler à tour de rôle, utiliser « Mon choix d'enregistrement » → Refuser avec un compte et vérifier que sa voix n'est plus captée.
 5. **⏹️ Arrêter l'enregistrement** dans ce message : vérifier le bilan dans le post, puis écouter avec `scripts/assemble.ts`.
@@ -102,7 +102,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
 4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
-   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17893170441232
+   https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892902005776
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
@@ -111,7 +111,6 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    - Créer et gérer les événements
    - Se connecter (enregistrement)
    - Changer le pseudo : le bot s'appelle « 🔴 Enregistrement » pendant une capture
-   - Gérer les rôles : pour le bouton « Mon choix d'enregistrement ». Le rôle « ne pas m'enregistrer » doit être placé **sous** le rôle du bot.
 5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions.
 
 > Discord ne sait pas trier les posts d'un forum selon la date de la réunion : seulement par activité récente ou par date de création. L'ordre chronologique se lit dans le post épinglé.

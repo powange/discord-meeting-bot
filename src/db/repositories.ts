@@ -9,6 +9,7 @@ import {
   audioSegments,
   captureStats,
   pipelineSteps,
+  recordingOptouts,
   summaries,
   transcriptionBackends,
   transcriptionBlocks,
@@ -68,6 +69,15 @@ export class Repositories {
   async getSettingsIfExists(guildId: string): Promise<GuildSettingsRow | undefined> {
     const [row] = await this.db.select().from(guildSettings).where(eq(guildSettings.guildId, guildId));
     return row;
+  }
+
+  /** Serveurs qui utilisaient encore un rôle « ne pas m'enregistrer » (reprise en base). */
+  async listOptoutRoles(): Promise<Array<{ guildId: string; optoutRoleId: string }>> {
+    const rows = await this.db
+      .select({ guildId: guildSettings.guildId, optoutRoleId: guildSettings.optoutRoleId })
+      .from(guildSettings)
+      .where(isNotNull(guildSettings.optoutRoleId));
+    return rows.map((r) => ({ guildId: r.guildId, optoutRoleId: r.optoutRoleId! }));
   }
 
   async listAlertChannels(): Promise<string[]> {
@@ -584,5 +594,17 @@ export class Repositories {
 
   async listCaptureStats(recordingId: string) {
     return this.db.select().from(captureStats).where(eq(captureStats.recordingId, recordingId));
+  }
+
+  // ---------------------------------------------------------------- refus d'enregistrement
+
+  async listOptouts(guildId: string): Promise<string[]> {
+    const rows = await this.db.select({ userId: recordingOptouts.userId }).from(recordingOptouts).where(eq(recordingOptouts.guildId, guildId)).orderBy(asc(recordingOptouts.createdAt));
+    return rows.map((r) => r.userId);
+  }
+
+  async setOptout(guildId: string, userId: string, refused: boolean): Promise<void> {
+    if (refused) await this.db.insert(recordingOptouts).values({ guildId, userId }).onConflictDoNothing();
+    else await this.db.delete(recordingOptouts).where(and(eq(recordingOptouts.guildId, guildId), eq(recordingOptouts.userId, userId)));
   }
 }

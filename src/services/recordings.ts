@@ -30,6 +30,7 @@ import { errorMessage, UserError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { RecordingSession } from '../recording/session.js';
 import type { CardService } from './cards.js';
+import type { OptoutService } from './optouts.js';
 import type { SettingsService } from './settings.js';
 
 const JOIN_TIMEOUT_MS = 20_000;
@@ -72,6 +73,7 @@ export class RecordingService {
     private readonly cards: CardService,
     private readonly config: AppConfig,
     private readonly log: Logger,
+    private readonly optouts: OptoutService,
   ) {}
 
   /**
@@ -143,6 +145,7 @@ export class RecordingService {
     if (missing.length > 0) throw new UserError(m.errors.voicePermissions(missing.join(', ')));
 
     const recCfg = this.config.guild(guild.id).recording;
+    await this.optouts.load(guild.id); // refus à jour avant la première prise de parole
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
@@ -203,7 +206,7 @@ export class RecordingService {
         userId: member.id,
         displayName: member.displayName,
         joinedAt: now,
-        excluded: this.isOptedOut(settings, member.roles.cache.keys()),
+        excluded: this.optouts.isOptedOut(guild.id, member.id),
       });
     }
 
@@ -215,10 +218,9 @@ export class RecordingService {
 
   /** Avertissement RGPD dans le post et dans le chat du salon vocal (lu par ceux qui y sont). */
   private async announceStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, channel: VoiceBasedChannel, by: string | null) {
-    const optout = settings.optoutRoleId ? (channel.guild.roles.cache.get(settings.optoutRoleId)?.name ?? null) : null;
     const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
-    const text = `${m.recording.started(byName)}\n${m.recording.warning(optout)}`;
-    const components = settings.optoutRoleId ? [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()] : [];
+    const text = `${m.recording.started(byName)}\n${m.recording.warning}`;
+    const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()];
     const thread = await fetchThread(this.client, meeting.threadId);
     if (thread) {
       await ensureUnarchived(thread);
@@ -312,7 +314,7 @@ export class RecordingService {
     void (async () => {
       if (joined) {
         const settings = await this.settings.get(entry.guildId);
-        const excluded = this.isOptedOut(settings, member.roles.cache.keys());
+        const excluded = this.optouts.isOptedOut(entry.guildId, member.id);
         await this.repos.insertPresence({
           recordingId: entry.recordingId,
           userId: member.id,
@@ -419,14 +421,8 @@ export class RecordingService {
 
   private shouldRecord(guild: Guild, settings: GuildSettingsRow, userId: string): boolean {
     const member = guild.members.cache.get(userId);
-    if (!member) return true; // présent dans le vocal donc normalement en cache ; par défaut on enregistre
-    return !member.user.bot && !this.isOptedOut(settings, member.roles.cache.keys());
-  }
-
-  private isOptedOut(settings: GuildSettingsRow, roleIds: Iterable<string>): boolean {
-    if (!settings.optoutRoleId) return false;
-    for (const id of roleIds) if (id === settings.optoutRoleId) return true;
-    return false;
+    if (!member) return !this.optouts.isOptedOut(guild.id, userId); // normalement en cache (présent dans le vocal)
+    return !member.user.bot && !this.optouts.isOptedOut(guild.id, userId);
   }
 
   private async alertInterrupted(meetingId: string, reason: string): Promise<void> {

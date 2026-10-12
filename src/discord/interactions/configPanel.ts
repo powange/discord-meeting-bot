@@ -69,6 +69,7 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
     notice,
     llm: { source: llm.source, enabled: llm.enabled, baseUrl: llm.config.baseUrl, model: llm.config.model, hasKey: Boolean(llm.config.apiKey) },
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
+    refusals: await ctx.optouts.list(guildId),
   };
 }
 
@@ -142,10 +143,9 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show('voice', t.saved);
 
     case 'roleManager':
-    case 'roleOptout':
     case 'roleNudge': {
       if (!interaction.isRoleSelectMenu()) return;
-      const key = ({ roleManager: 'managerRoleId', roleOptout: 'optoutRoleId', roleNudge: 'nudgeRoleId' } as const)[action];
+      const key = ({ roleManager: 'managerRoleId', roleNudge: 'nudgeRoleId' } as const)[action];
       await ctx.repos.updateSettings(guildId, { [key]: interaction.roles.first()?.id ?? null });
       return show('roles', t.saved);
     }

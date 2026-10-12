@@ -64,7 +64,7 @@ describe('panneau /config', () => {
     ['forum', ['forum', 'home']],
     ['voice', ['voice', 'home']],
     ['alerts', ['alerts', 'home']],
-    ['roles', ['roleManager', 'roleOptout', 'roleNudge', 'home']],
+    ['roles', ['roleManager', 'roleNudge', 'home']],
     ['reminders', ['remindersEdit', 'home']],
     ['general', ['generalEdit', 'toggleCreators', 'home']],
     ['recording', ['toggleAutoRecord', 'home']],
@@ -101,7 +101,7 @@ describe('panneau /config', () => {
 
   it('rôles : chaque sélecteur peut être vidé pour retirer le rôle', () => {
     const selects = flatten(renderConfigSection('roles', c, m)).filter((x) => x.type === ComponentType.RoleSelect);
-    expect(selects.map((s) => s.min_values)).toEqual([0, 0, 0]);
+    expect(selects.map((s) => s.min_values)).toEqual([0, 0]);
     expect(selects[0]!.default_values).toEqual([{ id: '222', type: 'role' }]);
   });
 
@@ -121,6 +121,12 @@ describe('panneau /config', () => {
       ['a', false],
       ['b', true],
     ]);
+  });
+
+  it('enregistrement : liste des personnes qui refusent', () => {
+    const view = renderConfigSection('recording', { ...c, refusals: ['501', '502'] }, m);
+    expect(texts(view)).toContain('🔇 2 personnes refusent');
+    expect(texts(view)).toContain('<@501> <@502>');
   });
 
   it('message de résultat affiché en haut de la section', () => {

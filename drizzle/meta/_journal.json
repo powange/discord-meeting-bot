@@ -99,6 +99,13 @@
       "when": 1791834227274,
       "tag": "0013_llm_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791835287543,
+      "tag": "0014_recording_optouts",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ import { CardService } from './services/cards.js';
 import { HubService } from './services/hub.js';
 import { AlertService } from './services/alerts.js';
 import { MeetingService } from './services/meetings.js';
+import { OptoutService } from './services/optouts.js';
 import { OwnersService } from './services/owners.js';
 import { RetentionService } from './services/retention.js';
 import { MeetingWatcher } from './services/meetingWatcher.js';
@@ -50,7 +51,8 @@ async function main(): Promise<void> {
   const cards = new CardService(client, repos, settings, log);
   const hub = new HubService(client, repos, settings, log);
   const meetings = new MeetingService(config, client, repos, settings, cards, log, (guildId) => hub.refresh(guildId));
-  const recordings = new RecordingService(client, repos, settings, cards, config, log);
+  const optouts = new OptoutService(repos, log);
+  const recordings = new RecordingService(client, repos, settings, cards, config, log, optouts);
   const alerts = new AlertService(client, repos, log);
   recordings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
   const pipelineDeps = { client, repos, settings, config, log, alerts };
@@ -62,7 +64,7 @@ async function main(): Promise<void> {
   };
   recordings.setOnStopped((meetingId) => pipeline.refresh(meetingId));
   const owners = new OwnersService(config.owners);
-  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners };
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));
@@ -71,6 +73,8 @@ async function main(): Promise<void> {
   client.once(Events.ClientReady, async (ready) => {
     log.info({ user: ready.user.tag, guilds: ready.guilds.cache.size }, 'Connecté à Discord');
     await owners.load(ready, log);
+    // Ancien rôle « ne pas m'enregistrer » : ses membres sont repris en base, une fois.
+    await optouts.migrateRoles(ready, await repos.listOptoutRoles(), (guildId) => repos.updateSettings(guildId, { optoutRoleId: null }));
     try {
       await registerCommands(ready, config.discord.commandGuildIds, log);
     } catch (err) {

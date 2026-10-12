@@ -188,6 +188,21 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect((await repos.getSummary(m.id))?.corrections).toEqual(['Pol et non Paul', 'Reporter à janvier']);
   });
 
+  it('refus d’enregistrement : par serveur, idempotents', async () => {
+    const { OptoutService } = await import('../src/services/optouts.js');
+    const { pino } = await import('pino');
+    const optouts = new OptoutService(repos, pino({ level: 'silent' }));
+    await optouts.set('g1', 'u1', true);
+    await optouts.set('g1', 'u1', true);
+    await optouts.set('g2', 'u2', true);
+    expect(await repos.listOptouts('g1')).toEqual(['u1']);
+    expect(optouts.isOptedOut('g1', 'u1')).toBe(true);
+    expect(optouts.isOptedOut('g1', 'u2')).toBe(false); // autre serveur
+    await optouts.set('g1', 'u1', false);
+    expect(optouts.isOptedOut('g1', 'u1')).toBe(false);
+    expect(await repos.listOptouts('g1')).toEqual([]);
+  });
+
   it('suppression en cascade', async () => {
     const m = await newMeeting();
     await repos.setRsvp(m.id, 'u', 'yes');

@@ -27,6 +27,8 @@ export interface ConfigContext {
   llm?: { source: 'discord' | 'yaml'; enabled: boolean; baseUrl: string | undefined; model: string; hasKey: boolean };
   /** Modèles proposés par le serveur LLM (après « Choisir le modèle »). */
   models?: readonly string[];
+  /** Personnes qui refusent l'enregistrement (section Enregistrement). */
+  refusals?: readonly string[];
   /** Propriétaire du bot : peut modifier les adresses appelées par le bot. */
   canEditAi?: boolean;
   notice?: string | undefined;
@@ -50,13 +52,13 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
     case 'voice':
       return s.voiceChannelId ? `<#${s.voiceChannelId}> · ${t.voiceImposed}` : `*${t.voiceFree}*`;
     case 'roles':
-      return `${t.managerRole} ${role(s.managerRoleId, m)} · ${t.optoutRole} ${role(s.optoutRoleId, m)} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
+      return `${t.managerRole} ${role(s.managerRoleId, m)} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
     case 'reminders':
       return s.reminderOffsetsMin.length ? s.reminderOffsetsMin.map(formatOffset).join(', ') : `*${t.none}*`;
     case 'general':
       return `${s.timezone} · ${m.card.minutes(s.defaultDurationMin)} · ${s.creatorsRestricted ? t.creatorsManagers : t.creatorsAll}`;
     case 'recording':
-      return s.autoRecordDefault ? t.autoOn : t.autoOff;
+      return `${s.autoRecordDefault ? t.autoOn : t.autoOff} · ${t.refusals(c.refusals?.length ?? 0)}`;
     case 'transcription':
       return c.transcription;
     case 'alerts':
@@ -98,6 +100,9 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       x.setContent(`## ${meta.emoji} ${meta.label}\n-# ${meta.help}\n\n${t.current} : ${sectionSummary(section, c, m)}${c.notice ? `\n\n${c.notice}` : ''}`),
     )
     .addSeparatorComponents((x) => x.setSpacing(SeparatorSpacingSize.Small));
+  if (section === 'recording' && c.refusals?.length) {
+    container.addTextDisplayComponents((x) => x.setContent(`${t.refusalsList}\n${c.refusals!.slice(0, 60).map((id) => `<@${id}>`).join(' ')}`));
+  }
 
   const rows: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<RoleSelectMenuBuilder>> = [];
 
@@ -140,7 +145,6 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       };
       rows.push(
         roleSelect('roleManager', s.managerRoleId, t.pickManager),
-        roleSelect('roleOptout', s.optoutRoleId, t.pickOptout),
         roleSelect('roleNudge', s.nudgeRoleId, t.pickNudge),
       );
       break;

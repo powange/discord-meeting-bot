@@ -42,7 +42,6 @@ export const CFG_ACTIONS = [
   'voice',
   'voiceClear',
   'roleManager',
-  'roleOptout',
   'roleNudge',
   'remindersEdit',
   'remindersSubmit',

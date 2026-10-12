@@ -128,11 +128,9 @@ export const fr = {
   },
 
   recording: {
-    warning: (optoutRole: string | null) =>
-      '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.' +
-      (optoutRole
-        ? `\nPour ne pas être enregistré : bouton « Mon choix d'enregistrement » ci-dessous (rôle « ${optoutRole} »). Votre présence reste notée, pas votre voix.`
-        : ''),
+    warning:
+      '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.\n' +
+      "Pour ne pas être enregistré : bouton « Mon choix d'enregistrement » ci-dessous. Votre présence reste notée, pas votre voix.",
     started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
     arrival: (userId: string) =>
       `🔴 <@${userId}>, cette réunion est **enregistrée** (une piste audio par participant, pour le compte rendu). Pour ne pas l'être : bouton ci-dessous.`,
@@ -150,8 +148,6 @@ export const fr = {
     stopped_reply: 'Enregistrement arrêté.',
     autoSet: (on: boolean) =>
       on ? 'Enregistrement automatique activé pour cette réunion.' : 'Enregistrement automatique désactivé pour cette réunion.',
-    optoutAdded: (role: string) => `Vous ne serez plus enregistré (rôle « ${role} » ajouté). Votre présence reste notée.`,
-    optoutRemoved: (role: string) => `Rôle « ${role} » retiré : vous serez de nouveau enregistré.`,
   },
 
   summary: {
@@ -295,7 +291,6 @@ export const fr = {
     accept: 'Accepter',
     refused: '✅ C’est noté : vous ne serez plus enregistré.',
     accepted: '✅ C’est noté : vous serez de nouveau enregistré.',
-    notConfigured: "Aucun rôle « ne pas m'enregistrer » n'est configuré sur ce serveur : demandez à un administrateur (`/config` → Rôles).",
   },
 
   pipeline: {
@@ -377,8 +372,6 @@ export const fr = {
     alertChannel: "Je ne peux pas écrire dans ce salon : vérifiez mes permissions (voir le salon, envoyer des messages).",
     voicePermissions: (perms: string) => `Il me manque des permissions sur le salon vocal : ${perms}.`,
     voiceJoinFailed: 'Connexion au salon vocal impossible (délai dépassé). Réessayez dans un instant.',
-    optoutNotConfigured: "Aucun rôle « ne pas m'enregistrer » n'est configuré : un administrateur doit le choisir dans `/config` → Rôles.",
-    optoutRoleUnmanageable: "Je ne peux pas attribuer ce rôle : il doit être placé sous mon rôle et j'ai besoin de la permission « Gérer les rôles ».",
   },
 
   config: {
@@ -392,10 +385,10 @@ export const fr = {
     sections: {
       forum: { emoji: '📌', label: 'Forum des réunions', hint: 'Où sont publiées les réunions', help: 'Les réunions y sont publiées ; le bot y crée les tags de statut et le post épinglé « Nouvelle réunion ».' },
       voice: { emoji: '🔊', label: 'Salon vocal', hint: 'Imposer un vocal ou laisser le choix', help: "Imposé : toutes les réunions s'y tiennent et le choix n'est plus proposé. Sinon, l'organisateur choisit." },
-      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, opt-out, relance', help: "Gestionnaires : gèrent toutes les réunions. Ne pas enregistrer : voix jamais enregistrée. Relance : membres mentionnés s'ils n'ont pas répondu. Videz un sélecteur pour retirer un rôle." },
+      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "Gestionnaires : gèrent toutes les réunions. Relance : membres mentionnés s'ils n'ont pas répondu. Videz un sélecteur pour retirer un rôle." },
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
-      recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage automatique par défaut', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },
+      recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage auto, refus d’enregistrement', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },
       transcription: { emoji: '🎙️', label: 'Transcription', hint: 'Serveurs Vibe / Whisper', help: '' },
       summary: {
         emoji: '📝',
@@ -414,7 +407,6 @@ export const fr = {
     voiceFree: 'au choix de l’organisateur',
     voiceFreeButton: 'Laisser le choix',
     managerRole: 'Gestionnaires',
-    optoutRole: 'Ne pas enregistrer',
     nudgeRole: 'Relance',
     creatorsAll: 'création : tout le monde',
     creatorsManagers: 'création : gestionnaires',
@@ -431,7 +423,8 @@ export const fr = {
     pickForum: 'Choisir le salon forum…',
     pickVoice: 'Choisir le salon vocal imposé…',
     pickManager: 'Rôle gestionnaire (vide : aucun)',
-    pickOptout: 'Rôle « ne pas m’enregistrer » (vide : aucun)',
+    refusalsList: "**Refusent l'enregistrement** (chacun change son choix avec « Mon choix d'enregistrement » sur le post épinglé) :",
+    refusals: (n: number) => (n ? `🔇 ${n} personne${n > 1 ? 's refusent' : ' refuse'} l'enregistrement` : "🔇 Personne ne refuse l'enregistrement"),
     pickNudge: 'Rôle relancé si pas de réponse (vide : aucun)',
     pickAlerts: "Choisir le salon d'alertes…",
     summaryOff: 'désactivé',

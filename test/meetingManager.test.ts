@@ -42,12 +42,14 @@ describe('panneau « Gérer »', () => {
 
 describe('choix d’enregistrement', () => {
   it('accepte : bouton Refuser actif', () => {
-    const c = renderConsent({ roleConfigured: true, refused: false }, m);
+    const c = renderConsent({ refused: false }, m);
     expect(actions(c)).toEqual(['consent.refuse', 'consent.accept']);
     expect(JSON.stringify(c)).toContain('**acceptez**');
   });
-  it('aucun rôle configuré : explication, pas de bouton', () => {
-    expect(actions(renderConsent({ roleConfigured: false, refused: false }, m))).toEqual([]);
+  it('refuse : statut affiché, bouton Accepter actif', () => {
+    const c = renderConsent({ refused: true, notice: m.consent.refused }, m);
+    expect(JSON.stringify(c)).toContain('**refusez**');
+    expect(JSON.stringify(c)).toContain('vous ne serez plus enregistré');
   });
   it('accessible depuis le post épinglé', () => {
     const hub = renderHub([], m);

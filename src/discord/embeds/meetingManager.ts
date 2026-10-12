@@ -56,13 +56,9 @@ export function renderMeetingManager(
 }
 
 /** Choix personnel d'enregistrement (message éphémère). */
-export function renderConsent(state: { roleConfigured: boolean; refused: boolean; notice?: string | undefined }, m: Messages): APIContainerComponent {
+export function renderConsent(state: { refused: boolean; notice?: string | undefined }, m: Messages): APIContainerComponent {
   const c = m.consent;
   const container = new ContainerBuilder().setAccentColor(state.refused ? 0x95a5a6 : 0xed4245);
-  if (!state.roleConfigured) {
-    container.addTextDisplayComponents((t) => t.setContent(`## 🎙️ ${c.title}\n${c.notConfigured}`));
-    return container.toJSON();
-  }
   container.addTextDisplayComponents((t) =>
     t.setContent(`## 🎙️ ${c.title}\n${state.refused ? c.statusRefused : c.statusAccepted}\n-# ${c.explain}${state.notice ? `\n\n${state.notice}` : ''}`),
   );

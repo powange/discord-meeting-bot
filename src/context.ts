@@ -6,6 +6,7 @@ import type { PipelineService } from './pipeline/runner.js';
 import type { CardService } from './services/cards.js';
 import type { HubService } from './services/hub.js';
 import type { MeetingService } from './services/meetings.js';
+import type { OptoutService } from './services/optouts.js';
 import type { OwnersService } from './services/owners.js';
 import type { RecordingService } from './services/recordings.js';
 import type { SettingsService } from './services/settings.js';
@@ -22,4 +23,5 @@ export interface AppContext {
   recordings: RecordingService;
   pipeline: PipelineService;
   owners: OwnersService;
+  optouts: OptoutService;
 }

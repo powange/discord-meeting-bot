@@ -36,6 +36,7 @@ export const guildSettings = pgTable('guild_settings', {
   voiceChannelId: text(),
   tagIds: jsonb().$type<StatusTagIds>(),
   managerRoleId: text(),
+  /** Ancien rôle « ne pas m'enregistrer » : ses membres sont repris dans recording_optouts, puis il est oublié. */
   optoutRoleId: text(),
   /** Si renseigné, ses membres sans réponse sont relancés avec le premier rappel. */
   nudgeRoleId: text(),
@@ -129,6 +130,17 @@ export const scheduledJobs = pgTable(
     unique().on(t.meetingId, t.kind, t.offsetMin),
     index('scheduled_jobs_pending_idx').on(t.dueAt).where(sql`${t.doneAt} is null`),
   ],
+);
+
+/** Personnes qui refusent l'enregistrement (par serveur) : présence notée, voix jamais enregistrée. */
+export const recordingOptouts = pgTable(
+  'recording_optouts',
+  {
+    guildId: text().notNull(),
+    userId: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.guildId, t.userId] })],
 );
 
 /** Serveurs de transcription d'un serveur Discord (/config transcription), par ordre de priorité. */
