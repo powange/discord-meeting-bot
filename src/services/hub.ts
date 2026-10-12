@@ -79,7 +79,10 @@ export class HubService {
 
   startWatchdog(): void {
     this.watchdog = schedule('*/15 * * * *', () => this.ensureAll(), { name: 'hub-watchdog', noOverlap: true });
-    void this.ensureAll();
+    // Au démarrage, le contenu est aussi régénéré : une nouvelle version peut changer ses boutons.
+    void this.ensureAll().then(async () => {
+      for (const guildId of await this.repos.listConfiguredGuildIds()) this.refresh(guildId);
+    });
   }
 
   async stopWatchdog(): Promise<void> {
