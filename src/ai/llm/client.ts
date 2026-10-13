@@ -18,7 +18,17 @@ export interface JsonResult<T> {
 
 export class LlmError extends Error {
   override name = 'LlmError';
+  /** Erreur passagère (serveur occupé, 5xx, délai, injoignable) : une nouvelle tentative a du sens. */
+  constructor(
+    message: string,
+    readonly transient = false,
+  ) {
+    super(message);
+  }
 }
+
+/** Tentatives par requête : une erreur passagère sur une passe ne doit pas faire échouer tout le résumé. */
+const ATTEMPTS = 3;
 
 /**
  * Format de réponse demandé au serveur, du plus strict au plus permissif. Les serveurs ne
@@ -56,6 +66,8 @@ export class LlmClient {
   constructor(
     private readonly config: LlmConfig,
     private readonly allowedHosts: readonly string[] = [],
+    /** Tentatives sur erreur passagère, et attente avant la 2e (doublée ensuite). Un test de connexion n'en fait qu'une. */
+    private readonly retry: { attempts: number; delayMs: number } = { attempts: ATTEMPTS, delayMs: 2000 },
   ) {
     if (!config.baseUrl) throw new LlmError('Aucun serveur LLM configuré (llm.baseUrl).');
   }
@@ -85,6 +97,17 @@ export class LlmClient {
   }
 
   private async chat(messages: readonly ChatMessage[], schema: z.ZodType, signal?: AbortSignal): Promise<{ content: string; model: string; deployment: string | null }> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.chatOnce(messages, schema, signal);
+      } catch (err) {
+        if (!(err instanceof LlmError) || !err.transient || attempt >= this.retry.attempts || signal?.aborted) throw err;
+        await new Promise((r) => setTimeout(r, this.retry.delayMs * 2 ** (attempt - 1)));
+      }
+    }
+  }
+
+  private async chatOnce(messages: readonly ChatMessage[], schema: z.ZodType, signal?: AbortSignal): Promise<{ content: string; model: string; deployment: string | null }> {
     for (;;) {
       const res = await this.post(messages, this.responseFormat(schema), signal);
       if (res.ok) {
@@ -100,7 +123,7 @@ export class LlmClient {
         this.format = next;
         continue;
       }
-      throw new LlmError(`LLM : erreur ${res.status} ${text}`);
+      throw new LlmError(`LLM : erreur ${res.status} ${text}`, res.status === 429 || res.status >= 500);
     }
   }
 
@@ -131,8 +154,8 @@ export class LlmClient {
         signal,
       );
     } catch (err) {
-      if (isTimeout(err) && !signal?.aborted) throw new LlmError(`LLM : délai dépassé (${this.config.timeoutSec} s)`);
-      throw new LlmError(`LLM injoignable : ${err instanceof Error ? err.message : err}`);
+      if (isTimeout(err) && !signal?.aborted) throw new LlmError(`LLM : délai dépassé (${this.config.timeoutSec} s)`, true);
+      throw new LlmError(`LLM injoignable : ${err instanceof Error ? err.message : err}`, !signal?.aborted);
     }
   }
 }

@@ -197,7 +197,7 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       await ctx.pipeline.retry(meeting.id);
-      await interaction.deferUpdate(); // le message de suivi se met à jour de lui-même
+      await replyEphemeral(interaction, m.pipeline.retried); // le message de suivi se met à jour de lui-même
       return;
     }
 

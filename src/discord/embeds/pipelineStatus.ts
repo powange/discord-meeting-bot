@@ -1,8 +1,8 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, type APIContainerComponent } from 'discord.js';
 import { encode } from '../../domain/customId.js';
+import { failureCause } from '../../domain/failure.js';
 import type { PipelineStep, StepStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
-import { truncate } from '../../lib/text.js';
 
 export interface StepView {
   step: PipelineStep;
@@ -19,7 +19,8 @@ export function renderPipelineStatus(meetingId: string, steps: readonly StepView
   const failed = steps.some((s) => s.status === 'failed');
   const allDone = steps.length > 0 && steps.every((s) => s.status === 'done');
   const lines = steps.map((s) => {
-    const detail = s.detail ? ` — ${s.status === 'failed' ? truncate(s.detail, 300) : s.detail}` : '';
+    // Message public : une cause compréhensible, jamais l'exception brute (elle va au salon d'alertes).
+    const detail = s.status === 'failed' ? ` — ${p.causes[failureCause(s.detail ?? '')]}` : s.detail ? ` — ${s.detail}` : '';
     if (s.skipped) return `${p.skipped} ${p.steps[s.step] ?? s.step} — ${p.skippedDetail}`;
     return `${p[s.status]} ${p.steps[s.step] ?? s.step}${detail}`;
   });

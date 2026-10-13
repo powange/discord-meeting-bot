@@ -58,6 +58,8 @@ const transcriptionSchema = z.strictObject({
   maxBlockMin: z.int().min(1).max(30).default(5),
   /** Retire les échos (même phrase captée par le micro d'un voisin sans casque). */
   dropEchoes: z.boolean().default(true),
+  /** Durée maximale de l'étape : un serveur qui accepte sans jamais répondre ne bloque pas la file des heures. */
+  stepMaxMin: z.int().min(10).max(24 * 60).default(240),
 });
 
 const llmSchema = z.strictObject({

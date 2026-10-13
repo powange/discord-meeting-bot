@@ -1,6 +1,7 @@
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { openAsBlob } from 'node:fs';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
 import { summarizeMeeting } from '../ai/llm/summarize.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
@@ -59,13 +60,13 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   const plan = planParts(endMs, limit);
   const kbps = plan?.kbps ?? 24;
 
-  // Republication (retranscription complète) : les anciens messages audio sont remplacés.
+  // Republication (nouvelle session, retranscription) : les anciens messages audio sont remplacés,
+  // mais supprimés seulement une fois le nouvel audio publié (un échec ne laisse pas le post vide).
   const previous = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const previousIds = [
     ...(Array.isArray(previous?.messageIds) ? (previous.messageIds as string[]) : []),
     ...(typeof previous?.messageId === 'string' ? [previous.messageId] : []),
   ];
-  if (thread) for (const id of previousIds) await thread.messages.delete(id).catch(() => undefined);
 
   const dir = join(config.dataDir, 'meetings', meeting.guildId, meeting.id);
   const tmp = join(dir, 'tmp');
@@ -87,36 +88,51 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   if (!thread) return output;
   await ensureUnarchived(thread);
 
-  const send = (content: string, attachment?: { path: string; name: string }) =>
-    thread.send({
+  const sent: string[] = [];
+  const send = async (content: string, attachment?: { path: string; name: string }) => {
+    const message = await thread.send({
       content,
       ...(attachment ? { files: [{ attachment: attachment.path, name: attachment.name }] } : {}),
       flags: MessageFlags.SuppressNotifications,
       allowedMentions: { parse: [] },
     });
+    sent.push(message.id);
+    return message;
+  };
   const duration = m.format.duration(endMs);
 
-  if (!plan || (parts.length === 0 && size > limit)) {
-    const message = await send(m.audio.tooLarge(duration, Math.round(size / 1024 / 1024)));
-    return { ...output, attached: false, messageIds: [message.id], url: message.url };
+  const post = async (): Promise<{ attached: boolean; url: string }> => {
+    if (!plan || (parts.length === 0 && size > limit)) {
+      return { attached: false, url: (await send(m.audio.tooLarge(duration, Math.round(size / 1024 / 1024)))).url };
+    }
+    if (parts.length === 0) return { attached: true, url: (await send(m.audio.published(duration), { path: file, name: fileName })).url };
+    // Une partie par message : la limite d'envoi peut s'appliquer au message entier.
+    let url = '';
+    for (const [i, part] of parts.entries()) {
+      const from = clock(i * plan.partMs);
+      const to = clock(Math.min(endMs, (i + 1) * plan.partMs));
+      const tooBig = (await stat(part)).size > limit;
+      const content = `${i === 0 ? `${m.audio.publishedParts(duration, parts.length)}\n` : ''}${m.audio.part(i + 1, parts.length, from, to)}`;
+      const message = await send(tooBig ? `${content} · ${m.audio.partTooLarge}` : content, tooBig ? undefined : { path: part, name: `${base}-partie${i + 1}.ogg` });
+      if (i === 0) url = message.url;
+    }
+    return { attached: true, url };
+  };
+  let posted: { attached: boolean; url: string };
+  try {
+    posted = await post();
+  } catch (err) {
+    // Envoi partiel : on retire ce qui est parti, la relance republiera tout (sans doublon).
+    await deleteMessages(thread, sent);
+    throw err;
   }
-  if (parts.length === 0) {
-    const message = await send(m.audio.published(duration), { path: file, name: fileName });
-    return { ...output, attached: true, messageIds: [message.id], url: message.url };
-  }
-  // Une partie par message : la limite d'envoi peut s'appliquer au message entier.
-  const ids: string[] = [];
-  let url = '';
-  for (const [i, part] of parts.entries()) {
-    const from = clock(i * plan.partMs);
-    const to = clock(Math.min(endMs, (i + 1) * plan.partMs));
-    const tooBig = (await stat(part)).size > limit;
-    const content = `${i === 0 ? `${m.audio.publishedParts(duration, parts.length)}\n` : ''}${m.audio.part(i + 1, parts.length, from, to)}`;
-    const message = await send(tooBig ? `${content} · ${m.audio.partTooLarge}` : content, tooBig ? undefined : { path: part, name: `${base}-partie${i + 1}.ogg` });
-    ids.push(message.id);
-    if (i === 0) url = message.url;
-  }
-  return { ...output, attached: true, messageIds: ids, url };
+  await deleteMessages(thread, previousIds);
+  return { ...output, ...posted, messageIds: sent };
+}
+
+/** Suppression de messages du bot, sans échouer sur ceux déjà supprimés à la main. */
+async function deleteMessages(thread: ThreadChannel, ids: readonly string[]): Promise<void> {
+  for (const id of ids) await thread.messages.delete(id).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------- transcription
@@ -165,11 +181,15 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   const tmp = join(config.dataDir, 'tmp', meeting.id);
   await mkdir(tmp, { recursive: true });
 
+  // Annulation commune : abandon du traitement, durée maximale dépassée, ou échec d'un bloc
+  // (les autres s'arrêtent au lieu de continuer pendant qu'on supprime leur dossier).
+  const failed = new AbortController();
+  const stepSignal = AbortSignal.any([signal, failed.signal, AbortSignal.timeout(cfg.stepMaxMin * 60_000)]);
   try {
     const queue = [...pending];
     const worker = async () => {
       for (let block = queue.shift(); block; block = queue.shift()) {
-        signal.throwIfAborted();
+        stepSignal.throwIfAborted();
         const rec = byId.get(block.recordingId)!;
         const segments = await repos.segmentsByIds(block.segmentIds);
         const wav = join(tmp, `bloc-${block.id}.wav`);
@@ -177,10 +197,10 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
           ffmpeg,
           segments.map((s) => ({ file: s.filePath, offsetMs: s.startMs - block.startMs })),
           wav,
-          signal,
+          stepSignal,
         );
-        const audio = new Blob([await readFile(wav)], { type: 'audio/wav' });
-        const result = await pool.transcribe(audio, `bloc-${block.id}.wav`, { language: cfg.language, prompt }, signal);
+        const audio = await openAsBlob(wav, { type: 'audio/wav' }); // lu au fil de l'envoi, pas chargé en mémoire
+        const result = await pool.transcribe(audio, `bloc-${block.id}.wav`, { language: cfg.language, prompt }, stepSignal);
         await rm(wav, { force: true });
 
         const origin = rec.startedAt.getTime() + block.startMs;
@@ -194,7 +214,21 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
         ctx.progress(`${ctx.m.pipeline.progressTranscribe(++done, blocks.length)} · ${result.backend}`);
       }
     };
-    await Promise.all(Array.from({ length: Math.max(1, Math.min(pool.capacity, pending.length)) }, worker));
+    const results = await Promise.allSettled(
+      Array.from({ length: Math.max(1, Math.min(pool.capacity, pending.length)) }, () =>
+        worker().catch((err) => {
+          failed.abort();
+          throw err;
+        }),
+      ),
+    );
+    const firstError = results.find((r) => r.status === 'rejected')?.reason as unknown;
+    if (firstError !== undefined) {
+      if (!signal.aborted && !failed.signal.aborted && stepSignal.aborted) throw new Error(ctx.m.pipeline.stepTooLong(cfg.stepMaxMin));
+      // Erreur d'origine plutôt que les annulations qu'elle a provoquées chez les autres blocs.
+      const original = results.find((r) => r.status === 'rejected' && !(r.reason instanceof Error && r.reason.name === 'AbortError'));
+      throw (original as PromiseRejectedResult | undefined)?.reason ?? firstError;
+    }
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
@@ -272,17 +306,18 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const thread = await fetchThread(client, meeting.threadId);
   if (!thread) throw new Error('Post de la réunion introuvable');
 
-  // Republication (compte rendu régénéré) : l'ancien compte rendu est remplacé.
+  // Compte rendu déjà publié (correction, régénération) : édité sur place si possible, sinon
+  // remplacé — le nouveau d'abord, l'ancien supprimé ensuite.
   const previous = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'publish')?.output;
-  for (const id of Array.isArray(previous?.messageIds) ? (previous.messageIds as string[]) : []) {
-    await thread.messages.delete(id).catch(() => undefined);
-  }
+  const previousIds = Array.isArray(previous?.messageIds) ? (previous.messageIds as string[]) : [];
+  const alreadyMentioned = new Set(Array.isArray(previous?.mentioned) ? (previous.mentioned as string[]) : []);
 
   const summary = await repos.getSummary(meeting.id);
   const { lines, names } = await loadTranscript(deps, meeting);
   await ensureUnarchived(thread);
   if (!summary || lines.length === 0) {
     const message = await thread.send({ content: m.report.noSpeech, flags: MessageFlags.SuppressNotifications });
+    await deleteMessages(thread, previousIds);
     return { messageIds: [message.id], url: message.url };
   }
 
@@ -320,23 +355,68 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
     lines.map((l) => ({ time: formatClock(l.startAt, settings.timezone), name: l.name, text: l.text })),
   );
 
-  // Les responsables d'actions sont notifiés ; le reste du compte rendu est silencieux.
-  const assignees = summary.content.topics
-    .flatMap((t) => t.actions.map((a) => (a.who ? resolvePerson(a.who, people) : '')))
-    .flatMap((mention) => /^<@(\d+)>$/.exec(mention)?.slice(1) ?? []);
+  // Les responsables d'actions sont notifiés, une seule fois chacun : une correction ne
+  // re-mentionne que les nouveaux. Le reste du compte rendu est silencieux.
+  const assignees = [
+    ...new Set(
+      summary.content.topics
+        .flatMap((t) => t.actions.map((a) => (a.who ? resolvePerson(a.who, people) : '')))
+        .flatMap((mention) => /^<@(\d+)>$/.exec(mention)?.slice(1) ?? []),
+    ),
+  ];
+  const toMention = assignees.filter((id) => !alreadyMentioned.has(id));
+  const mentioned = [...new Set([...alreadyMentioned, ...assignees])];
+  const transcript = () => ({ attachment: Buffer.from(markdown, 'utf8'), name: transcriptFile });
 
-  const ids: string[] = [];
-  let url = '';
-  for (const [i, container] of containers.entries()) {
-    const last = i === containers.length - 1;
-    const message = await thread.send({
-      components: [container],
-      flags: MessageFlags.IsComponentsV2,
-      allowedMentions: { users: [...new Set(assignees)] },
-      ...(last ? { files: [{ attachment: Buffer.from(markdown, 'utf8'), name: transcriptFile }] } : {}),
-    });
-    ids.push(message.id);
-    if (i === 0) url = message.url;
+  // Même nombre de messages et personne de nouveau à prévenir : édition (liens conservés, aucune notification).
+  if (previousIds.length === containers.length && toMention.length === 0) {
+    const url = await editReport(thread, previousIds, containers, transcript).catch(() => null);
+    if (url) return { messageIds: previousIds, url, mentioned };
   }
-  return { messageIds: ids, url };
+
+  const sent: string[] = [];
+  let url = '';
+  try {
+    for (const [i, container] of containers.entries()) {
+      const last = i === containers.length - 1;
+      const message = await thread.send({
+        components: [container],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { users: toMention },
+        ...(last ? { files: [transcript()] } : {}),
+      });
+      sent.push(message.id);
+      if (i === 0) url = message.url;
+    }
+  } catch (err) {
+    await deleteMessages(thread, sent);
+    throw err;
+  }
+  await deleteMessages(thread, previousIds);
+  return { messageIds: sent, url, mentioned };
+}
+
+/** Édite le compte rendu publié ; null si un message manque (supprimé à la main) : il faut republier. */
+async function editReport(
+  thread: ThreadChannel,
+  ids: readonly string[],
+  containers: readonly APIContainerComponent[],
+  transcript: () => { attachment: Buffer; name: string },
+): Promise<string | null> {
+  const messages = [];
+  for (const id of ids) {
+    const message = await thread.messages.fetch(id).catch(() => null);
+    if (!message) return null;
+    messages.push(message);
+  }
+  for (const [i, message] of messages.entries()) {
+    const last = i === messages.length - 1;
+    await message.edit({
+      components: [containers[i]!],
+      allowedMentions: { parse: [] },
+      // La transcription jointe est remplacée par la nouvelle.
+      ...(last ? { files: [transcript()], attachments: [] } : {}),
+    });
+  }
+  return messages[0]!.url;
 }

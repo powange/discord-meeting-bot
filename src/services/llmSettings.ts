@@ -54,7 +54,7 @@ export async function testLlm(llm: LlmConfig, allowedHosts: readonly string[]): 
   if (!llm.baseUrl) return { ok: false, error: 'aucune adresse configurée' };
   const started = Date.now();
   try {
-    const client = new LlmClient({ ...llm, timeoutSec: Math.min(llm.timeoutSec, 180) }, allowedHosts);
+    const client = new LlmClient({ ...llm, timeoutSec: Math.min(llm.timeoutSec, 180) }, allowedHosts, { attempts: 1, delayMs: 0 });
     const r = await client.json([{ role: 'user', content: 'Réponds exactement {"ok": true}.' }], z.object({ ok: z.boolean() }));
     return { ok: true, ms: Date.now() - started, model: r.deployment ? `${r.model} (${r.deployment})` : r.model };
   } catch (err) {

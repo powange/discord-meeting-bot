@@ -150,11 +150,11 @@ export class PipelineService {
       } catch (err) {
         this.deps.log.error({ meetingId, err }, 'Traitement post-réunion en échec');
       } finally {
-        this.queue.shift();
-      }
-      if (this.refreshAfterRun.delete(meetingId) && !this.stopping) {
-        await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]);
-        this.queue.push(meetingId);
+        // Mise à jour demandée pendant le traitement : la réunion reste en tête de file (jamais
+        // retirée puis remise, sinon elle paraîtrait « libre » un instant et serait doublée).
+        const again = this.refreshAfterRun.delete(meetingId) && !this.stopping;
+        if (again) await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]).catch((err) => this.deps.log.error({ meetingId, err }, 'Mise à jour du traitement impossible'));
+        else this.queue.shift();
       }
     }
   }
@@ -199,6 +199,8 @@ export class PipelineService {
         await repos.updateStep(meetingId, row.step, { status: 'failed', finishedAt: new Date(), error: message });
         details.set(row.step, message);
         await status.update(details);
+        // L'organisateur est prévenu (le message de suivi, lui, est silencieux).
+        await this.notifyFailure(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec impossible'));
         const url = meeting.threadId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}` : '';
         await this.deps.alerts
           ?.guild(meeting.guildId, `pipeline:${row.step}`, m.alerts.stepFailed(meeting.title, m.pipeline.steps[row.step] ?? row.step, message.slice(0, 300), url))
@@ -207,6 +209,13 @@ export class PipelineService {
       }
     }
     await status.update(details);
+  }
+
+  private async notifyFailure(meeting: MeetingRow, m: Messages): Promise<void> {
+    const thread = await fetchThread(this.deps.client, meeting.threadId);
+    if (!thread) return;
+    await ensureUnarchived(thread);
+    await thread.send({ content: m.pipeline.failedNotice(meeting.organizerId), allowedMentions: { users: [meeting.organizerId] } });
   }
 }
 

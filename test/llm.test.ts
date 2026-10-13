@@ -9,6 +9,8 @@ import { correctionsBlock, sanitize, summarizeMeeting, type SummaryContext } fro
 let reply: (body: { messages: Array<{ role: string; content: string }> }) => string = () => '{}';
 /** Formats refusés par le serveur simulé (comme LM Studio qui refuse json_object). */
 let rejectFormats: string[] = [];
+/** Codes HTTP renvoyés avant de répondre normalement (erreurs passagères simulées). */
+let failNext: number[] = [];
 const requests: Array<{ body: { model: string; messages: Array<{ role: string; content: string }>; response_format: unknown }; auth?: string }> = [];
 let server: Server;
 let base: string;
@@ -19,6 +21,11 @@ beforeAll(async () => {
     for await (const c of req) raw += c;
     const body = JSON.parse(raw);
     const format = body.response_format?.type ?? 'none';
+    const failure = failNext.shift();
+    if (failure) {
+      requests.push({ body });
+      return res.writeHead(failure, { 'content-type': 'application/json' }).end('{"error":"busy"}');
+    }
     if (rejectFormats.includes(format)) {
       requests.push({ body, ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
       return res.writeHead(400, { 'content-type': 'application/json' }).end(`{"error":"'response_format.type' must be 'json_schema' or 'text'"}`);
@@ -33,7 +40,7 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-const llm = () => new LlmClient({ baseUrl: base, apiKey: 'k', model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 30 });
+const llm = () => new LlmClient({ baseUrl: base, apiKey: 'k', model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 30 }, [], { attempts: 3, delayMs: 1 });
 const ctx: SummaryContext = {
   title: 'Bureau',
   description: '',
@@ -61,6 +68,19 @@ describe('extractJson', () => {
 });
 
 describe('LlmClient', () => {
+  it('erreur passagère (503, 429) : nouvelle tentative ; erreur définitive (401) : échec immédiat', async () => {
+    reply = () => JSON.stringify({ overview: 'ok', topics: [] });
+    failNext = [503, 429];
+    const before = requests.length;
+    await expect(llm().json([{ role: 'user', content: 'x' }], meetingSummarySchema)).resolves.toMatchObject({ value: { overview: 'ok' } });
+    expect(requests.length - before).toBe(3);
+    failNext = [401];
+    await expect(llm().json([{ role: 'user', content: 'x' }], meetingSummarySchema)).rejects.toThrow(/401/);
+    failNext = [500, 500, 500];
+    await expect(llm().json([{ role: 'user', content: 'x' }], meetingSummarySchema)).rejects.toThrow(/500/);
+    failNext = [];
+  });
+
   it('sortie structurée (json_schema), modèle, clé, et trace du déploiement LiteLLM', async () => {
     rejectFormats = [];
     reply = () => JSON.stringify({ overview: 'ok', topics: [] });
