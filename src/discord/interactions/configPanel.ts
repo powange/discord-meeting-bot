@@ -146,7 +146,13 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!interaction.isStringSelectMenu()) return;
       const mode = interaction.values[0];
       if (mode === 'free') await ctx.repos.updateSettings(guildId, { voiceChannelId: null, autoVoice: false });
-      else if (mode === 'auto') await ctx.repos.updateSettings(guildId, { voiceChannelId: null, autoVoice: true });
+      else if (mode === 'auto') {
+        await ctx.repos.updateSettings(guildId, { voiceChannelId: null, autoVoice: true });
+        await ctx.meetings.replanGuild(guildId);
+        const settings = await ctx.settings.get(guildId);
+        const problem = voiceCategoryProblem(interaction.guild, settings.autoVoiceCategoryId ?? forumParent(interaction.guild, settings.forumChannelId), m);
+        return show('voice', problem ? `${t.saved}\n${problem}` : t.saved);
+      }
       // « Imposé » : le salon reste à choisir dans la liste qui apparaît.
       else if (mode === 'fixed') return show('voice', t.pickVoiceNow, undefined, undefined, 'fixed');
       await ctx.meetings.replanGuild(guildId); // tâche de création du salon (ajoutée ou retirée)
@@ -154,8 +160,13 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     }
     case 'voiceCategory': {
       if (!interaction.isChannelSelectMenu()) return;
-      await ctx.repos.updateSettings(guildId, { autoVoiceCategoryId: interaction.values[0] ?? null });
-      return show('voice', t.saved);
+      const categoryId = interaction.values[0] ?? null;
+      const settings = await ctx.settings.get(guildId);
+      // Catégorie où le bot ne peut pas créer de salon : refusée, plutôt qu'un échec le jour de la réunion.
+      const problem = voiceCategoryProblem(interaction.guild, categoryId ?? forumParent(interaction.guild, settings.forumChannelId), m);
+      if (problem && categoryId) return show('voice', problem);
+      await ctx.repos.updateSettings(guildId, { autoVoiceCategoryId: categoryId });
+      return show('voice', problem ? `${t.saved}\n${problem}` : t.saved);
     }
     case 'voiceLead': {
       if (!interaction.isStringSelectMenu()) return;
@@ -349,4 +360,23 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show('recording', t.saved);
     }
   }
+}
+
+/** Catégorie du forum des réunions (emplacement par défaut des salons temporaires). */
+function forumParent(guild: Guild, forumId: string | null): string | null {
+  return (forumId && guild.channels.cache.get(forumId)?.parentId) || null;
+}
+
+/** Permissions qui manquent au bot pour créer des salons dans la catégorie (ou à la racine du serveur). */
+function voiceCategoryProblem(guild: Guild, categoryId: string | null, m: Messages): string | null {
+  const me = guild.members.me;
+  const category = categoryId ? guild.channels.cache.get(categoryId) : null;
+  const perms = category && me ? category.permissionsFor(me) : (me?.permissions ?? null);
+  const needed = { ManageChannels: PermissionFlagsBits.ManageChannels, ViewChannel: PermissionFlagsBits.ViewChannel };
+  const missing = Object.entries(needed)
+    .filter(([, flag]) => !perms?.has(flag))
+    .map(([name]) => name);
+  if (missing.length === 0) return null;
+  const where = category ? `<#${category.id}>` : m.config.voiceCategoryForum;
+  return m.config.voiceCategoryPermissions(where, missing.join(', '));
 }

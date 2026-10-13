@@ -45,7 +45,19 @@ export class MeetingWatcher {
       for (const id of this.lastHumanAt.keys()) if (!liveIds.has(id)) this.lastHumanAt.delete(id);
 
       for (const meeting of live) {
-        if (!meeting.voiceChannelId) continue; // salon temporaire pas (encore) créé : rien à surveiller
+        if (!meeting.voiceChannelId) {
+          // Création du salon temporaire en échec au début : on réessaie ; sans salon, la réunion
+          // est close après la fin prévue (personne n'a pu s'y retrouver).
+          const fixed = await this.meetings.ensureVoice(meeting.id).catch(() => undefined);
+          if (fixed?.voiceChannelId) continue;
+          const plannedEnd = new Date(meeting.startsAt.getTime() + meeting.durationMin * 60_000);
+          const graceMin = this.config.guild(meeting.guildId).recording.endWhenEmptyMin;
+          if (shouldCloseForEmpty({ humansPresent: 0, lastHumanAt: null, plannedEnd, now, graceMin })) {
+            this.log.info({ meetingId: meeting.id }, 'Réunion sans salon vocal : clôture après la fin prévue');
+            await this.meetings.end(meeting.id, null).catch((err) => this.log.warn({ meetingId: meeting.id, err: errorMessage(err) }, 'Clôture impossible'));
+          }
+          continue;
+        }
         const channel = this.client.channels.cache.get(meeting.voiceChannelId);
         const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
         if (humans > 0) {

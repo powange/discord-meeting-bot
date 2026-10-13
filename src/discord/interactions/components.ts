@@ -306,7 +306,8 @@ export async function handleAction(
       const copy = await ctx.meetings.create(
         interaction.guild,
         interaction.user.id,
-        { title: meeting.title, description: meeting.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceChannelId },
+        // Un salon temporaire appartient à la réunion d'origine (il sera supprimé) : la copie ne le reprend pas.
+        { title: meeting.title, description: meeting.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
         input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
       );
       await replyEphemeral(interaction, m.replies.duplicated(copy.threadId!));

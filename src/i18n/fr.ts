@@ -123,6 +123,8 @@ export const fr = {
     nudge: "Pas encore de réponse — merci d'indiquer votre présence :",
     voiceFallback: 'le salon vocal',
     voicePending: 'un salon créé peu avant le début',
+    voiceCreateFailed: (organizerId: string) =>
+      `⚠️ <@${organizerId}> le salon vocal de cette réunion n'a pas pu être créé. Un administrateur doit vérifier les permissions du bot (/config → Salon vocal) ; nouvel essai automatique dans quelques instants.`,
   },
 
   control: {
@@ -269,6 +271,9 @@ export const fr = {
   alerts: {
     stepFailed: (title: string, step: string, error: string, url: string) => `Compte rendu de « ${title} » : l'étape ${step} a échoué (${error}). ${url}`,
     recordingInterrupted: (title: string, reason: string, url: string) => `Enregistrement de « ${title} » interrompu (${reason}). Reprise possible depuis le post : ${url}`,
+    voiceCreateFailed: (title: string, error: string) =>
+      `Salon vocal de « ${title} » impossible à créer (${error}). Vérifiez que le bot peut « Gérer les salons » dans la catégorie choisie (/config → Salon vocal).`,
+    voiceDeleteFailed: (channelId: string) => `Le salon temporaire <#${channelId}> n'a pas pu être supprimé après la réunion : supprimez-le à la main.`,
   },
 
   manage: {
@@ -432,7 +437,9 @@ export const fr = {
     },
     voiceAutoSummary: (leadMin: number, categoryId: string | null) =>
       `créé automatiquement ${leadMin} min avant · ${categoryId ? `catégorie <#${categoryId}>` : 'catégorie du forum'}`,
-    pickVoiceNow: '👇 Choisissez le salon imposé.',
+    pickVoiceNow: '👇 Choisissez le salon imposé : le mode ne sera enregistré qu’une fois le salon choisi.',
+    voiceCategoryPermissions: (where: string, perms: string) => `❌ Je ne peux pas créer de salon dans ${where} : il me manque ${perms}.`,
+    voiceCategoryForum: 'la catégorie du forum',
     pickVoiceCategory: 'Catégorie des salons (vide : celle du forum)',
     voiceLead: (min: number) => `Créé ${min} min avant le début`,
     managerRole: 'Gestionnaires',

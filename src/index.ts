@@ -64,6 +64,7 @@ async function main(): Promise<void> {
   const recordings = new RecordingService(client, repos, settings, cards, config, log, optouts);
   const alerts = new AlertService(client, repos, log);
   recordings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
+  meetings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
   const pipelineDeps = { client, repos, settings, config, log, alerts };
   const pipeline = new PipelineService(pipelineDeps, createSteps(pipelineDeps));
   meetings.hooks = {

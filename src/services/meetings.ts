@@ -1,4 +1,4 @@
-import { ChannelType, MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel } from 'discord.js';
+import { ChannelType, MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel, type VoiceBasedChannel } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
@@ -12,11 +12,13 @@ import { displayName, joinVoiceRows, sendWithMentions, voiceName } from '../disc
 import { reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
-import { errorMessage, UserError } from '../lib/errors.js';
+import { discordErrorCode, errorMessage, UserError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { truncate } from '../lib/text.js';
 import type { CardService } from './cards.js';
 import type { SettingsService } from './settings.js';
+
+const UNKNOWN_CHANNEL = 10003;
 
 export interface MeetingHooks {
   /** Réunion passée « En cours » (démarrage auto de l'enregistrement). */
@@ -45,6 +47,11 @@ export class MeetingService {
   private readonly events: ScheduledEvents;
   /** Créations de salon temporaire en cours (rappel, début et enregistrement peuvent la demander ensemble). */
   private readonly creatingVoice = new Map<string, Promise<MeetingRow | undefined>>();
+  /** Réunions dont l'échec de création du salon a déjà été signalé dans le post (une fois suffit). */
+  private readonly voiceFailureNotified = new Set<string>();
+  /** Échecs de suppression d'un salon temporaire, par réunion : au-delà de 10, on abandonne. */
+  private readonly deleteFailures = new Map<string, number>();
+  private alert: (guildId: string, cause: string, message: string) => Promise<unknown> = async () => undefined;
   /** Branchements de l'enregistrement (phase 2), renseignés au démarrage. */
   hooks: MeetingHooks = { afterStart: async () => undefined, beforeClose: async () => undefined, afterEnd: async () => undefined };
 
@@ -59,6 +66,10 @@ export class MeetingService {
     private readonly onChange: (guildId: string) => void = () => undefined,
   ) {
     this.events = new ScheduledEvents(log);
+  }
+
+  setAlert(fn: (guildId: string, cause: string, message: string) => Promise<unknown>): void {
+    this.alert = fn;
   }
 
   async create(guild: Guild, organizerId: string, input: MeetingInput, options: { copyAgendaFrom?: string } = {}): Promise<MeetingRow> {
@@ -116,7 +127,12 @@ export class MeetingService {
       input.voiceChannelId !== meeting.voiceChannelId;
     if (rescheduled && !canReschedule(meeting.status)) throw new UserError(m.errors.cannotReschedule);
 
-    let updated = (await this.repos.updateMeeting(meeting.id, input))!;
+    // Salon remplacé (changement de mode, autre salon choisi) : il n'est plus temporaire, et
+    // l'ancien salon temporaire est supprimé. Sinon le nouveau, permanent, le serait en fin de réunion.
+    const voiceChanged = input.voiceChannelId !== meeting.voiceChannelId;
+    const patch = voiceChanged && meeting.voiceTemporary ? { ...input, voiceTemporary: false, voiceDeletedAt: null } : input;
+    let updated = (await this.repos.updateMeeting(meeting.id, patch))!;
+    if (voiceChanged && meeting.voiceTemporary && meeting.voiceChannelId) await this.dropReplacedVoice(meeting, meeting.voiceChannelId);
     const thread = await fetchThread(this.client, updated.threadId);
     if (thread) {
       await ensureUnarchived(thread);
@@ -234,7 +250,12 @@ export class MeetingService {
   async ensureVoice(meetingId: string): Promise<MeetingRow | undefined> {
     const pending = this.creatingVoice.get(meetingId);
     if (pending) return pending;
-    const task = this.doEnsureVoice(meetingId).finally(() => this.creatingVoice.delete(meetingId));
+    const task = this.doEnsureVoice(meetingId)
+      .catch(async (err) => {
+        await this.reportVoiceFailure(meetingId, err).catch(() => undefined);
+        throw err;
+      })
+      .finally(() => this.creatingVoice.delete(meetingId));
     this.creatingVoice.set(meetingId, task);
     return task;
   }
@@ -242,12 +263,28 @@ export class MeetingService {
   /** Supprime le salon temporaire d'une réunion finie, une fois vide. Renvoie vrai si c'est fait. */
   async deleteTemporaryVoice(meeting: MeetingRow): Promise<boolean> {
     if (!meeting.voiceTemporary || meeting.voiceDeletedAt || isOpen(meeting.status)) return false;
-    const channel = meeting.voiceChannelId ? await this.client.channels.fetch(meeting.voiceChannelId).catch(() => null) : null;
-    if (channel?.isVoiceBased()) {
-      if (channel.members.filter((mb) => !mb.user.bot).size > 0) return false;
-      // En cas d'échec (permission retirée…), on n'insiste pas : la surveillance réessaierait toutes les 30 s.
-      await channel.delete(`Fin de la réunion « ${meeting.title} »`).catch((err) => this.warn(meeting, 'Suppression du salon temporaire impossible', err));
+    // Jamais le salon imposé par /config, même si l'indicateur était resté faux d'une ancienne version.
+    const settings = await this.settings.get(meeting.guildId);
+    if (meeting.voiceChannelId && meeting.voiceChannelId !== settings.voiceChannelId) {
+      const found = await this.fetchVoice(meeting.voiceChannelId);
+      if (found === 'unknown') return false; // erreur passagère : on réessaiera
+      if (found !== 'missing') {
+        if (found.members.filter((mb) => !mb.user.bot).size > 0) return false;
+        try {
+          await found.delete(`Fin de la réunion « ${meeting.title} »`);
+        } catch (err) {
+          if (discordErrorCode(err) !== UNKNOWN_CHANNEL) {
+            // Permission retirée… : on réessaie au passage suivant, puis on abandonne au bout de 10 échecs.
+            const failures = (this.deleteFailures.get(meeting.id) ?? 0) + 1;
+            this.deleteFailures.set(meeting.id, failures);
+            this.warn(meeting, 'Suppression du salon temporaire impossible', err);
+            if (failures < 10) return false;
+            await this.alert(meeting.guildId, 'voice-delete', messages(settings.locale).alerts.voiceDeleteFailed(meeting.voiceChannelId));
+          }
+        }
+      }
     }
+    this.deleteFailures.delete(meeting.id);
     await this.repos.updateMeeting(meeting.id, { voiceDeletedAt: new Date() });
     this.cards.refresh(meeting.id, ['card']);
     this.log.info({ meetingId: meeting.id, channelId: meeting.voiceChannelId }, 'Salon vocal temporaire supprimé');
@@ -261,7 +298,8 @@ export class MeetingService {
     if (!meeting || !isOpen(meeting.status)) return meeting;
     if (meeting.voiceChannelId) {
       if (!meeting.voiceTemporary) return meeting;
-      if (await this.client.channels.fetch(meeting.voiceChannelId).catch(() => null)) return meeting;
+      // Recréé seulement s'il a vraiment disparu : une erreur passagère ne doit pas créer de doublon.
+      if ((await this.fetchVoice(meeting.voiceChannelId)) !== 'missing') return meeting;
     }
     const guild = await this.guild(meeting);
     if (!guild) return meeting;
@@ -288,8 +326,45 @@ export class MeetingService {
       if (eventId !== updated.scheduledEventId) updated = (await this.repos.updateMeeting(updated.id, { scheduledEventId: eventId }))!;
     }
     await this.cards.refreshNow(updated.id).catch((err) => this.warn(updated, 'Mise à jour de la carte impossible', err));
+    this.voiceFailureNotified.delete(updated.id);
     this.log.info({ meetingId: updated.id, channelId: channel.id }, 'Salon vocal temporaire créé');
     return updated;
+  }
+
+  /** Salon vocal : trouvé, introuvable (supprimé), ou inconnu (erreur passagère de Discord). */
+  private async fetchVoice(channelId: string): Promise<VoiceBasedChannel | 'missing' | 'unknown'> {
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      return channel?.isVoiceBased() ? channel : 'missing';
+    } catch (err) {
+      return discordErrorCode(err) === UNKNOWN_CHANNEL ? 'missing' : 'unknown';
+    }
+  }
+
+  /** Ancien salon temporaire remplacé : supprimé s'il est vide (sinon laissé, et signalé). */
+  private async dropReplacedVoice(meeting: MeetingRow, channelId: string): Promise<void> {
+    const found = await this.fetchVoice(channelId);
+    if (found === 'missing' || found === 'unknown') return;
+    if (found.members.filter((mb) => !mb.user.bot).size > 0) {
+      this.log.warn({ meetingId: meeting.id, channelId }, 'Ancien salon temporaire occupé : non supprimé');
+      return;
+    }
+    await found.delete(`Salon de la réunion « ${meeting.title} » remplacé`).catch((err) => this.warn(meeting, 'Suppression de l’ancien salon temporaire impossible', err));
+  }
+
+  /** Échec de création du salon : alerte (limitée par l'AlertService) et, une seule fois, message dans le post. */
+  private async reportVoiceFailure(meetingId: string, err: unknown): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting) return;
+    const m = messages((await this.settings.get(meeting.guildId)).locale);
+    this.warn(meeting, 'Création du salon vocal impossible', err);
+    await this.alert(meeting.guildId, 'voice-create', m.alerts.voiceCreateFailed(meeting.title, errorMessage(err)));
+    if (this.voiceFailureNotified.has(meeting.id)) return;
+    this.voiceFailureNotified.add(meeting.id);
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!thread) return;
+    await ensureUnarchived(thread);
+    await thread.send({ content: m.thread.voiceCreateFailed(meeting.organizerId), allowedMentions: { users: [meeting.organizerId] } });
   }
 
   /**
@@ -300,6 +375,7 @@ export class MeetingService {
     if (settings.autoVoice) return { ...input, voiceChannelId: current?.voiceChannelId ?? null };
     if (!settings.voiceChannelId) {
       if (!input.voiceChannelId) throw new UserError(m.errors.voiceRequired);
+      if (input.voiceChannelId !== current?.voiceChannelId && (await this.fetchVoice(input.voiceChannelId)) === 'missing') throw new UserError(m.errors.voiceInvalid);
       return input;
     }
     const channel = await this.client.channels.fetch(settings.voiceChannelId).catch(() => null);
