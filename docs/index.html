@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meeting recorder</title>
+  <meta name="description" content="Bot Discord auto-hébergé qui organise, enregistre et résume les réunions d'une association.">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <img src="icon.png" alt="">
+    <div>
+      <h1>Meeting recorder</h1>
+      <p class="lede">Le bot Discord des réunions d'association : organisées, enregistrées, résumées.</p>
+    </div>
+  </header>
+
+  <p>Meeting recorder est un bot Discord <strong>auto-hébergé</strong> : chaque association le fait tourner sur sa propre machine. Il gère les réunions de bout en bout, sans service tiers obligatoire.</p>
+
+  <div class="card">
+    <h2>Ce qu'il fait</h2>
+    <ul>
+      <li><strong>Réunions</strong> : création depuis Discord, ordre du jour, réponses des membres, rappels, sondage de date.</li>
+      <li><strong>Enregistrement</strong> du salon vocal, avec l'accord des participants : ceux qui refusent ne sont jamais enregistrés.</li>
+      <li><strong>Compte rendu</strong> : transcription, résumé par point d'ordre du jour, décisions et actions, publiés dans le fil de la réunion.</li>
+      <li><strong>Copie dans le stockage du serveur</strong> (Google Drive, OneDrive ou Dropbox) : compte rendu, transcription et audio, un dossier par réunion.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Accès au stockage</h2>
+    <p>Les administrateurs d'un serveur Discord connectent eux-mêmes le stockage de leur choix. Sur Google Drive, le bot ne demande que l'accès aux fichiers qu'il crée (<code>drive.file</code>) : il ne voit pas le reste du Drive. L'accès se retire à tout moment depuis Discord ou depuis le compte Google.</p>
+  </div>
+
+  <footer>
+    <p><a href="confidentialite.html">Règles de confidentialité</a> · <a href="https://github.com/powange/meeting-recorder">Code source</a> · <a href="https://github.com/powange/meeting-recorder/issues">Contact</a></p>
+  </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confidentialité · Meeting recorder</title>
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <a href="./"><img src="icon.png" alt="Meeting recorder"></a>
+    <h1>Règles de confidentialité</h1>
+  </header>
+  <p><span class="muted">Dernière mise à jour : 14 octobre 2026</span></p>
+  <p>Meeting recorder est un bot Discord auto-hébergé qui organise des réunions, les enregistre avec l'accord des participants et en publie un compte rendu. Ce document décrit les données qu'il traite, en particulier lorsqu'un serveur Discord le connecte à un stockage en ligne (Google Drive, OneDrive ou Dropbox).</p>
+  <h2>Qui traite les données</h2>
+  <p>Chaque installation du bot est exploitée par une personne ou une association (« l'opérateur ») sur sa propre machine. Les données restent sur cette machine et dans les services que les administrateurs de chaque serveur Discord choisissent de connecter. Le code est public : <a href="https://github.com/powange/meeting-recorder">https://github.com/powange/meeting-recorder</a></p>
+  <h2>Données traitées</h2>
+  <ul>
+    <li><strong>Réunions</strong> : titre, date, ordre du jour, réponses des membres, données saisies dans Discord.</li>
+    <li><strong>Enregistrements</strong> : la voix des participants, uniquement pendant une réunion enregistrée et pour les personnes qui n'ont pas refusé l'enregistrement. Les personnes qui le refusent ne sont jamais enregistrées.</li>
+    <li><strong>Transcriptions et comptes rendus</strong> produits à partir de ces enregistrements.</li>
+    <li><strong>Identifiants Discord</strong> (identifiant et nom affiché) des participants.</li>
+    <li><strong>Accès au stockage connecté</strong> : jetons OAuth chiffrés (AES-256-GCM), et adresse ou nom du compte connecté, affiché aux administrateurs du serveur.</li>
+  </ul>
+  <h2>Utilisation des données Google (et des autres stockages)</h2>
+  <p>Lorsqu'un administrateur connecte un Google Drive, le bot demande uniquement la portée <code>https://www.googleapis.com/auth/drive.file</code>. Il ne peut donc voir et modifier <strong>que les fichiers et dossiers qu'il a lui-même créés</strong>. Il n'a pas accès aux autres fichiers du Drive.</p>
+  <p>Le bot s'en sert pour une seule chose : déposer, dans un dossier par réunion, le compte rendu, la transcription et l'audio de chaque réunion de ce serveur Discord, et les remplacer quand ils sont mis à jour. Il ne lit, n'analyse et ne partage aucun autre contenu.</p>
+  <p>Il en va de même pour Dropbox, limité au dossier <code>Applications/&lt;nom de l'application&gt;</code>, et pour OneDrive, où le bot n'écrit que dans son propre dossier.</p>
+  <p>L'utilisation des informations reçues des API Google respecte la <a href="https://developers.google.com/terms/api-services-user-data-policy">politique relative aux données utilisateur des services d'API Google</a>, y compris les exigences d'utilisation limitée. Les données ne sont ni vendues, ni utilisées à des fins publicitaires, ni utilisées pour entraîner des modèles d'IA.</p>
+  <h2>Partage</h2>
+  <p>Les données ne sont transmises qu'aux services choisis par l'opérateur ou par les administrateurs du serveur :</p>
+  <ul>
+    <li>Discord, pour la publication dans le serveur ;</li>
+    <li>les serveurs de transcription et de résumé configurés par l'opérateur, en général sur ses propres machines ;</li>
+    <li>le stockage connecté par le serveur Discord.</li>
+  </ul>
+  <h2>Conservation et suppression</h2>
+  <ul>
+    <li>Les fichiers audio locaux sont supprimés automatiquement après la durée de conservation réglée par l'opérateur.</li>
+    <li>Un administrateur peut déconnecter le stockage à tout moment dans <code>/config</code> → Stockage : les jetons sont effacés. Les fichiers déjà copiés restent dans le stockage, où leur propriétaire peut les supprimer.</li>
+    <li>L'accès peut aussi être retiré depuis le compte concerné : <a href="https://myaccount.google.com/permissions">https://myaccount.google.com/permissions</a> pour Google, <a href="https://account.microsoft.com/privacy/app-access">https://account.microsoft.com/privacy/app-access</a> pour Microsoft, et les paramètres « Applications connectées » pour Dropbox.</li>
+  </ul>
+  <h2>Contact</h2>
+  <p>Pour toute question, ouvrez une demande sur <a href="https://github.com/powange/meeting-recorder/issues">https://github.com/powange/meeting-recorder/issues</a> ou contactez l'opérateur du bot dans votre serveur Discord.</p>
+  <footer>
+    <p><a href="./">Meeting recorder</a> · <a href="https://github.com/powange/meeting-recorder/blob/main/PRIVACY.md">Version source</a></p>
+  </footer>
+</main>
+</body>
+</html>
