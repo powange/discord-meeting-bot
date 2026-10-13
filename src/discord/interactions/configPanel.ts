@@ -84,9 +84,10 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     throw new UserError(m.backendPanel.forbidden);
   }
 
-  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[], voiceMode?: VoiceMode) => {
+  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[], voiceMode?: VoiceMode, confirmLlmDisable?: boolean) => {
     const c = await context(ctx, guildId, m, notice, interaction.user.id);
     if (models) c.models = models;
+    if (confirmLlmDisable) c.confirmLlmDisable = true;
     if (voiceMode) c.voiceMode = voiceMode;
     const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
     if (type !== undefined) {
@@ -178,11 +179,14 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show('voice', t.saved);
     }
 
-    case 'roleManager':
+    case 'roleManager': {
+      if (!interaction.isRoleSelectMenu()) return;
+      await ctx.repos.updateSettings(guildId, { managerRoleIds: [...interaction.roles.keys()].slice(0, 5) });
+      return show('roles', t.saved);
+    }
     case 'roleNudge': {
       if (!interaction.isRoleSelectMenu()) return;
-      const key = ({ roleManager: 'managerRoleId', roleNudge: 'nudgeRoleId' } as const)[action];
-      await ctx.repos.updateSettings(guildId, { [key]: interaction.roles.first()?.id ?? null });
+      await ctx.repos.updateSettings(guildId, { nudgeRoleId: interaction.roles.first()?.id ?? null });
       return show('roles', t.saved);
     }
 
@@ -348,7 +352,12 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     }
     case 'llmToggle': {
       const settings = await ctx.settings.get(guildId);
-      await ctx.repos.updateSettings(guildId, { llmEnabled: !settings.llmEnabled });
+      if (settings.llmEnabled) return show('summary', t.llmDisableAsk, undefined, undefined, undefined, true);
+      await ctx.repos.updateSettings(guildId, { llmEnabled: true });
+      return show('summary', t.saved);
+    }
+    case 'llmDisableConfirm': {
+      await ctx.repos.updateSettings(guildId, { llmEnabled: false });
       return show('summary', t.saved);
     }
     case 'llmReset': {

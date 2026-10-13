@@ -1,4 +1,7 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
@@ -14,12 +17,12 @@ import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX, canEditItem, checkAddItem, moveIte
 import { encode, type Action } from '../../domain/customId.js';
 import { canReschedule, isOpen } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
-import { messages } from '../../i18n/index.js';
+import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
 import { fetchForum } from '../threads.js';
-import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingModal } from '../modals.js';
+import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingDraft, readMeetingModal, type MeetingDraft } from '../modals.js';
 import { renderMeetingManager } from '../embeds/meetingManager.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
@@ -40,6 +43,10 @@ export async function handleAction(
   if (action.type === 'meeting.createSubmit') {
     if (!interaction.isModalSubmit()) return;
     return createSubmit(ctx, interaction);
+  }
+  if (action.type === 'meeting.createRetry') {
+    if (!interaction.isButton()) return;
+    return showCreateModal(ctx, interaction, drafts.take(interaction.user.id, 'create'));
   }
 
   const scope = await meetingScope(ctx, interaction, action.meetingId);
@@ -126,8 +133,16 @@ export async function handleAction(
       return;
     }
 
-    case 'agenda.move':
     case 'agenda.remove': {
+      // Retrait : confirmation d'abord (rien ne permet de récupérer un point retiré).
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await updateManager(ctx, interaction, scope, action.itemId, true);
+      return;
+    }
+
+    case 'agenda.move':
+    case 'agenda.removeConfirm': {
       if (!interaction.isButton()) return;
       requireManager(scope);
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
@@ -297,6 +312,8 @@ export async function handleAction(
           locale: scope.settings.locale,
           startsAt: meeting.startsAt,
           durationMin: meeting.durationMin,
+          title: meeting.title,
+          description: meeting.description,
         }),
       );
       return;
@@ -310,18 +327,26 @@ export async function handleAction(
         interaction.guild,
         interaction.user.id,
         // Un salon temporaire appartient à la réunion d'origine (il sera supprimé) : la copie ne le reprend pas.
-        { title: meeting.title, description: meeting.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
+        { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
         input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
       );
       await replyEphemeral(interaction, m.replies.duplicated(copy.threadId!));
       return;
     }
 
-    case 'meeting.regen':
     case 'meeting.regenAll': {
+      // Long et coûteux (GPU) : confirmation d'abord.
       if (!interaction.isButton()) return;
       requireManager(scope);
-      const retranscribe = action.type === 'meeting.regenAll';
+      await interaction.update({ components: [await managerPanel(ctx, meeting, { confirmRegenAll: true, notice: m.manage.regenAllAsk })] });
+      return;
+    }
+
+    case 'meeting.regen':
+    case 'meeting.regenAllConfirm': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      const retranscribe = action.type === 'meeting.regenAllConfirm';
       const recordings = await ctx.repos.listRecordingsForMeeting(meeting.id);
       let notice: string;
       if (recordings.length === 0) notice = m.pipeline.nothing;
@@ -347,23 +372,31 @@ export async function handleAction(
     case 'meeting.editSubmit': {
       if (!interaction.isModalSubmit()) return;
       requireManager(scope);
-      const input = readMeetingModal(interaction, m, {
-        timezone: scope.settings.timezone,
-        defaultDurationMin: scope.settings.defaultDurationMin,
-        fixedVoiceChannelId: scope.settings.voiceChannelId,
-        autoVoice: scope.settings.autoVoice,
-        reschedulable: canReschedule(meeting.status),
-        current: meeting,
+      await withDraft(interaction, m, meeting.id, encode({ type: 'meeting.editRetry', meetingId: meeting.id }), async () => {
+        const input = readMeetingModal(interaction, m, {
+          timezone: scope.settings.timezone,
+          defaultDurationMin: scope.settings.defaultDurationMin,
+          fixedVoiceChannelId: scope.settings.voiceChannelId,
+          autoVoice: scope.settings.autoVoice,
+          reschedulable: canReschedule(meeting.status),
+          current: meeting,
+        });
+        await ctx.meetings.update(interaction.guild, meeting, input, interaction.user.id);
+        await replyEphemeral(interaction, m.replies.updated);
       });
-      await ctx.meetings.update(interaction.guild, meeting, input, interaction.user.id);
-      await replyEphemeral(interaction, m.replies.updated);
+      return;
+    }
+
+    case 'meeting.editRetry': {
+      if (!interaction.isButton()) return;
+      await showEditModal(interaction, scope, drafts.take(interaction.user.id, meeting.id));
       return;
     }
   }
 }
 
 /** Ouvre le formulaire de modification (panneau « Gérer » → Modifier). */
-export async function showEditModal(interaction: ButtonInteraction<'cached'> | ChatInputCommandInteraction<'cached'>, scope: MeetingScope): Promise<void> {
+export async function showEditModal(interaction: ButtonInteraction<'cached'> | ChatInputCommandInteraction<'cached'>, scope: MeetingScope, draft?: MeetingDraft): Promise<void> {
   requireManager(scope);
   const { meeting, m } = scope;
   if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
@@ -378,6 +411,7 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
       fixedVoiceChannelId: scope.settings.voiceChannelId,
       autoVoice: scope.settings.autoVoice,
       defaults: meeting,
+      ...(draft ? { draft } : {}),
     }),
   );
 }
@@ -386,6 +420,7 @@ export async function showEditModal(interaction: ButtonInteraction<'cached'> | C
 export async function showCreateModal(
   ctx: AppContext,
   interaction: ButtonInteraction<'cached'>,
+  draft?: MeetingDraft,
 ): Promise<void> {
   const settings = await ctx.settings.get(interaction.guildId);
   const m = messages(settings.locale);
@@ -402,6 +437,7 @@ export async function showCreateModal(
       fixedVoiceChannelId: settings.voiceChannelId,
       autoVoice: settings.autoVoice,
       defaults: {},
+      ...(draft ? { draft } : {}),
     }),
   );
 }
@@ -409,22 +445,55 @@ export async function showCreateModal(
 async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction<'cached'>): Promise<void> {
   const settings = await ctx.settings.get(interaction.guildId);
   const m = messages(settings.locale);
-  const input = readMeetingModal(interaction, m, {
-    timezone: settings.timezone,
-    reschedulable: true,
-    defaultDurationMin: settings.defaultDurationMin,
-    fixedVoiceChannelId: settings.voiceChannelId,
-    autoVoice: settings.autoVoice,
+  await withDraft(interaction, m, 'create', encode({ type: 'meeting.createRetry' }), async () => {
+    const input = readMeetingModal(interaction, m, {
+      timezone: settings.timezone,
+      reschedulable: true,
+      defaultDurationMin: settings.defaultDurationMin,
+      fixedVoiceChannelId: settings.voiceChannelId,
+      autoVoice: settings.autoVoice,
+    });
+    const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
+    await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
   });
-  const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
-  await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
+}
+
+/** Saisies refusées, gardées 10 minutes par personne pour rouvrir le formulaire tel quel. */
+const drafts = new (class {
+  private readonly entries = new Map<string, { draft: MeetingDraft; at: number }>();
+  save(userId: string, key: string, draft: MeetingDraft): void {
+    const now = Date.now();
+    for (const [k, v] of this.entries) if (now - v.at > 10 * 60_000) this.entries.delete(k);
+    this.entries.set(`${userId}:${key}`, { draft, at: now });
+  }
+  take(userId: string, key: string): MeetingDraft | undefined {
+    const entry = this.entries.get(`${userId}:${key}`);
+    return entry && Date.now() - entry.at <= 10 * 60_000 ? entry.draft : undefined;
+  }
+})();
+
+/**
+ * Formulaire refusé (date illisible, salon manquant…) : au lieu de tout faire ressaisir, on
+ * garde la saisie et on propose de rouvrir le formulaire prérempli.
+ */
+async function withDraft(interaction: ModalSubmitInteraction<'cached'>, m: Messages, key: string, retryId: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    if (!(err instanceof UserError)) throw err;
+    drafts.save(interaction.user.id, key, readMeetingDraft(interaction));
+    const retry = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(retryId).setLabel(m.modal.retry).setEmoji('✏️').setStyle(ButtonStyle.Primary));
+    const payload = { content: `❌ ${err.message}`, components: [retry], allowedMentions: { parse: [] } };
+    if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+    else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+  }
 }
 
 /** Panneau « Gérer » d'une réunion. */
-async function managerPanel(ctx: AppContext, meeting: MeetingRow, state: { confirmEnd?: boolean; notice?: string } = {}) {
+async function managerPanel(ctx: AppContext, meeting: MeetingRow, state: { confirmEnd?: boolean; confirmRegenAll?: boolean; notice?: string } = {}) {
   const m = await ctx.settings.messages(meeting.guildId);
   const hasRecording = (await ctx.repos.listRecordingsForMeeting(meeting.id)).length > 0;
-  return renderMeetingManager(meeting, { hasRecording, ...state }, m);
+  return renderMeetingManager(meeting, { hasRecording, recording: ctx.recordings.isRecording(meeting.id), ...state }, m);
 }
 
 async function updateManager(
@@ -432,10 +501,14 @@ async function updateManager(
   interaction: ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'>,
   scope: MeetingScope,
   selectedId: number | null,
+  confirmRemove = false,
 ): Promise<void> {
   const all = await ctx.repos.listAgenda(scope.meeting.id);
   const agenda = scope.canManage ? all : all.filter((i) => i.authorId === interaction.user.id);
-  await interaction.update({ ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m, scope.canManage ? 'manager' : 'author'), allowedMentions: { parse: [] } });
+  await interaction.update({
+    ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m, scope.canManage ? 'manager' : 'author', confirmRemove),
+    allowedMentions: { parse: [] },
+  });
 }
 
 function agendaError(scope: MeetingScope, error: 'locked' | 'full' | 'empty' | 'closed'): string {

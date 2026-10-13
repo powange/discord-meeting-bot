@@ -42,7 +42,10 @@ export const guildSettings = pgTable('guild_settings', {
   /** Vocabulaire du serveur (pseudos, noms de projets, jargon) : aide la transcription et le résumé. */
   vocabulary: text().array().notNull().default(sql`'{}'::text[]`),
   tagIds: jsonb().$type<StatusTagIds>(),
+  /** Ancien rôle gestionnaire unique : repris dans managerRoleIds par la migration, plus utilisé. */
   managerRoleId: text(),
+  /** Rôles gestionnaires (jusqu'à 5) : gèrent toutes les réunions. */
+  managerRoleIds: text().array().notNull().default(sql`'{}'::text[]`),
   /** Ancien rôle « ne pas m'enregistrer » : ses membres sont repris dans recording_optouts, puis il est oublié. */
   optoutRoleId: text(),
   /** Si renseigné, ses membres sans réponse sont relancés avec le premier rappel. */

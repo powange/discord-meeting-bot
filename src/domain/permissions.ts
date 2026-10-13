@@ -1,17 +1,17 @@
 export interface Actor {
   userId: string;
   roleIds: readonly string[];
-  /** Permission Discord « Gérer les événements » (ou Administrateur). */
+  /** Permission Discord « Gérer les événements » ou « Gérer le serveur » (ou Administrateur). */
   canManageEvents: boolean;
 }
 
 export interface PermissionSettings {
-  managerRoleId: string | null;
+  managerRoleIds: readonly string[];
   creatorsRestricted: boolean;
 }
 
 export function isManager(actor: Actor, settings: PermissionSettings): boolean {
-  return actor.canManageEvents || (settings.managerRoleId !== null && actor.roleIds.includes(settings.managerRoleId));
+  return actor.canManageEvents || settings.managerRoleIds.some((id) => actor.roleIds.includes(id));
 }
 
 /** Organisateur de la réunion, rôle gestionnaire ou permission « Gérer les événements ». */

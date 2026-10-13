@@ -33,6 +33,8 @@ export interface ConfigContext {
   refusals?: readonly string[];
   /** Propriétaire du bot : peut modifier les adresses appelées par le bot. */
   canEditAi?: boolean;
+  /** Désactivation du résumé demandée : bouton de confirmation. */
+  confirmLlmDisable?: boolean;
   /** Mode « salon imposé » choisi, salon pas encore désigné. */
   voiceMode?: VoiceMode;
   notice?: string | undefined;
@@ -64,7 +66,7 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
       if (s.autoVoice) return t.voiceAutoSummary(s.autoVoiceLeadMin, s.autoVoiceCategoryId);
       return s.voiceChannelId ? `<#${s.voiceChannelId}> · ${t.voiceImposed}` : `*${t.voiceFree}*`;
     case 'roles':
-      return `${t.managerRole} ${role(s.managerRoleId, m)} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
+      return `${t.managerRole} ${s.managerRoleIds.length ? s.managerRoleIds.map((id) => `<@&${id}>`).join(' ') : `*${t.none}*`} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
     case 'reminders':
       return s.reminderOffsetsMin.length ? s.reminderOffsetsMin.map(formatOffset).join(', ') : `*${t.none}*`;
     case 'general':
@@ -92,9 +94,18 @@ export function renderConfigHome(c: ConfigContext, m: Messages): APIContainerCom
     .setCustomId(cfg('section'))
     .setPlaceholder(t.pick)
     .addOptions(CONFIG_SECTIONS.map((sec) => ({ label: t.sections[sec].label, value: sec, emoji: t.sections[sec].emoji, description: t.sections[sec].hint })));
+  // Ce qui manque pour que le bot serve vraiment, dans l'ordre où le faire.
+  const s = c.settings;
+  const todo = [
+    !s.forumChannelId && t.todo.forum,
+    !s.alertChannelId && t.todo.alerts,
+    s.managerRoleIds.length === 0 && t.todo.managers,
+  ].filter((x): x is string => Boolean(x));
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
-    .addTextDisplayComponents((x) => x.setContent(`## ⚙️ ${t.title}${c.notice ? `\n${c.notice}` : ''}`))
+    .setAccentColor(todo.length && !s.forumChannelId ? 0xfee75c : 0x5865f2)
+    .addTextDisplayComponents((x) => x.setContent(`## ⚙️ ${t.title}${c.notice ? `\n${c.notice}` : ''}`));
+  if (todo.length) container.addTextDisplayComponents((x) => x.setContent(`**${t.todo.title}**\n${todo.map((line, i) => `${i + 1}. ${line}`).join('\n')}`));
+  container
     .addSeparatorComponents((x) => x.setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents((x) => x.setContent(lines.join('\n')))
     .addActionRowComponents((row: ActionRowBuilder<StringSelectMenuBuilder>) => row.addComponents(select));
@@ -181,14 +192,14 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       break;
     }
     case 'roles': {
-      const roleSelect = (action: CfgAction, current: string | null, placeholder: string) => {
-        const select = new RoleSelectMenuBuilder().setCustomId(cfg(action)).setPlaceholder(placeholder).setMinValues(0).setMaxValues(1);
-        if (current) select.setDefaultRoles(current);
+      const roleSelect = (action: CfgAction, current: readonly string[], placeholder: string, max: number) => {
+        const select = new RoleSelectMenuBuilder().setCustomId(cfg(action)).setPlaceholder(placeholder).setMinValues(0).setMaxValues(max);
+        if (current.length) select.setDefaultRoles(...current);
         return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select);
       };
       rows.push(
-        roleSelect('roleManager', s.managerRoleId, t.pickManager),
-        roleSelect('roleNudge', s.nudgeRoleId, t.pickNudge),
+        roleSelect('roleManager', s.managerRoleIds, t.pickManager, 5),
+        roleSelect('roleNudge', s.nudgeRoleId ? [s.nudgeRoleId] : [], t.pickNudge, 1),
       );
       break;
     }
@@ -227,7 +238,9 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       if (canEdit) actions.addComponents(btn('llmEdit', t.llmEdit, '✏️', ButtonStyle.Primary));
       if (canEdit && l?.baseUrl) actions.addComponents(btn('llmModels', t.llmModels, '📋'));
       if (l?.baseUrl) actions.addComponents(btn('llmTest', t.llmTest, '🧪'));
-      actions.addComponents(btn('llmToggle', l?.enabled === false ? t.llmEnable : t.llmDisable, l?.enabled === false ? '▶️' : '⏸️'));
+      // Désactiver le résumé se confirme (les prochains comptes rendus n'auront plus que l'audio et la transcription).
+      if (c.confirmLlmDisable) actions.addComponents(btn('llmDisableConfirm', t.llmDisableConfirm, '⏸️', ButtonStyle.Danger));
+      else actions.addComponents(btn('llmToggle', l?.enabled === false ? t.llmEnable : t.llmDisable, l?.enabled === false ? '▶️' : '⏸️'));
       if (canEdit && l?.source === 'discord') actions.addComponents(btn('llmReset', t.llmReset, '↩️'));
       rows.push(actions);
       break;

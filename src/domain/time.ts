@@ -121,8 +121,21 @@ export type DatedRangeResult =
  * « 15/01/2027 18h-19h30 » (option « Autre date ») : jour puis horaire. Sans année, prochaine
  * occurrence à partir de `now`.
  */
+const MONTHS: Array<[RegExp, number]> = [
+  [/^janv?/, 1], [/^f[ée]v/, 2], [/^mars?/, 3], [/^avr/, 4], [/^mai/, 5], [/^juin/, 6],
+  [/^juil/, 7], [/^ao[uû]/, 8], [/^sept?/, 9], [/^oct/, 10], [/^nov/, 11], [/^d[ée]c/, 12],
+];
+
+/** « 15 janv. », « 3 mars 2027 », « 1er octobre » → « 15/1 », « 3/3/2027 », « 1/10 ». */
+export function normalizeMonthNames(input: string): string {
+  return input.replace(/(\d{1,2})(?:er)?\s+([a-zéû]+)\.?(?:\s+(\d{4}))?(?=\s|$)/i, (whole, day: string, word: string, year?: string) => {
+    const month = MONTHS.find(([re]) => re.test(word.toLowerCase()))?.[1];
+    return month ? `${day}/${month}${year ? `/${year}` : ''}` : whole;
+  });
+}
+
 export function parseDatedRange(input: string, zone: string, now: DateTime): DatedRangeResult {
-  const trimmed = input.trim().replace(/\s+(à|a)\s+/i, ' ');
+  const trimmed = normalizeMonthNames(input.trim()).replace(/\s+(à|a)\s+/i, ' ');
   const space = trimmed.search(/\s/);
   if (space < 0) return { ok: false, error: 'format' };
   const datePart = trimmed.slice(0, space);

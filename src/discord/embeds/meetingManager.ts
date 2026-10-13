@@ -9,6 +9,10 @@ export interface ManagerState {
   hasRecording: boolean;
   /** Clôture demandée : bouton de confirmation. */
   confirmEnd?: boolean;
+  /** « Tout retranscrire » demandé : bouton de confirmation (long, occupe le serveur de transcription). */
+  confirmRegenAll?: boolean;
+  /** Enregistrement en cours : bouton Arrêter au lieu d'Enregistrer. */
+  recording?: boolean;
   notice?: string | undefined;
 }
 
@@ -37,6 +41,14 @@ export function renderMeetingManager(
   main.addComponents(button('meeting.duplicate', g.duplicate, '📄'));
   if (open) main.addComponents(button('meeting.autoRecord', meeting.autoRecord ? g.autoOff : g.autoOn, meeting.autoRecord ? '⏸️' : '🔴'));
   rows.push(main);
+  // Enregistrer à tout moment, même avant l'heure ou avant que quelqu'un rejoigne le vocal.
+  if (open) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        state.recording ? button('rec.stop', g.recStop, '⏹️', ButtonStyle.Danger) : button('rec.start', g.recStart, '🔴', ButtonStyle.Success),
+      ),
+    );
+  }
 
   if (open) {
     rows.push(
@@ -49,7 +61,14 @@ export function renderMeetingManager(
     );
   }
   if (state.hasRecording) {
-    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.regen', g.regen, '📝'), button('meeting.regenAll', g.regenAll, '🔁')));
+    rows.push(
+      state.confirmRegenAll
+        ? new ActionRowBuilder<ButtonBuilder>().addComponents(
+            button('meeting.regenAllConfirm', g.regenAllConfirm, '🔁', ButtonStyle.Danger),
+            button('meeting.manage', g.back, '↩️'),
+          )
+        : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.regen', g.regen, '📝'), button('meeting.regenAll', g.regenAll, '🔁')),
+    );
   }
   for (const row of rows) container.addActionRowComponents(row);
   return container.toJSON();

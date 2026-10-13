@@ -34,7 +34,8 @@ export async function meetingScopeFromChannel(ctx: AppContext, interaction: Inte
 }
 
 export function requireManager(scope: MeetingScope): void {
-  if (!scope.canManage) throw new UserError(scope.m.errors.forbidden);
+  // Le refus dit qui peut le faire : l'organisateur, les rôles gestionnaires, les permissions.
+  if (!scope.canManage) throw new UserError(scope.m.errors.forbiddenWho(scope.meeting.organizerId, scope.settings.managerRoleIds));
 }
 
 /** Réponse éphémère, que l'interaction ait déjà été acquittée ou non. */

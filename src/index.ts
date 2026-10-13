@@ -134,6 +134,18 @@ async function main(): Promise<void> {
     });
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
+  // Arrivée sur un nouveau serveur : la marche à suivre au propriétaire (message privé), sinon
+  // dans le salon système. Sans cela, le bot arrive sans un mot et rien ne marche tant que le
+  // forum n'est pas choisi.
+  client.on(Events.GuildCreate, (guild) => {
+    void (async () => {
+      const m = await settings.messages(guild.id);
+      const owner = await guild.fetchOwner().catch(() => null);
+      const sent = await owner?.send({ content: m.welcome(guild.name), allowedMentions: { parse: [] } }).then(() => true).catch(() => false);
+      if (!sent && guild.systemChannel?.isSendable()) await guild.systemChannel.send({ content: m.welcome(guild.name), allowedMentions: { parse: [] } });
+      log.info({ guildId: guild.id, dm: sent }, 'Nouveau serveur : message de bienvenue envoyé');
+    })().catch((err) => log.warn({ guildId: guild.id, err }, 'Message de bienvenue impossible'));
+  });
   client.on(Events.MessageUpdate, (_old, message) => {
     void restoreSuppressedEmbeds(client, message, log);
   });

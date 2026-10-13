@@ -20,7 +20,25 @@ describe('formulaires', () => {
   });
 
   it.each(zones)('duplication : valide, fuseau %s', (timezone) => {
-    expect(() => duplicateModal(m, { customId: 'x', timezone, locale: 'fr', startsAt, durationMin: 150 }).toJSON()).not.toThrow();
+    expect(() => duplicateModal(m, { customId: 'x', timezone, locale: 'fr', startsAt, durationMin: 150, title: 'Bureau', description: '' }).toJSON()).not.toThrow();
+  });
+
+  it('duplication : titre prérempli, même jour la semaine suivante présélectionné', () => {
+    const json = duplicateModal(m, { customId: 'x', timezone: 'Europe/Paris', locale: 'fr', startsAt, durationMin: 60, title: 'Bureau', description: 'Mensuel', now: new Date('2026-10-12T10:00:00Z') }).toJSON();
+    const labels = json.components as unknown as Array<{ label: string; component: { value?: string; options?: Array<{ value: string; default?: boolean }> } }>;
+    expect(labels.find((l) => l.label === m.modal.title)?.component.value).toBe('Bureau');
+    const day = labels.find((l) => l.label === m.modal.day)?.component.options?.find((o) => o.default);
+    expect(day?.value).toBe('2026-10-22'); // 15/10 + 7 jours
+  });
+
+  it('formulaire refusé puis rouvert : la saisie précédente est reprise', () => {
+    const json = meetingModal(m, {
+      customId: 'x', heading: 'h', reschedulable: true, timezone: 'Europe/Paris', locale: 'fr', defaultDurationMin: 60, fixedVoiceChannelId: null, autoVoice: false,
+      defaults: {}, draft: { title: 'AG', description: 'Annuelle', day: 'autre', time: '15 janv 18h' }, now: new Date('2026-10-12T10:00:00Z'),
+    }).toJSON();
+    const labels = json.components as unknown as Array<{ label: string; component: { value?: string; options?: Array<{ value: string; default?: boolean }> } }>;
+    expect(labels.find((l) => l.label === m.modal.title)?.component.value).toBe('AG');
+    expect(labels.find((l) => l.label === m.modal.time)?.component.value).toBe('15 janv 18h');
   });
 
   it('point d’ordre du jour : valide', () => {

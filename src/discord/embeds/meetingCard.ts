@@ -165,6 +165,8 @@ export function renderAgendaManager(
   m: Messages,
   /** « author » : un participant qui ne voit que ses propres points et ne peut que les modifier. */
   mode: 'manager' | 'author' = 'manager',
+  /** Retrait du point sélectionné demandé : bouton de confirmation à la place des actions. */
+  confirmRemove = false,
 ): { content: string; components: APIActionRowComponent<APIComponentInMessageActionRow>[] } {
   const rows: APIActionRowComponent<APIComponentInMessageActionRow>[] = [];
   const selectedIndex = selectedId === null ? -1 : agenda.findIndex((i) => i.id === selectedId);
@@ -196,6 +198,25 @@ export function renderAgendaManager(
     if (selected) rows.push(buttons.addComponents(editButton(selected)).toJSON());
     const content = [`**${m.agendaManager.titleAuthor}**`, selected ? m.agendaManager.selected(selected.title) : m.agendaManager.pickOwn].join('\n');
     return { content, components: rows };
+  }
+  if (selected && confirmRemove) {
+    rows.push(
+      buttons
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(encode({ type: 'agenda.removeConfirm', meetingId: meeting.id, itemId: selected.id }))
+            .setLabel(m.agendaManager.removeConfirm)
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId(encode({ type: 'agenda.manage', meetingId: meeting.id }))
+            .setLabel(m.manage.back)
+            .setEmoji('↩️')
+            .setStyle(ButtonStyle.Secondary),
+        )
+        .toJSON(),
+    );
+    return { content: [`**${m.agendaManager.title}**`, m.agendaManager.removeAsk(selected.title)].join('\n'), components: rows };
   }
   if (selected) {
     buttons.addComponents(

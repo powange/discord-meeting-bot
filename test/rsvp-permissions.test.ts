@@ -23,16 +23,16 @@ describe('RSVP', () => {
 });
 
 describe('permissions', () => {
-  const settings = { managerRoleId: 'mgr', creatorsRestricted: false };
+  const settings = { managerRoleIds: ['other', 'mgr'], creatorsRestricted: false };
   const member: Actor = { userId: 'u1', roleIds: ['r1'], canManageEvents: false };
   const manager: Actor = { userId: 'u2', roleIds: ['mgr'], canManageEvents: false };
   const eventsAdmin: Actor = { userId: 'u3', roleIds: [], canManageEvents: true };
 
-  it('gestionnaire = rôle configuré ou permission « Gérer les événements »', () => {
+  it('gestionnaire = un des rôles configurés, ou permission « Gérer les événements » / « Gérer le serveur »', () => {
     expect(isManager(member, settings)).toBe(false);
     expect(isManager(manager, settings)).toBe(true);
     expect(isManager(eventsAdmin, settings)).toBe(true);
-    expect(isManager(manager, { ...settings, managerRoleId: null })).toBe(false);
+    expect(isManager(manager, { ...settings, managerRoleIds: [] })).toBe(false);
   });
 
   it('organisateur ou gestionnaire', () => {

@@ -28,9 +28,19 @@ describe('panneau « Gérer »', () => {
       'meeting.edit',
       'meeting.duplicate',
       'meeting.autoRecord',
+      'rec.start',
       'meeting.end',
       'meeting.cancel',
     ]);
+  });
+  it('enregistrement : Enregistrer maintenant, ou Arrêter s’il tourne', () => {
+    expect(actions(renderMeetingManager(meeting, { hasRecording: true, recording: true }, m))).toContain('rec.stop');
+    expect(actions(renderMeetingManager(meeting, { hasRecording: true, recording: true }, m))).not.toContain('rec.start');
+  });
+  it('tout retranscrire : confirmation demandée', () => {
+    const view = actions(renderMeetingManager({ ...meeting, status: 'ended' }, { hasRecording: true, confirmRegenAll: true }, m));
+    expect(view).toContain('meeting.regenAllConfirm');
+    expect(view).not.toContain('meeting.regenAll');
   });
   it('clôture : confirmation demandée', () => {
     expect(actions(renderMeetingManager(meeting, { hasRecording: false, confirmEnd: true }, m))).toContain('meeting.endConfirm');

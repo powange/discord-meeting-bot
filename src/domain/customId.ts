@@ -13,6 +13,7 @@ export type Action =
   | { type: 'agenda.select'; meetingId: string }
   | { type: 'agenda.move'; meetingId: string; itemId: number; direction: 'up' | 'down' }
   | { type: 'agenda.remove'; meetingId: string; itemId: number }
+  | { type: 'agenda.removeConfirm'; meetingId: string; itemId: number }
   | { type: 'agenda.edit'; meetingId: string; itemId: number }
   | { type: 'agenda.editSubmit'; meetingId: string; itemId: number }
   | { type: 'agenda.lock'; meetingId: string; locked: boolean }
@@ -29,7 +30,8 @@ export type Action =
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
   | { type: 'meeting.create' }
-  | { type: 'meeting.createSubmit' };
+  | { type: 'meeting.createSubmit' }
+  | { type: 'meeting.createRetry' };
 
 /** Actions du panneau des serveurs de transcription (`backendId` : serveur visé, sinon null). */
 export const TX_ACTIONS = ['select', 'up', 'down', 'toggle', 'test', 'delete', 'confirmDelete', 'edit', 'editSubmit', 'add', 'addSubmit', 'testAll', 'vocab', 'vocabSubmit'] as const;
@@ -64,6 +66,7 @@ export const CFG_ACTIONS = [
   'llmTest',
   'llmReset',
   'llmToggle',
+  'llmDisableConfirm',
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 
@@ -74,6 +77,7 @@ export type CfgAction = (typeof CFG_ACTIONS)[number];
 export const MEETING_VERBS = [
   'edit',
   'editSubmit',
+  'editRetry',
   'manage',
   'duplicate',
   'duplicateSubmit',
@@ -84,6 +88,7 @@ export const MEETING_VERBS = [
   'cancelSubmit',
   'regen',
   'regenAll',
+  'regenAllConfirm',
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
 
@@ -100,6 +105,7 @@ export function encode(action: Action): string {
       parts.push('agenda', 'move', action.meetingId, action.itemId, action.direction);
       break;
     case 'agenda.remove':
+    case 'agenda.removeConfirm':
     case 'agenda.edit':
     case 'agenda.editSubmit':
       parts.push('agenda', action.type.split('.')[1]!, action.meetingId, action.itemId);
@@ -118,6 +124,9 @@ export function encode(action: Action): string {
       break;
     case 'meeting.createSubmit':
       parts.push('meeting', 'createSubmit');
+      break;
+    case 'meeting.createRetry':
+      parts.push('meeting', 'createRetry');
       break;
     case 'consent.open':
     case 'consent.refuse':
@@ -170,6 +179,7 @@ export function decode(customId: string): Action | null {
   if (group === 'meeting' && rest.length === 1) {
     if (verb === 'create') return { type: 'meeting.create' };
     if (verb === 'createSubmit') return { type: 'meeting.createSubmit' };
+    if (verb === 'createRetry') return { type: 'meeting.createRetry' };
   }
   if (!isUuid(meetingId)) return null;
 
@@ -207,6 +217,7 @@ export function decode(customId: string): Action | null {
         return { type: 'agenda.move', meetingId, itemId, direction: b };
       }
       case 'remove':
+      case 'removeConfirm':
       case 'edit':
       case 'editSubmit': {
         const itemId = toId(a);

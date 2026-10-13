@@ -36,19 +36,22 @@ export interface MeetingModalOptions {
   autoVoice: boolean;
   now?: Date;
   defaults: Partial<MeetingInput>;
+  /** Saisie précédente refusée : reprise telle quelle (prioritaire sur `defaults`). */
+  draft?: MeetingDraft;
 }
 
 export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder {
   const modal = new ModalBuilder().setCustomId(o.customId).setTitle(o.heading);
   const d = o.defaults;
 
+  const draft = o.draft;
   const title = new TextInputBuilder().setCustomId(F.title).setStyle(TextInputStyle.Short).setMaxLength(TITLE_MAX).setRequired(true);
-  if (d.title) title.setValue(d.title);
+  if (draft?.title || d.title) title.setValue((draft?.title || d.title)!);
   modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.title).setTextInputComponent(title));
 
   if (o.reschedulable) {
     const now = o.now ?? new Date();
-    const selectedDay = d.startsAt ? dayOf(d.startsAt, o.timezone) : undefined;
+    const selectedDay = draft?.day ?? (d.startsAt ? dayOf(d.startsAt, o.timezone) : undefined);
     const day = dayMenu(m, o.timezone, o.locale, selectedDay, now);
 
     const time = new TextInputBuilder()
@@ -57,7 +60,8 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
       .setMaxLength(30)
       .setRequired(true)
       .setPlaceholder(m.modal.timePlaceholder);
-    if (d.startsAt) time.setValue(formatTimeRange(d.startsAt, d.durationMin ?? o.defaultDurationMin, o.timezone));
+    if (draft?.time) time.setValue(draft.time);
+    else if (d.startsAt) time.setValue(formatTimeRange(d.startsAt, d.durationMin ?? o.defaultDurationMin, o.timezone));
 
     modal.addLabelComponents(
       new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(day),
@@ -68,7 +72,8 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
     );
     if (!o.fixedVoiceChannelId && !o.autoVoice) {
       const voice = new ChannelSelectMenuBuilder().setCustomId(F.voice).setChannelTypes(ChannelType.GuildVoice).setRequired(true);
-      if (d.voiceChannelId) voice.setDefaultChannels(d.voiceChannelId);
+      const voiceId = draft?.voiceChannelId ?? d.voiceChannelId;
+      if (voiceId) voice.setDefaultChannels(voiceId);
       modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.voice).setChannelSelectMenuComponent(voice));
     }
   }
@@ -79,7 +84,7 @@ export function meetingModal(m: Messages, o: MeetingModalOptions): ModalBuilder 
     .setMaxLength(DESCRIPTION_MAX)
     .setRequired(false)
     .setPlaceholder(m.modal.descriptionHint);
-  if (d.description) description.setValue(d.description);
+  if (draft?.description || d.description) description.setValue((draft?.description || d.description)!);
   modal.addLabelComponents(new LabelBuilder().setLabel(m.modal.description).setTextInputComponent(description));
   return modal;
 }
@@ -92,13 +97,43 @@ function dayMenu(m: Messages, timezone: string, locale: string, selectedDay: str
     .setPlaceholder(m.modal.dayPlaceholder)
     .setRequired(true)
     .addOptions(
-      ...dayChoices(timezone, now, DAY_CHOICES - 1, selectedDay).map((iso) => ({
+      ...dayChoices(timezone, now, DAY_CHOICES - 1, selectedDay === OTHER_DAY ? undefined : selectedDay).map((iso) => ({
         label: dayLabel(iso, today, timezone, locale, m),
         value: iso,
         default: iso === selectedDay,
       })),
-      { label: m.modal.otherDay, value: OTHER_DAY, emoji: '📅', description: m.modal.otherDayHint },
+      { label: m.modal.otherDay, value: OTHER_DAY, emoji: '📅', description: m.modal.otherDayHint, default: selectedDay === OTHER_DAY },
     );
+}
+
+/** Saisie brute d'un formulaire de réunion : de quoi le rouvrir tel quel après une erreur. */
+export interface MeetingDraft {
+  title: string;
+  description: string;
+  day?: string;
+  time?: string;
+  voiceChannelId?: string;
+}
+
+export function readMeetingDraft(interaction: ModalSubmitInteraction<'cached'>): MeetingDraft {
+  const text = (id: string) => {
+    try {
+      return interaction.fields.getTextInputValue(id);
+    } catch {
+      return undefined;
+    }
+  };
+  const optional = <T>(read: () => T | undefined): T | undefined => {
+    try {
+      return read();
+    } catch {
+      return undefined;
+    }
+  };
+  const day = optional(() => interaction.fields.getStringSelectValues(F.day)[0]);
+  const time = text(F.time);
+  const voice = optional(() => interaction.fields.getSelectedChannels(F.voice, false)?.first()?.id);
+  return { title: text(F.title) ?? '', description: text(F.description) ?? '', ...(day ? { day } : {}), ...(time ? { time } : {}), ...(voice ? { voiceChannelId: voice } : {}) };
 }
 
 /** Lit « jour + horaire » (ou « Autre date » + date et horaire saisis). */
@@ -123,7 +158,17 @@ function readDayAndTime(interaction: ModalSubmitInteraction<'cached'>, m: Messag
 }
 
 /** Formulaire « Dupliquer » : nouveau jour et horaire, reprise ou non de l'ordre du jour. */
-export function duplicateModal(m: Messages, o: { customId: string; timezone: string; locale: string; startsAt: Date; durationMin: number }): ModalBuilder {
+export function duplicateModal(
+  m: Messages,
+  o: { customId: string; timezone: string; locale: string; startsAt: Date; durationMin: number; title: string; description: string; now?: Date },
+): ModalBuilder {
+  const now = o.now ?? new Date();
+  // Même jour de la semaine, à la première occurrence à venir (la semaine suivante en général).
+  let next = o.startsAt.getTime() + 7 * 86_400_000;
+  while (next <= now.getTime()) next += 7 * 86_400_000;
+  const title = new TextInputBuilder().setCustomId(F.title).setStyle(TextInputStyle.Short).setMaxLength(TITLE_MAX).setRequired(true).setValue(o.title);
+  const description = new TextInputBuilder().setCustomId(F.description).setStyle(TextInputStyle.Paragraph).setMaxLength(DESCRIPTION_MAX).setRequired(false);
+  if (o.description) description.setValue(o.description);
   const time = new TextInputBuilder()
     .setCustomId(F.time)
     .setStyle(TextInputStyle.Short)
@@ -138,9 +183,11 @@ export function duplicateModal(m: Messages, o: { customId: string; timezone: str
     .setCustomId(o.customId)
     .setTitle(m.manage.duplicateModal)
     .addLabelComponents(
-      new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(dayMenu(m, o.timezone, o.locale, undefined, new Date())),
+      new LabelBuilder().setLabel(m.modal.title).setTextInputComponent(title),
+      new LabelBuilder().setLabel(m.modal.day).setStringSelectMenuComponent(dayMenu(m, o.timezone, o.locale, dayOf(new Date(next), o.timezone), now)),
       new LabelBuilder().setLabel(m.modal.time).setDescription(truncate(m.modal.timeHint(m.card.minutes(o.durationMin), o.timezone), 100)).setTextInputComponent(time),
       new LabelBuilder().setLabel(m.manage.copyAgenda).setStringSelectMenuComponent(copy),
+      new LabelBuilder().setLabel(m.modal.description).setTextInputComponent(description),
     );
 }
 
@@ -149,7 +196,15 @@ export function readDuplicateModal(interaction: ModalSubmitInteraction<'cached'>
   if (startsAt.getTime() <= Date.now()) throw new UserError(m.errors.datePast);
   const duration = durationMin ?? defaultDurationMin;
   if (!(duration >= DURATION_MIN && duration <= DURATION_MAX)) throw new UserError(m.errors.duration(DURATION_MIN, DURATION_MAX));
-  return { startsAt, durationMin: duration, copyAgenda: interaction.fields.getStringSelectValues('copyAgenda')[0] === 'yes' };
+  const title = interaction.fields.getTextInputValue(F.title).trim();
+  if (!title) throw new UserError(m.errors.titleRequired);
+  return {
+    title,
+    description: interaction.fields.getTextInputValue(F.description).trim(),
+    startsAt,
+    durationMin: duration,
+    copyAgenda: interaction.fields.getStringSelectValues('copyAgenda')[0] === 'yes',
+  };
 }
 
 /** « lundi 12/10 (aujourd'hui) » */

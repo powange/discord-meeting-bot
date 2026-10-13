@@ -113,6 +113,10 @@ describe('parseDatedRange (option « Autre date »)', () => {
     ['15/01/2027 18h-19h30', { day: '2027-01-15', hour: 18, minute: 0, durationMin: 90 }],
     ['15/01 18:30', { day: '2027-01-15', hour: 18, minute: 30, durationMin: null }], // année déduite
     ['2027-03-02 à 9h', { day: '2027-03-02', hour: 9, minute: 0, durationMin: null }],
+    // Noms de mois en toutes lettres ou abrégés.
+    ['15 janv. 18h-19h30', { day: '2027-01-15', hour: 18, minute: 0, durationMin: 90 }],
+    ['3 mars 2027 18h', { day: '2027-03-03', hour: 18, minute: 0, durationMin: null }],
+    ['1er décembre à 20h', { day: '2026-12-01', hour: 20, minute: 0, durationMin: null }],
   ])('%s', (input, expected) => {
     expect(parseDatedRange(input, zone, now)).toEqual({ ok: true, ...expected });
   });

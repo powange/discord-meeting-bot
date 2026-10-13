@@ -54,6 +54,7 @@ export const fr = {
   },
 
   modal: {
+    retry: 'Corriger la saisie',
     createTitle: 'Nouvelle réunion',
     editTitle: 'Modifier la réunion',
     title: 'Titre',
@@ -77,6 +78,13 @@ export const fr = {
     itemDetailHint: 'Optionnel',
   },
 
+  welcome: (guild: string) =>
+    `👋 Merci d'avoir ajouté Meeting Recorder à **${guild}** ! Pour commencer :\n` +
+    `1. Créez un **salon forum** (ex. #réunions), puis tapez \`/config\` sur le serveur et choisissez-le dans **Forum des réunions**.\n` +
+    `2. Toujours dans \`/config\`, choisissez un salon d'**Alertes** réservé aux administrateurs.\n` +
+    `3. Pour les comptes rendus : **Transcription** (serveur Vibe/Whisper) et **Résumé** (LM Studio, Ollama…).\n` +
+    `Ensuite, le bouton « Nouvelle réunion » apparaît dans le post épinglé du forum.`,
+
   hub: {
     threadName: '📌 Planifier une réunion',
     title: 'Réunions',
@@ -98,6 +106,8 @@ export const fr = {
     pick: 'Choisir un point…',
     empty: "L'ordre du jour est vide.",
     selected: (title: string) => `Point sélectionné : **${title}**`,
+    removeConfirm: 'Confirmer le retrait',
+    removeAsk: (title: string) => `Retirer le point **${title}** de l'ordre du jour ?`,
   },
 
   replies: {
@@ -152,7 +162,10 @@ export const fr = {
       crash: 'arrêt inattendu du bot',
     } as Record<string, string>,
     interrupted: "⚠️ L'enregistrement a été interrompu. Les prises de parole déjà captées sont conservées.",
-    autoStartFailed: (reason: string) => `⚠️ Démarrage automatique de l'enregistrement impossible : ${reason}`,
+    autoStartFailed: (organizerId: string, reason: string) => `⚠️ <@${organizerId}> l'enregistrement automatique n'a pas pu démarrer : ${reason}`,
+    autoStartUnknown: 'erreur inattendue (détail envoyé aux administrateurs).',
+    autoStartAlert: (title: string, error: string) => `Enregistrement automatique de « ${title} » impossible : ${error}`,
+    retry: 'Réessayer',
     started_reply: 'Enregistrement démarré.',
     stopped_reply: 'Enregistrement arrêté.',
     autoSet: (on: boolean) =>
@@ -290,6 +303,10 @@ export const fr = {
     back: 'Retour',
     regen: 'Régénérer le compte rendu',
     regenAll: 'Tout retranscrire',
+    regenAllConfirm: 'Confirmer : tout retranscrire',
+    regenAllAsk: 'Tout retranscrire ? La transcription complète est refaite (souvent plusieurs minutes, serveur de transcription occupé pendant ce temps), puis le compte rendu.',
+    recStart: 'Enregistrer maintenant',
+    recStop: "Arrêter l'enregistrement",
     endAsk: 'Terminer la réunion maintenant ? Un enregistrement en cours sera arrêté et le compte rendu lancé.',
     cancelModal: 'Annuler la réunion',
     cancelReason: 'Raison (affichée dans le post)',
@@ -377,6 +394,8 @@ export const fr = {
     notInMeetingThread: "Cette action n'est possible que depuis le post d'une réunion.",
     meetingNotFound: 'Réunion introuvable.',
     forbidden: "Seuls l'organisateur et les gestionnaires peuvent faire ça.",
+    forbiddenWho: (organizerId: string, roleIds: readonly string[]) =>
+      `Réservé à l'organisateur (<@${organizerId}>)${roleIds.length ? `, aux rôles ${roleIds.map((id) => `<@&${id}>`).join(' ')}` : ''} et aux membres qui peuvent « Gérer les événements » ou « Gérer le serveur ».`,
     cannotCreate: 'La création de réunions est réservée aux gestionnaires.',
     dateFormat: 'Date illisible. Format attendu : `JJ/MM/AAAA HH:MM` (ex. `15/10/2026 18:30`).',
     dateInvalid: "Cette date n'existe pas.",
@@ -429,7 +448,12 @@ export const fr = {
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
       recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage auto, refus d’enregistrement', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },
-      transcription: { emoji: '🎙️', label: 'Transcription', hint: 'Serveurs Vibe / Whisper', help: '' },
+      transcription: {
+        emoji: '🎙️',
+        label: 'Transcription',
+        hint: 'Serveurs Vibe / Whisper, vocabulaire',
+        help: "Serveurs qui transforment l'audio en texte, essayés dans l'ordre (le suivant prend le relais en cas d'échec). Le vocabulaire aide à reconnaître pseudos et jargon.",
+      },
       summary: {
         emoji: '📝',
         label: 'Résumé',
@@ -442,6 +466,12 @@ export const fr = {
         hint: 'Où signaler les problèmes',
         help: "Le bot y signale ce qui demande une action : compte rendu en échec, enregistrement coupé, disque presque plein. Une même alerte au plus une fois par heure. Choisissez un salon réservé aux administrateurs.",
       },
+    },
+    todo: {
+      title: '⚠️ À faire',
+      forum: '**Forum des réunions** : sans lui, rien ne fonctionne (bouton « Nouvelle réunion », cartes, comptes rendus).',
+      alerts: "**Alertes** : un salon réservé aux administrateurs, sinon les échecs (compte rendu, enregistrement, disque) passent inaperçus.",
+      managers: "**Rôles → Gestionnaires** (facultatif) : qui peut gérer toutes les réunions en plus de leur organisateur.",
     },
     voiceImposed: 'imposé',
     voiceFree: 'au choix de l’organisateur',
@@ -488,6 +518,8 @@ export const fr = {
     llmTest: 'Tester',
     llmEnable: 'Activer le résumé',
     llmDisable: 'Désactiver le résumé',
+    llmDisableConfirm: 'Confirmer la désactivation',
+    llmDisableAsk: 'Désactiver le résumé ? Les prochains comptes rendus ne contiendront que l’audio et la transcription.',
     llmReset: 'Revenir au fichier de config',
     llmModal: 'Serveur des résumés',
     llmUrlField: 'Adresse (compatible OpenAI)',

@@ -1,0 +1,2 @@
+ALTER TABLE "guild_settings" ADD COLUMN "manager_role_ids" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+UPDATE "guild_settings" SET "manager_role_ids" = ARRAY["manager_role_id"] WHERE "manager_role_id" IS NOT NULL;

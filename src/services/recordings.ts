@@ -88,13 +88,19 @@ export class RecordingService {
     try {
       await this.start(meetingId, null);
     } catch (err) {
-      const reason = err instanceof UserError ? err.message : errorMessage(err);
-      this.log.warn({ meetingId, err: reason }, 'Démarrage automatique de l’enregistrement impossible');
-      const thread = await fetchThread(this.client, meeting.threadId);
+      // Les refus expliqués (permissions, vocal occupé, disque…) sont déjà lisibles ; le reste est technique.
       const m = await this.settings.messages(meeting.guildId);
+      const reason = err instanceof UserError ? err.message : m.recording.autoStartUnknown;
+      this.log.warn({ meetingId, err: errorMessage(err) }, 'Démarrage automatique de l’enregistrement impossible');
+      await this.alert(meeting.guildId, 'auto-record', m.recording.autoStartAlert(meeting.title, errorMessage(err))).catch(() => undefined);
+      const thread = await fetchThread(this.client, meeting.threadId);
       if (thread) {
         await ensureUnarchived(thread);
-        await thread.send({ content: m.recording.autoStartFailed(reason), allowedMentions: { parse: [] } });
+        // L'organisateur est prévenu tout de suite, avec de quoi réessayer sans attendre.
+        const retry = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(encode({ type: 'rec.start', meetingId })).setLabel(m.recording.retry).setEmoji('🔴').setStyle(ButtonStyle.Primary),
+        );
+        await thread.send({ content: m.recording.autoStartFailed(meeting.organizerId, reason), components: [retry.toJSON()], allowedMentions: { users: [meeting.organizerId] } });
       }
     }
   }

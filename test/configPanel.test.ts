@@ -21,7 +21,8 @@ const settings: GuildSettingsRow = {
   autoVoiceLeadMin: 15,
   vocabulary: [],
   tagIds: null,
-  managerRoleId: '222',
+  managerRoleId: null,
+  managerRoleIds: ['222'],
   optoutRoleId: null,
   nudgeRoleId: null,
   creatorsRestricted: false,
@@ -62,6 +63,13 @@ describe('panneau /config', () => {
     expect(t).toContain('**Transcription** · 1 actif : vibe-pc');
     const select = flatten(home).find((x) => x.type === ComponentType.StringSelect)!;
     expect((select.options as Array<{ value: string }>).map((o) => o.value)).toEqual([...CONFIG_SECTIONS]);
+  });
+
+  it('accueil : « À faire » liste ce qui manque, dans l’ordre ; rien quand tout est réglé', () => {
+    const fresh = texts(renderConfigHome({ ...c, settings: { ...settings, forumChannelId: null, managerRoleIds: [] } }, m));
+    expect(fresh).toContain(m.config.todo.title);
+    expect(fresh.indexOf('Forum des réunions** : sans lui')).toBeLessThan(fresh.indexOf('**Alertes** : un salon'));
+    expect(texts(renderConfigHome({ ...c, settings: { ...settings, alertChannelId: '333' } }, m))).not.toContain(m.config.todo.title);
   });
 
   it.each([
