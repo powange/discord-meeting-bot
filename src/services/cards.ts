@@ -32,12 +32,13 @@ export class CardService {
   ) {}
 
   async renderCard(meeting: MeetingRow): Promise<RenderedMessage> {
-    const [rsvps, m, recording] = await Promise.all([
+    const [rsvps, m, recording, links] = await Promise.all([
       this.repos.listRsvps(meeting.id),
       this.settings.messages(meeting.guildId),
       this.repos.getActiveRecording(meeting.id),
+      this.repos.publishedLinks(meeting.id),
     ]);
-    return renderMeetingCard(meeting, rsvps, m, recording?.startedAt ?? null);
+    return renderMeetingCard(meeting, rsvps, m, recording?.startedAt ?? null, links);
   }
 
   async renderAgenda(meeting: MeetingRow): Promise<RenderedMessage> {

@@ -11,6 +11,8 @@ import type { SettingsService } from './settings.js';
 
 const DEBOUNCE_MS = 2000;
 const MAX_LISTED = 20;
+/** Derniers comptes rendus listés dans le post épinglé. */
+const RECENT_REPORTS = 5;
 
 /**
  * Post épinglé du forum (« hub ») : bouton « Nouvelle réunion » et liste des réunions à venir,
@@ -121,7 +123,7 @@ export class HubService {
       await existing.delete('Post épinglé incomplet, remplacé').catch(() => undefined);
     }
 
-    const payload = renderHub(await this.upcoming(forum.guildId), m);
+    const payload = renderHub(await this.upcoming(forum.guildId), m, await this.repos.listRecentReports(forum.guildId, RECENT_REPORTS));
     const thread = await forum.threads.create({
       name: m.hub.threadName,
       message: { ...payload, allowedMentions: { parse: [] } },
@@ -156,7 +158,10 @@ export class HubService {
       return;
     }
     await ensureUnarchived(thread);
-    await message.edit({ ...renderHub(await this.upcoming(guildId), messages(settings.locale)), allowedMentions: { parse: [] } });
+    await message.edit({
+      ...renderHub(await this.upcoming(guildId), messages(settings.locale), await this.repos.listRecentReports(guildId, RECENT_REPORTS)),
+      allowedMentions: { parse: [] },
+    });
   }
 
   async flush(): Promise<void> {

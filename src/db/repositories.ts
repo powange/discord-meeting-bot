@@ -178,6 +178,10 @@ export class Repositories {
 
   // ---------------------------------------------------------------- rsvps
 
+  async deleteRsvp(meetingId: string, userId: string): Promise<void> {
+    await this.db.delete(rsvps).where(and(eq(rsvps.meetingId, meetingId), eq(rsvps.userId, userId)));
+  }
+
   async setRsvp(meetingId: string, userId: string, status: RsvpStatus): Promise<void> {
     await this.db
       .insert(rsvps)
@@ -456,6 +460,28 @@ export class Repositories {
         ),
       );
     return rows.map((r) => r.id);
+  }
+
+  /** Liens publiés d'une réunion : compte rendu et audio complet (null tant qu'ils n'existent pas). */
+  async publishedLinks(meetingId: string): Promise<{ report: string | null; audio: string | null }> {
+    const rows = await this.listPipeline(meetingId);
+    const url = (step: string) => {
+      const row = rows.find((r) => r.step === step && r.status === 'done');
+      return typeof row?.output?.url === 'string' && row.output.url ? row.output.url : null;
+    };
+    return { report: url('publish'), audio: url('mix') };
+  }
+
+  /** Derniers comptes rendus publiés d'un serveur (post épinglé). */
+  async listRecentReports(guildId: string, limit: number): Promise<Array<{ title: string; startsAt: Date; url: string }>> {
+    const rows = await this.db
+      .select({ title: meetings.title, startsAt: meetings.startsAt, output: pipelineSteps.output })
+      .from(pipelineSteps)
+      .innerJoin(meetings, eq(meetings.id, pipelineSteps.meetingId))
+      .where(and(eq(meetings.guildId, guildId), eq(pipelineSteps.step, 'publish'), eq(pipelineSteps.status, 'done')))
+      .orderBy(sql`${meetings.startsAt} desc`)
+      .limit(limit);
+    return rows.flatMap((r) => (typeof r.output?.url === 'string' && r.output.url ? [{ title: r.title, startsAt: r.startsAt, url: r.output.url }] : []));
   }
 
   async listUnfinishedPipelines(): Promise<string[]> {

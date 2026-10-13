@@ -49,9 +49,12 @@ export async function handleAction(
     case 'rsvp': {
       if (!interaction.isButton()) return;
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
-      await ctx.repos.setRsvp(meeting.id, interaction.user.id, action.status);
-      await interaction.deferUpdate();
+      // Second clic sur la réponse déjà donnée : elle est retirée.
+      const current = (await ctx.repos.listRsvps(meeting.id)).find((r) => r.userId === interaction.user.id)?.status;
+      if (current === action.status) await ctx.repos.deleteRsvp(meeting.id, interaction.user.id);
+      else await ctx.repos.setRsvp(meeting.id, interaction.user.id, action.status);
       ctx.cards.refresh(meeting.id, ['card']);
+      await replyEphemeral(interaction, current === action.status ? m.replies.rsvpRemoved : m.replies.rsvpSaved(m.rsvp[action.status]));
       return;
     }
 

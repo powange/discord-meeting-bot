@@ -87,7 +87,7 @@ describe('renderAgendaMessage', () => {
     expect(embed.description).toContain('> ligne 1 ligne 2');
     expect(buttons(out).map((b) => [b.label, b.disabled ?? false])).toEqual([
       ['Ajouter un point', false],
-      ["Gérer l'ODJ", false],
+      ["Gérer l'ordre du jour", false],
     ]);
   });
 
@@ -142,5 +142,20 @@ describe('renderAgendaManager', () => {
     const view = renderAgendaManager({ id: meeting.id, agendaLocked: true }, [], null, m);
     expect(view.components).toHaveLength(1);
     expect(view.content).toContain(m.agendaManager.empty);
+  });
+});
+
+describe('carte d’une réunion terminée', () => {
+  it('liens Compte rendu et Audio à la place des réponses', () => {
+    const links = { report: 'https://discord.com/channels/1/2/3', audio: 'https://discord.com/channels/1/2/4' };
+    const card = renderMeetingCard({ ...meeting, status: 'ended' }, [], m, null, links);
+    const all = card.components.flatMap((row) => row.components) as Array<{ label?: string; url?: string; custom_id?: string }>;
+    expect(all.map((b) => b.label)).toEqual(['Compte rendu', 'Audio', m.buttons.manage]);
+    expect(all[0]?.url).toBe(links.report);
+  });
+
+  it('sans compte rendu publié : boutons de réponse désactivés comme avant', () => {
+    const card = renderMeetingCard({ ...meeting, status: 'ended' }, [], m);
+    expect(buttons(card).filter((b) => b.custom_id.includes('rsvp')).every((b) => b.disabled)).toBe(true);
   });
 });

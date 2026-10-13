@@ -1,3 +1,4 @@
+import { ActionRowBuilder, type ButtonBuilder } from 'discord.js';
 import type { AppContext } from '../context.js';
 import type { ScheduledJobRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -5,6 +6,7 @@ import { fetchThread } from '../discord/threads.js';
 import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
 import { nonResponders, reminderTargets } from '../domain/rsvp.js';
 import { formatWhen } from '../domain/time.js';
+import { rsvpButtons } from '../discord/embeds/meetingCard.js';
 import { joinVoiceRows, mentionBatches, voiceName } from '../discord/notify.js';
 import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
@@ -131,7 +133,8 @@ export class Scheduler {
       const send = thread.send({
         content: batch.content,
         allowedMentions: { users: batch.users },
-        ...(i === 0 ? { components: joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m) } : {}),
+        // Répondre sans remonter jusqu'à la carte (mobile), et rejoindre le vocal s'il existe.
+        ...(i === 0 ? { components: [new ActionRowBuilder<ButtonBuilder>().addComponents(...rsvpButtons(meeting.id, m)).toJSON(), ...joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m)] } : {}),
       });
       // Le premier message est le rappel : son échec fait réessayer l'échéance. Les suivants
       // (mentions en surplus) ne la font pas réessayer, sinon le premier partirait deux fois.

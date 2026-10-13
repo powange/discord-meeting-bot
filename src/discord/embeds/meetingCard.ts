@@ -55,6 +55,8 @@ export function renderMeetingCard(
   m: Messages,
   /** Enregistrement en cours (début), ou null. */
   recordingSince: Date | null = null,
+  /** Réunion terminée : liens vers le compte rendu et l'audio publiés. */
+  links: { report: string | null; audio: string | null } = { report: null, audio: null },
 ): RenderedMessage {
   const groups = groupRsvps(rsvps);
   const mentions = (ids: string[]) =>
@@ -82,10 +84,14 @@ export function renderMeetingCard(
   if (description) embed.setDescription(description);
 
   const open = isOpen(meeting.status);
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    rsvpButton(meeting.id, 'yes', `${m.rsvp.yes} (${groups.yes.length})`, ButtonStyle.Success, '✅', open),
-    rsvpButton(meeting.id, 'maybe', `${m.rsvp.maybe} (${groups.maybe.length})`, ButtonStyle.Secondary, '❔', open),
-    rsvpButton(meeting.id, 'no', `${m.rsvp.no} (${groups.no.length})`, ButtonStyle.Secondary, '❌', open),
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  if (open || (!links.report && !links.audio)) row.addComponents(...rsvpButtons(meeting.id, m, groups, open));
+  else {
+    // Réunion terminée : les réponses ne servent plus, le compte rendu et l'audio si.
+    if (links.report) row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(links.report).setLabel(m.card.reportLink).setEmoji('📝'));
+    if (links.audio) row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(links.audio).setLabel(m.card.audioLink).setEmoji('🎧'));
+  }
+  row.addComponents(
     // Panneau de gestion (organisateur et gestionnaires) : modifier, dupliquer, clore, annuler…
     new ButtonBuilder().setCustomId(encode({ type: 'meeting.manage', meetingId: meeting.id })).setLabel(m.buttons.manage).setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
   );
@@ -121,6 +127,16 @@ export function renderAgendaMessage(
       .setDisabled(!open),
   );
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };
+}
+
+/** Boutons de réponse (carte, rappels) : même customId partout. */
+export function rsvpButtons(meetingId: string, m: Messages, counts?: Record<'yes' | 'maybe' | 'no', readonly unknown[]>, enabled = true): ButtonBuilder[] {
+  const n = (k: 'yes' | 'maybe' | 'no') => (counts ? ` (${counts[k].length})` : '');
+  return [
+    rsvpButton(meetingId, 'yes', `${m.rsvp.yes}${n('yes')}`, ButtonStyle.Success, '✅', enabled),
+    rsvpButton(meetingId, 'maybe', `${m.rsvp.maybe}${n('maybe')}`, ButtonStyle.Secondary, '❔', enabled),
+    rsvpButton(meetingId, 'no', `${m.rsvp.no}${n('no')}`, ButtonStyle.Secondary, '❌', enabled),
+  ];
 }
 
 function rsvpButton(meetingId: string, status: 'yes' | 'maybe' | 'no', label: string, style: ButtonStyle, emoji: string, enabled: boolean) {

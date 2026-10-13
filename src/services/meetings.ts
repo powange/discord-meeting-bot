@@ -205,7 +205,9 @@ export class MeetingService {
     if (!options.silent) {
       await this.afterStatusChange(meeting, settings, async (thread) => {
         const byName = await displayName(this.client, meeting.guildId, by);
-        await thread.send({ content: m.thread.cancelled(meeting.title, byName, reason), allowedMentions: { parse: [] } });
+        // Ceux qui avaient répondu sont prévenus (comme pour un report), avant l'archivage du post.
+        const responders = (await this.repos.listRsvps(meeting.id)).map((r) => r.userId);
+        await sendWithMentions(thread, m.thread.cancelled(meeting.title, byName, reason), m.thread.responders, responders);
         await thread.setArchived(true, 'Réunion annulée');
       });
     }

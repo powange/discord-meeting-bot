@@ -47,6 +47,8 @@ export class PipelineService {
   /** Réunions à retraiter dès la fin du traitement en cours (nouvel enregistrement entre-temps). */
   private readonly refreshAfterRun = new Set<string>();
   private worker: Promise<void> | null = null;
+  /** Compte rendu publié : la carte (liens) et le post épinglé (derniers comptes rendus) sont mis à jour. */
+  private onPublished: (meeting: MeetingRow) => void = () => undefined;
   private readonly abort = new AbortController();
   private stopping = false;
 
@@ -85,6 +87,10 @@ export class PipelineService {
 
   private hasSpeech(meetingId: string): Promise<boolean> {
     return this.deps.repos.hasSpeech(meetingId);
+  }
+
+  setOnPublished(fn: (meeting: MeetingRow) => void): void {
+    this.onPublished = fn;
   }
 
   /** Programme le traitement (étapes créées si besoin). */
@@ -206,6 +212,7 @@ export class PipelineService {
       }
     }
     await status.update(details);
+    this.onPublished(meeting);
   }
 
   private async notifyFailure(meeting: MeetingRow, m: Messages): Promise<void> {

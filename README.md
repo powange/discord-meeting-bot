@@ -13,7 +13,7 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble 
 | Post de réunion | Titré `Lun. 12/10 · 18h00 · Titre`. Un événement Discord est créé en parallèle. |
 | Carte de réunion | Premier message du post, régénéré depuis la BDD : date (affichée dans le fuseau de chaque lecteur), salon, organisateur, réponses, ordre du jour. |
 | Réponses | Boutons Présent / Peut-être / Absent, modifiables à tout moment. |
-| Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ODJ** : l'organisateur ou un gestionnaire peut modifier, monter, descendre, retirer et verrouiller. Chaque participant peut modifier ses propres points tant que l'ODJ n'est pas verrouillé. |
+| Ordre du jour | **Ajouter un point** (formulaire titre + détail ; auteur enregistré). **Gérer l'ordre du jour** : l'organisateur ou un gestionnaire peut modifier, monter, descendre, retirer et verrouiller. Chaque participant peut modifier ses propres points tant que l'ODJ n'est pas verrouillé. |
 | Tags | `À venir` → `En cours` (à l'heure prévue) → `Terminée` / `Annulée`. |
 | Rappels | J-1 et 15 min avant par défaut. Ils mentionnent les présents et les peut-être. Les membres d'un rôle choisi qui n'ont pas répondu peuvent être relancés. |
 | ⚙️ Gérer | Bouton de la carte (organisateur ou gestionnaire), qui ouvre un panneau privé : modifier, dupliquer (nouveau jour et horaire, ODJ repris ou non), enregistrement auto oui/non, clore maintenant (avec confirmation), annuler (raison facultative), régénérer le compte rendu. **Le bot n'a qu'une seule commande, `/config`** : tout le reste passe par des boutons. |
@@ -31,7 +31,7 @@ Qui peut gérer une réunion ? Son organisateur, les membres du **rôle gestionn
 | Pendant | Le bot est dans le vocal, micro coupé, et **renommé « 🔴 Enregistrement »** (pseudo restauré à l'arrêt). Avertissement dans le post et dans le chat du vocal au démarrage, puis à **chaque personne qui arrive en cours de route** (une fois par session). La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
 | Opt-out | Bouton **🎙️ Mon choix d'enregistrement** (post épinglé, avertissement de démarrage, message aux arrivants) : chacun refuse ou accepte. Le choix est **gardé par le bot, invisible des autres membres** ; aucun rôle n'est nécessaire. Les admins voient la liste dans `/config` → Enregistrement. La présence est notée, pas la voix. |
-| Fin | Bouton Arrêter, carte → ⚙️ Gérer → « Clore maintenant », ou clôture automatique de la réunion (vocal vide depuis 5 min). |
+| Fin | Bouton Arrêter, carte → ⚙️ Gérer → « Terminer maintenant », ou clôture automatique (vocal vide depuis 5 min, jamais avant l'heure de fin prévue). Une fois le compte rendu publié, la carte affiche les liens **Compte rendu** et **Audio**, et le post épinglé liste les 5 derniers comptes rendus. |
 | Bilan | Message silencieux dans le post. Il signale « ⚠️ audio possiblement incomplet » quand une part notable des paquets d'une personne n'a pas pu être déchiffrée (DAVE) ; `recording.debugVoice: true` journalise les détails de la connexion vocale. Il indique aussi : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
 | Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
 
@@ -69,7 +69,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 | Publication | Compte rendu en Components V2, découpé sur plusieurs messages si besoin, avec la **transcription complète en `.md`** jointe. Les responsables d'actions reconnus sont mentionnés, donc notifiés. La trace des modèles utilisés est en pied de message. |
 | Échec | L'étape passe en ❌ avec l'erreur et un bouton **🔁 Relancer** (organisateur ou gestionnaire) : seule l'étape en échec et les suivantes sont refaites, les blocs déjà transcrits sont conservés. Un arrêt du bot reprend au démarrage. |
 | Corriger | Bouton **✏️ Corriger** sous le compte rendu (organisateur ou gestionnaire) : une consigne libre (« Pol et non Paul », « la décision était de reporter »). Elle est ajoutée aux consignes précédentes et transmise au modèle en priorité, puis le résumé est régénéré sans retranscrire. |
-| Régénérer | Carte → ⚙️ Gérer → « Régénérer le résumé », ou « Tout retranscrire ». L'ancien compte rendu est remplacé. |
+| Régénérer | Carte → ⚙️ Gérer → « Régénérer le compte rendu » (ou 🔄 Régénérer sous le compte rendu), ou « Tout retranscrire ». L'ancien compte rendu est remplacé. |
 
 ### Mettre en place l'IA
 
@@ -91,8 +91,8 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 ### Tester la phase 3
 
-- **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore (carte → ⚙️ Gérer → Clore maintenant).
-- **Sur une réunion déjà enregistrée** : carte → ⚙️ Gérer → Régénérer le résumé.
+- **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore (carte → ⚙️ Gérer → Terminer maintenant).
+- **Sur une réunion déjà enregistrée** : carte → ⚙️ Gérer → Régénérer le compte rendu.
 - **Tests automatiques** : `TEST_DATABASE_URL=… npm test` lance aussi un test de bout en bout : vraies pistes OGG, ffmpeg, bascule entre serveurs simulés, LLM simulé, relance et reprise.
 
 ## 1. Créer l'application Discord
@@ -144,9 +144,9 @@ Commandes utiles :
 2. `/config` → Rappels → « 5min, 2min », pour voir passer les rappels rapidement.
 3. Bouton **Nouvelle réunion** du post épinglé, avec une heure dans 8 minutes. Vérifier que le post, la carte et l'événement Discord sont créés.
 4. Avec deux comptes, répondre (Présent / Peut-être) et ajouter des points à l'ordre du jour. La carte se met à jour en environ une seconde.
-5. Avec **Gérer l'ODJ**, réordonner, retirer un point et verrouiller. Avec le second compte, vérifier que l'ajout est refusé.
+5. Avec **Gérer l'ordre du jour**, réordonner, retirer un point et verrouiller. Avec le second compte, vérifier que l'ajout est refusé.
 6. Vérifier les rappels à H-5 et H-2 min, puis le passage du tag à « En cours » et de l'événement à « Actif » à l'heure prévue.
-7. Carte → ⚙️ Gérer → Clore maintenant : tag « Terminée », boutons désactivés, événement terminé.
+7. Carte → ⚙️ Gérer → Terminer maintenant : tag « Terminée », boutons désactivés, événement terminé.
 8. Redémarrer le bot entre deux étapes. Les boutons et les échéances doivent continuer à fonctionner, car tout est en BDD.
 
 ## 3. Déploiement Portainer

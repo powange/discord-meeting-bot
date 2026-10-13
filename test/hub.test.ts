@@ -38,4 +38,12 @@ describe('renderHub', () => {
     }));
     expect(renderHub(many, m).embeds[0]!.fields![0]!.value.length).toBeLessThanOrEqual(1024);
   });
+
+  it('derniers comptes rendus : liens, crochets du titre neutralisés', () => {
+    const out = renderHub([], m, [{ title: 'Bureau [octobre]', startsAt: new Date('2026-10-12T16:00:00Z'), url: 'https://discord.com/channels/1/2/3' }]);
+    const field = out.embeds[0]!.fields![1]!;
+    expect(field.name).toBe(m.hub.recentReports);
+    expect(field.value).toContain('[Bureau octobre](https://discord.com/channels/1/2/3)');
+    expect(renderHub([], m).embeds[0]!.fields).toHaveLength(1);
+  });
 });

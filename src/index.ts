@@ -84,6 +84,10 @@ async function main(): Promise<void> {
     afterEnd: (meetingId) => pipeline.processIfNeeded(meetingId),
   };
   recordings.setOnStopped((meetingId) => pipeline.refresh(meetingId));
+  pipeline.setOnPublished((meeting) => {
+    cards.refresh(meeting.id, ['card']);
+    hub.refresh(meeting.guildId);
+  });
   const owners = new OwnersService(config.owners);
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts };
   const scheduler = new Scheduler(ctx);
