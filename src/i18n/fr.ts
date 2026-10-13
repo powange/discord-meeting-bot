@@ -321,7 +321,7 @@ export const fr = {
     correctModal: 'Corriger le compte rendu',
     correctField: 'Consigne de correction',
     correctHint: 'Ex. « Pol et non Paul », « la décision était de reporter à janvier ». Le résumé sera régénéré.',
-    correctSaved: 'Correction prise en compte : le compte rendu va être régénéré (quelques secondes à quelques minutes).',
+    correctSaved: 'Correction prise en compte : le compte rendu va être régénéré (quelques secondes à quelques minutes). Vous serez mentionné dans le post une fois qu’il sera à jour.',
     correctNoSummary: "Il n'y a pas encore de résumé à corriger pour cette réunion.",
     disabled: '*Résumé désactivé : aucun modèle de langue configuré. La transcription complète est jointe.*',
     traceNoSummary: (transcription: string) => `Transcription : ${transcription} · Résumé désactivé`,
@@ -407,11 +407,14 @@ export const fr = {
       tooLong: 'durée maximale dépassée',
       unknown: 'erreur inattendue (détail envoyé aux administrateurs)',
     },
-    failedNotice: (organizerId: string) => `⚠️ <@${organizerId}> le compte rendu n'a pas pu être terminé : le message de suivi ci-dessus permet de le relancer.`,
+    failedNotice: (userIds: readonly string[]) =>
+      `⚠️ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu n'a pas pu être terminé : le message de suivi ci-dessus permet de le relancer.`,
+    updatedNotice: (userIds: readonly string[], url: string | null) =>
+      `✅ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu est à jour${url ? ` : ${url}` : '.'}`,
     retried: 'Relance lancée : seules les étapes en échec sont refaites.',
     failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut le relancer : seules les étapes en échec sont refaites.",
     retry: 'Relancer',
-    scheduled: 'Compte rendu programmé : il sera publié dans le post.',
+    scheduled: 'Compte rendu programmé : il sera publié dans le post, et vous y serez mentionné une fois prêt.',
     nothing: "Aucun enregistrement exploitable pour cette réunion.",
     running_reply: 'Un traitement est déjà en cours pour cette réunion.',
     purged: (when: string) =>

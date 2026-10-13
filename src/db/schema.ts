@@ -91,6 +91,8 @@ export const meetings = pgTable(
     endedAt: tz(),
     /** Sondage de date : fin des réponses (null une fois la date fixée, ou pour une réunion classique). */
     pollClosesAt: tz(),
+    /** Personnes qui ont demandé une correction ou une régénération : prévenues à la publication. */
+    reportRequesters: text().array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -200,7 +200,7 @@ export async function handleAction(
       const correction = interaction.fields.getTextInputValue('correction').trim();
       if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
       if (!(await ctx.repos.addCorrection(meeting.id, correction))) throw new UserError(m.report.correctNoSummary);
-      await ctx.pipeline.regenerate(meeting.id, false);
+      await ctx.pipeline.regenerate(meeting.id, false, interaction.user.id);
       await replyEphemeral(interaction, m.report.correctSaved);
       return;
     }
@@ -211,7 +211,7 @@ export async function handleAction(
       requireManager(scope);
       if (ctx.recordings.isRecording(meeting.id)) throw new UserError(m.errors.alreadyRecording);
       if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
-      await ctx.pipeline.regenerate(meeting.id, false);
+      await ctx.pipeline.regenerate(meeting.id, false, interaction.user.id);
       await replyEphemeral(interaction, m.pipeline.scheduled);
       return;
     }
@@ -361,7 +361,7 @@ export async function handleAction(
         const purged = recordings.find((r) => r.purgedAt)!;
         notice = m.pipeline.purged(formatWhen(purged.purgedAt!, scope.settings.timezone, scope.settings.locale, m.format.when));
       } else {
-        await ctx.pipeline.regenerate(meeting.id, retranscribe);
+        await ctx.pipeline.regenerate(meeting.id, retranscribe, interaction.user.id);
         notice = m.pipeline.scheduled;
       }
       await interaction.update({ components: [await managerPanel(ctx, meeting, { notice })] });

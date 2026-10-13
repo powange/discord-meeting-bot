@@ -368,6 +368,43 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(order).toHaveLength(3);
   }, 30_000);
 
+  it('régénération demandée : la personne est prévenue à la publication, ou avec l’organisateur en cas d’échec', async () => {
+    const meeting = (await repos.updateMeeting((await seedMeeting()).id, { threadId: 'thread-regen', organizerId: '900' }))!;
+    const { thread, sent } = fakeThread('thread-regen');
+    const d = { ...deps(), client: { guilds: { fetch: async () => ({ premiumTier: 0 }) }, channels: { fetch: async () => thread } } as unknown as Client };
+    let fail = true;
+    const quick: StepFn = async () => ({});
+    const engine = new PipelineService(d, {
+      mix: quick,
+      transcribe: quick,
+      summarize: async () => {
+        if (fail) throw new Error('LLM injoignable');
+        return {};
+      },
+      publish: async () => ({ url: 'https://discord.com/channels/g/thread-regen/42' }),
+    });
+    const textOf = () => sent.filter((p) => typeof p.content === 'string').map((p) => [p.content as string, (p.allowedMentions as { users?: string[] })?.users]);
+
+    // Échec : l'organisateur et le demandeur sont mentionnés, le demandeur reste à prévenir.
+    await engine.regenerate(meeting.id, false, '555');
+    await waitIdle(engine, meeting.id);
+    expect(textOf().at(-1)).toEqual([expect.stringContaining("n'a pas pu être terminé"), ['900', '555']]);
+
+    // Relance réussie : seul le demandeur est prévenu, avec le lien ; puis la liste est vidée.
+    fail = false;
+    await engine.regenerate(meeting.id, false, '555');
+    await waitIdle(engine, meeting.id);
+    expect(textOf().at(-1)).toEqual([expect.stringContaining('à jour : https://discord.com/channels/g/thread-regen/42'), ['555']]);
+    expect((await repos.getMeeting(meeting.id))?.reportRequesters).toEqual([]);
+
+    // Régénération sans demandeur (traitement automatique) : pas d'avis.
+    const before = sent.length;
+    await engine.regenerate(meeting.id, false);
+    await waitIdle(engine, meeting.id);
+    expect(sent.filter((p) => typeof p.content === 'string')).toHaveLength(textOf().length);
+    expect(sent.slice(before).filter((p) => typeof p.content === 'string' && (p.content as string).includes('à jour'))).toEqual([]);
+  }, 30_000);
+
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];

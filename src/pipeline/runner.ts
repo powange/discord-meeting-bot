@@ -116,7 +116,9 @@ export class PipelineService {
   }
 
   /** Nouveau compte rendu : résumé et publication refaits ; la transcription aussi si demandé. */
-  async regenerate(meetingId: string, retranscribe: boolean): Promise<void> {
+  async regenerate(meetingId: string, retranscribe: boolean, requestedBy?: string): Promise<void> {
+    // Gardé en base : la personne est prévenue à la publication, même après un redémarrage.
+    if (requestedBy) await this.deps.repos.addReportRequester(meetingId, requestedBy);
     await this.deps.repos.ensurePipeline(meetingId);
     if (retranscribe) await this.deps.repos.resetTranscription(meetingId);
     await this.deps.repos.resetSteps(meetingId, retranscribe ? [...PIPELINE_STEPS] : ['summarize', 'publish']);
@@ -253,6 +255,7 @@ export class PipelineService {
     }
     await status.update(details);
     this.onPublished(meeting);
+    await this.notifyRequesters(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis de mise à jour impossible'));
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
     if ((await repos.getMeeting(meetingId))?.status === 'ended') {
       const master = await repos.dropMixMaster(meetingId);
@@ -263,8 +266,24 @@ export class PipelineService {
   private async notifyFailure(meeting: MeetingRow, m: Messages): Promise<void> {
     const thread = await fetchThread(this.deps.client, meeting.threadId);
     if (!thread) return;
+    // Ceux qui ont demandé la régénération sont prévenus aussi ; ils le seront de nouveau à la
+    // publication réussie (relance).
+    const requesters = (await this.deps.repos.getMeeting(meeting.id))?.reportRequesters ?? [];
+    const users = [...new Set([meeting.organizerId, ...requesters])];
     await ensureUnarchived(thread);
-    await thread.send({ content: m.pipeline.failedNotice(meeting.organizerId), allowedMentions: { users: [meeting.organizerId] } });
+    await thread.send({ content: m.pipeline.failedNotice(users), allowedMentions: { users } });
+  }
+
+  /** Compte rendu publié : ceux qui avaient demandé une correction ou une régénération sont prévenus. */
+  private async notifyRequesters(meeting: MeetingRow, m: Messages): Promise<void> {
+    const users = await this.deps.repos.takeReportRequesters(meeting.id);
+    if (users.length === 0) return;
+    const thread = await fetchThread(this.deps.client, meeting.threadId);
+    if (!thread) return;
+    const publish = (await this.deps.repos.listPipeline(meeting.id)).find((r) => r.step === 'publish');
+    const url = typeof publish?.output?.url === 'string' ? publish.output.url : null;
+    await ensureUnarchived(thread);
+    await thread.send({ content: m.pipeline.updatedNotice(users, url), allowedMentions: { users } });
   }
 }
 

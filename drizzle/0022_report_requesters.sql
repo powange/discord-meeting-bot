@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "report_requesters" text[] DEFAULT '{}'::text[] NOT NULL;

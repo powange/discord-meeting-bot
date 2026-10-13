@@ -527,6 +527,24 @@ export class Repositories {
     return rows.flatMap((r) => (typeof r.output?.url === 'string' && r.output.url ? [{ title: r.title, startsAt: r.startsAt, url: r.output.url }] : []));
   }
 
+  /** Ajoute une personne à prévenir à la prochaine publication du compte rendu (sans doublon). */
+  async addReportRequester(meetingId: string, userId: string): Promise<void> {
+    await this.db
+      .update(meetings)
+      .set({ reportRequesters: sql`array_append(array_remove(${meetings.reportRequesters}, ${userId}), ${userId})` })
+      .where(eq(meetings.id, meetingId));
+  }
+
+  /** Personnes à prévenir, retirées de la liste (une seule notification). */
+  async takeReportRequesters(meetingId: string): Promise<string[]> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select({ ids: meetings.reportRequesters }).from(meetings).where(eq(meetings.id, meetingId)).for('update');
+      if (!row || row.ids.length === 0) return [];
+      await tx.update(meetings).set({ reportRequesters: [] }).where(eq(meetings.id, meetingId));
+      return row.ids;
+    });
+  }
+
   async listUnfinishedPipelines(): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ meetingId: pipelineSteps.meetingId })
