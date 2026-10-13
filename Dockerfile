@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 ENV NODE_ENV=production DATA_DIR=/data
 # ffmpeg : transcription et mix. pg_dump 17 (dépôt PGDG, Debian n'a que le 15) : sauvegarde
 # automatique avant chaque migration ; il doit être au moins de la version du serveur.
