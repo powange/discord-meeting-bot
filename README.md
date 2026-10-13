@@ -1,6 +1,10 @@
 # meeting-recorder
 
-Bot Discord auto-hébergé de gestion de réunions : planification dans un forum, inscriptions, ordre du jour, rappels, événements Discord natifs. L'enregistrement, la transcription, les résumés et l'archivage arrivent dans les phases suivantes.
+[![Ajouter à Discord](https://img.shields.io/badge/Ajouter%20%C3%A0-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1559297721322569868&scope=bot+applications.commands&permissions=17892902038544)
+
+Bot Discord auto-hébergé de gestion de réunions : planification dans un forum, inscriptions, ordre du jour, rappels et événements Discord natifs, puis enregistrement de chaque participant, transcription, compte rendu rédigé par un modèle de langue local et publication dans le post de la réunion.
+
+Le bouton ci-dessus invite le bot de production avec les permissions nécessaires ; ensuite, `/config` sur le serveur guide la configuration.
 
 Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble et le plan par phases.
 
@@ -100,7 +104,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 1. Sur https://discord.com/developers/applications, créer une application (icône prête à l'emploi : [assets/app-icon.png](assets/app-icon.png), 1024 × 1024 ; bannière : [assets/app-banner.png](assets/app-banner.png), 1360 × 480, à déposer dans **Bot → Banner**), puis ouvrir l'onglet **Bot**.
 2. Copier le token : c'est `DISCORD_TOKEN`.
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
-4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
+4. Inviter le bot sur le serveur : bouton **Ajouter à Discord** en haut de ce README pour le bot de production, ou, pour une autre application (dev), ce lien en remplaçant `CLIENT_ID` :
    ```
    https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892902038544
    ```
