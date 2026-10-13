@@ -26,6 +26,7 @@ import { isOpen } from '../domain/meeting.js';
 import { ArrivalNotices, RECORDING_NICKNAME } from '../domain/greeting.js';
 import type { StopReason } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
+import { freeDiskGb } from '../lib/disk.js';
 import { errorMessage, UserError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { RecordingSession } from '../recording/session.js';
@@ -34,6 +35,7 @@ import type { OptoutService } from './optouts.js';
 import type { SettingsService } from './settings.js';
 
 const JOIN_TIMEOUT_MS = 20_000;
+const DISK_CHECK_MS = 10 * 60_000;
 const RECONNECT_GRACE_MS = 5_000;
 
 const VOICE_PERMISSIONS = {
@@ -144,6 +146,10 @@ export class RecordingService {
       .map(([name]) => name);
     if (missing.length > 0) throw new UserError(m.errors.voicePermissions(missing.join(', ')));
 
+    // Disque presque plein : refus clair plutôt qu'un enregistrement perdu en cours de route.
+    const freeGb = await freeDiskGb(this.config.dataDir);
+    if (freeGb !== null && freeGb < this.config.diskMinFreeGb) throw new UserError(m.errors.diskFull(freeGb.toFixed(1)));
+
     const recCfg = this.config.guild(guild.id).recording;
     await this.optouts.load(guild.id); // refus à jour avant la première prise de parole
     const connection = joinVoiceChannel({
@@ -163,6 +169,44 @@ export class RecordingService {
       throw new UserError(m.errors.voiceJoinFailed);
     }
 
+    // Connecté au vocal : tout échec à partir d'ici doit l'en faire sortir.
+    let started: { recordingId: string; at: Date };
+    try {
+      started = await this.attachSession(meeting, settings, guild, channel, connection, by);
+    } catch (err) {
+      connection.destroy();
+      throw err;
+    }
+    const { recordingId, at: now } = started;
+
+    // Présences au démarrage.
+    for (const member of channel.members.values()) {
+      if (member.user.bot) continue;
+      await this.repos.insertPresence({
+        recordingId,
+        userId: member.id,
+        displayName: member.displayName,
+        joinedAt: now,
+        excluded: this.optouts.isOptedOut(guild.id, member.id),
+      });
+    }
+
+    this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
+    await this.announceStart(meeting, settings, m, channel, by);
+    this.cards.refresh(meeting.id, ['card']);
+    await this.syncControl(meeting.id);
+    this.watchDisk();
+  }
+
+  private async attachSession(
+    meeting: MeetingRow,
+    settings: GuildSettingsRow,
+    guild: Guild,
+    channel: VoiceBasedChannel,
+    connection: VoiceConnection,
+    by: string | null,
+  ): Promise<{ recordingId: string; at: Date }> {
+    const recCfg = this.config.guild(guild.id).recording;
     const recordingId = randomUUID();
     const dataDir = join(this.config.dataDir, 'recordings', guild.id, recordingId);
     const now = new Date();
@@ -197,23 +241,28 @@ export class RecordingService {
     this.active.set(guild.id, entry);
     await this.setNickname(guild, RECORDING_NICKNAME);
     this.watchConnection(entry, connection);
+    return { recordingId, at: now };
+  }
 
-    // Présences au démarrage.
-    for (const member of channel.members.values()) {
-      if (member.user.bot) continue;
-      await this.repos.insertPresence({
-        recordingId,
-        userId: member.id,
-        displayName: member.displayName,
-        joinedAt: now,
-        excluded: this.optouts.isOptedOut(guild.id, member.id),
+  /** Pendant une capture : espace disque vérifié toutes les 10 minutes, alerte sous le seuil. */
+  private diskTimer: NodeJS.Timeout | null = null;
+  private watchDisk(): void {
+    if (this.diskTimer) return;
+    this.diskTimer = setInterval(() => {
+      const guilds = [...this.active.entries()].flatMap(([guildId, a]) => (a ? [guildId] : []));
+      if (guilds.length === 0) {
+        clearInterval(this.diskTimer!);
+        this.diskTimer = null;
+        return;
+      }
+      void freeDiskGb(this.config.dataDir).then(async (freeGb) => {
+        if (freeGb === null || freeGb >= this.config.diskMinFreeGb) return;
+        for (const guildId of guilds) {
+          const m = await this.settings.messages(guildId);
+          await this.alert(guildId, 'disk', m.errors.diskLowDuringRecording(freeGb.toFixed(1))).catch(() => undefined);
+        }
       });
-    }
-
-    this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
-    await this.announceStart(meeting, settings, m, channel, by);
-    this.cards.refresh(meeting.id, ['card']);
-    await this.syncControl(meeting.id);
+    }, DISK_CHECK_MS).unref();
   }
 
   /** Avertissement RGPD dans le post et dans le chat du salon vocal (lu par ceux qui y sont). */

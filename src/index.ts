@@ -130,11 +130,15 @@ async function main(): Promise<void> {
     stopping = true;
     log.info({ signal }, 'Arrêt en cours');
     const force = setTimeout(() => process.exit(1), 15_000).unref();
+    // Les enregistrements d'abord : fermer proprement les pistes est ce qui ne doit jamais manquer
+    // de temps. Le traitement des comptes rendus s'interrompt en parallèle (il reprendra au démarrage).
+    await Promise.allSettled([
+      recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet')),
+      pipeline.stop(),
+    ]);
     await scheduler.stop().catch(() => undefined);
     watcher.stop();
     await retention.stop().catch(() => undefined);
-    await pipeline.stop().catch(() => undefined);
-    await recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet'));
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);
     await hub.flush().catch(() => undefined);
@@ -149,6 +153,11 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('unhandledRejection', (err) => log.error({ err }, 'Promesse rejetée non gérée'));
+  // Dernier filet : on journalise et on s'arrête proprement (pistes fermées) plutôt que de mourir net.
+  process.on('uncaughtException', (err) => {
+    log.fatal({ err }, 'Exception non gérée : arrêt du bot');
+    void shutdown('uncaughtException');
+  });
 
   await client.login(config.discord.token);
 }

@@ -30,11 +30,18 @@ export class SegmentWriter {
   private packets = 0;
   private firstPacketAt = 0;
   private lastPacketAt = 0;
+  /** Erreur d'écriture (disque plein, I/O) : la prise de parole est perdue, pas le processus. */
+  private failure: Error | null = null;
 
   private constructor(
     readonly filePath: string,
     private readonly file: WriteStream,
   ) {
+    // Sans écouteur, une erreur d'écriture (ENOSPC…) serait une exception non gérée qui
+    // arrêterait le bot et tous les enregistrements en cours.
+    file.on('error', (err) => {
+      this.failure ??= err;
+    });
     this.writePage([opusHead()], PAGE_BOS);
     this.writePage([opusTags()], 0);
   }
@@ -46,6 +53,7 @@ export class SegmentWriter {
   }
 
   write(packet: Buffer, at = Date.now()): void {
+    if (this.failure) return;
     if (this.packets === 0) {
       this.firstPacketAt = at;
     } else {
@@ -57,15 +65,23 @@ export class SegmentWriter {
     this.push(packet);
   }
 
+  /** Vrai après une erreur d'écriture : les paquets suivants sont ignorés. */
+  get failed(): boolean {
+    return this.failure !== null;
+  }
+
   get packetCount(): number {
     return this.packets;
   }
 
   /** Termine le fichier (page de fin) et attend son écriture complète. */
   async close(): Promise<WrittenSegment> {
-    this.flush(PAGE_EOS);
+    if (!this.failure) this.flush(PAGE_EOS);
     this.file.end();
-    await finished(this.file);
+    await finished(this.file).catch((err: Error) => {
+      this.failure ??= err;
+    });
+    if (this.failure) throw new Error(`Écriture de la piste impossible : ${this.failure.message}`, { cause: this.failure });
     return { filePath: this.filePath, packets: this.packets, firstPacketAt: this.firstPacketAt, lastPacketAt: this.lastPacketAt };
   }
 
@@ -82,6 +98,7 @@ export class SegmentWriter {
   }
 
   private writePage(packets: Buffer[], flags: number): void {
+    if (this.failure) return;
     const header = flags & PAGE_BOS || this.sequence < 2;
     this.file.write(oggPage(packets, { serial: this.serial, sequence: this.sequence++, granule: header ? 0n : this.granule, flags }));
   }

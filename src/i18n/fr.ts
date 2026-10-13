@@ -390,6 +390,8 @@ export const fr = {
     alertChannel: "Je ne peux pas écrire dans ce salon : vérifiez mes permissions (voir le salon, envoyer des messages).",
     voicePermissions: (perms: string) => `Il me manque des permissions sur le salon vocal : ${perms}.`,
     voiceJoinFailed: 'Connexion au salon vocal impossible (délai dépassé). Réessayez dans un instant.',
+    diskFull: (freeGb: string) => `Espace disque insuffisant sur le serveur du bot (${freeGb} Go libres) : enregistrement refusé. Un administrateur doit libérer de la place.`,
+    diskLowDuringRecording: (freeGb: string) => `Espace disque faible pendant un enregistrement : ${freeGb} Go libres. Libérez de la place avant qu'il ne soit coupé.`,
   },
 
   config: {

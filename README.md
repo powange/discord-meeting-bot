@@ -43,7 +43,7 @@ Contrainte Discord : un bot ne peut être que dans **un vocal par serveur** à l
 
 Les copies publiées dans Discord restent. Une alerte est émise si l'espace libre passe sous `diskMinFreeGb`.
 
-Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisateur>/`, soit le volume `recordings` en Docker. Compter environ 1 Mo par 10 minutes de parole et par personne. Le transfert vers le NAS et Drive arrive en phase 4.
+Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisateur>/`, soit le volume `recordings` en Docker. Compter environ **3,3 Mo par 10 minutes et par personne** (Opus à ~43 kbit/s, mesuré), plus l'audio complet de la réunion (~2 Mo par 10 minutes) : une réunion d'une heure à 6 personnes occupe environ 130 Mo, dont les pistes brutes sont purgées après 30 jours (`retention.rawTracksDays`). Le bot refuse de démarrer un enregistrement sous le seuil `diskMinFreeGb` (5 Go) et alerte toutes les 10 minutes si l'espace baisse pendant une capture.
 
 **Écouter une session (debug)** : `npx tsx --env-file=.env scripts/assemble.ts <recordingId>`. Le script reconstitue une piste continue par participant et un mix dans `…/<session>/assembled/` ; il nécessite ffmpeg. L'id de session se trouve dans la table `recordings` (`npm run db:studio`).
 

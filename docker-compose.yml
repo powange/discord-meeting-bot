@@ -28,7 +28,7 @@ services:
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
       # CONFIG_PATH: /app/config/config.yaml
     volumes:
-      # Pistes audio des réunions (prévoir de la place : ~1 Mo / 10 min / participant)
+      # Pistes audio des réunions (prévoir ~3,3 Mo / 10 min / participant, plus l'audio complet)
       - recordings:/data
       # Décommenter pour utiliser un fichier de configuration :
       # - ${CONFIG_DIR:-/srv/meeting-bot/config}:/app/config:ro
