@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseConnectionString } from 'pg-connection-string';
 import type pg from 'pg';
 import type { Logger } from '../lib/logger.js';
 
@@ -47,15 +48,30 @@ export async function migrationState(pool: pg.Pool): Promise<{ total: number; ap
  * Sauvegarde (pg_dump, format custom) avant d'appliquer de nouvelles migrations à une base qui
  * contient déjà des données : les migrations ne se défont pas, ce fichier permet de revenir en
  * arrière. Sans pg_dump (développement), on prévient et on continue ; si pg_dump échoue, on
- * s'arrête plutôt que de migrer sans filet. Les 5 dernières sauvegardes sont gardées.
+ * s'arrête plutôt que de migrer sans filet (MIGRATION_BACKUP=off pour passer outre, en dernier
+ * recours). Les 5 dernières sauvegardes sont gardées.
  */
-export async function backupBeforeMigrations(pool: pg.Pool, url: string, dir: string, log: Logger, pgDump = 'pg_dump'): Promise<string | null> {
+export async function backupBeforeMigrations(
+  pool: pg.Pool,
+  url: string,
+  dir: string,
+  log: Logger,
+  pgDump = 'pg_dump',
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string | null> {
   const { total, applied } = await migrationState(pool);
   if (applied === 0 || applied >= total) return null;
+  if (env.MIGRATION_BACKUP === 'off') {
+    log.warn({ applied, total }, 'MIGRATION_BACKUP=off : migrations appliquées sans sauvegarde préalable');
+    return null;
+  }
   await mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const file = join(dir, `pre-migration-${stamp}-${applied}-to-${total}.dump`);
-  const result = await run(pgDump, ['--format=custom', '--no-owner', `--file=${file}`, `--dbname=${url}`]);
+  // Paramètres décomposés par le même analyseur que le pilote pg du bot (dont la connexion
+  // fonctionne déjà), passés en variables PG* : l'analyse d'URL de libpq est plus stricte, et le
+  // mot de passe n'apparaît pas dans la liste des processus.
+  const result = await run(pgDump, ['--format=custom', '--no-owner', `--file=${file}`], { ...env, ...pgEnv(url) });
   if (result === 'missing') {
     log.warn({ applied, total }, 'pg_dump introuvable : migrations appliquées sans sauvegarde préalable');
     return null;
@@ -70,12 +86,25 @@ export async function backupBeforeMigrations(pool: pg.Pool, url: string, dir: st
   return file;
 }
 
-function run(cmd: string, args: string[]): Promise<'ok' | 'missing' | string> {
+/** Variables libpq équivalentes à une URL de connexion. */
+export function pgEnv(url: string): Record<string, string> {
+  const c = parseConnectionString(url);
+  const out: Record<string, string> = {};
+  if (c.host) out.PGHOST = c.host;
+  if (c.port) out.PGPORT = String(c.port);
+  if (c.user) out.PGUSER = c.user;
+  if (c.password) out.PGPASSWORD = c.password;
+  if (c.database) out.PGDATABASE = c.database;
+  return out;
+}
+
+function run(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<'ok' | 'missing' | string> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'], env });
     let stderr = '';
     child.stderr.on('data', (d: Buffer) => (stderr = (stderr + d.toString()).slice(-500)));
     child.on('error', (err: NodeJS.ErrnoException) => resolve(err.code === 'ENOENT' ? 'missing' : err.message));
-    child.on('close', (code) => resolve(code === 0 ? 'ok' : `code ${code} : ${stderr.trim().split('\n').at(-1) ?? ''}`));
+    // Toutes les lignes d'erreur : la première dit ce qui a échoué, la dernière seule n'est qu'un conseil.
+    child.on('close', (code) => resolve(code === 0 ? 'ok' : `code ${code} : ${stderr.trim().replace(/\s*\n\s*/g, ' ')}`));
   });
 }

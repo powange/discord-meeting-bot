@@ -181,7 +181,7 @@ Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migr
 
 - **Quelle version tourne ?** Le premier message du journal donne la version et le commit (`Démarrage de meeting-recorder`), puis l'application Discord connectée (`Connecté à Discord` : id et nom, pour repérer un token de prod utilisé en dev). `/health` les renvoie aussi.
 - **Une seule instance par base** : un second bot pointé sur la même base (par exemple `npm run dev` avec l'URL de prod) attend 90 s puis s'arrête avec un message clair.
-- **Sauvegarde avant migration** : quand une nouvelle version apporte des migrations, le bot fait d'abord un `pg_dump` dans `/data/backups/pre-migration-….dump` (volume `recordings`, 5 gardées). Si la sauvegarde échoue, il s'arrête sans migrer.
+- **Sauvegarde avant migration** : quand une nouvelle version apporte des migrations, le bot fait d'abord un `pg_dump` dans `/data/backups/pre-migration-….dump` (volume `recordings`, 5 gardées). Si la sauvegarde échoue, il s'arrête sans migrer et le journal donne l'erreur de `pg_dump`. En dernier recours, la variable `MIGRATION_BACKUP=off` le laisse migrer sans sauvegarde (à retirer ensuite).
 - **Revenir à la version précédente** : les migrations ne se défont pas. Arrêter la stack, restaurer la sauvegarde d'avant migration, puis redéployer avec `BOT_TAG=<version précédente>` :
   ```bash
   docker compose stop bot

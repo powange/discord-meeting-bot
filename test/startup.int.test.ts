@@ -1,14 +1,26 @@
-import { chmod, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb, runMigrations } from '../src/db/client.js';
-import { acquireInstanceLock, backupBeforeMigrations, migrationState } from '../src/db/startup.js';
+import { acquireInstanceLock, backupBeforeMigrations, migrationState, pgEnv } from '../src/db/startup.js';
 import { freshDatabase } from './helpers/db.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const log = pino({ level: 'silent' });
+
+describe('connexion de pg_dump', () => {
+  it('URL décomposée en variables PG*, comme la lit le pilote du bot (mot de passe encodé compris)', () => {
+    expect(pgEnv('postgres://bot:p%40ss%2Fw0rd@postgres:5432/meetingbot')).toEqual({
+      PGHOST: 'postgres',
+      PGPORT: '5432',
+      PGUSER: 'bot',
+      PGPASSWORD: 'p@ss/w0rd',
+      PGDATABASE: 'meetingbot',
+    });
+  });
+});
 
 describe.skipIf(!url)('Démarrage : verrou d’instance et sauvegarde avant migration', () => {
   let dbUrl: string;
@@ -59,5 +71,15 @@ describe.skipIf(!url)('Démarrage : verrou d’instance et sauvegarde avant migr
     await expect(backupBeforeMigrations(ctx.pool, dbUrl, backups, log, failing)).rejects.toThrow(/non appliquées/);
     // Sans pg_dump (développement) : on continue sans sauvegarde.
     expect(await backupBeforeMigrations(ctx.pool, dbUrl, backups, log, join(dir, 'absent'))).toBeNull();
+    // pg_dump reçoit la connexion en variables PG*, sans l'URL en argument (ni le mot de passe).
+    const probe = join(dir, 'probe.sh');
+    await writeFile(probe, `#!/bin/sh\necho "$PGHOST $PGDATABASE $*" > ${join(dir, 'probe.txt')}\nfor a in "$@"; do case "$a" in --file=*) touch "\${a#--file=}";; esac; done\n`);
+    await chmod(probe, 0o755);
+    await backupBeforeMigrations(ctx.pool, dbUrl, backups, log, probe);
+    const seen = await readFile(join(dir, 'probe.txt'), 'utf8');
+    expect(seen).toContain(new URL(dbUrl).hostname);
+    expect(seen).not.toContain('postgres://');
+    // Dernier recours : MIGRATION_BACKUP=off laisse migrer même si pg_dump échoue.
+    expect(await backupBeforeMigrations(ctx.pool, dbUrl, backups, log, failing, { MIGRATION_BACKUP: 'off' })).toBeNull();
   });
 });
