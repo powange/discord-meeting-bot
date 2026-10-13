@@ -1,10 +1,6 @@
 # meeting-recorder
 
-[![Ajouter à Discord](https://img.shields.io/badge/Ajouter%20%C3%A0-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1559297721322569868&scope=bot+applications.commands&permissions=17892902038544)
-
 Bot Discord auto-hébergé de gestion de réunions : planification dans un forum, inscriptions, ordre du jour, rappels et événements Discord natifs, puis enregistrement de chaque participant, transcription, compte rendu rédigé par un modèle de langue local et publication dans le post de la réunion.
-
-Le bouton ci-dessus invite le bot de production avec les permissions nécessaires ; ensuite, `/config` sur le serveur guide la configuration.
 
 Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour la conception d'ensemble et le plan par phases.
 
@@ -84,7 +80,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    ```
    Pour qu'il démarre avec Windows, en faire un service, avec NSSM par exemple. Vibe n'a **ni authentification ni TLS** : l'exposer uniquement sur le LAN ou Tailscale. Vérifier depuis le serveur : `curl http://pc-main.tailnet:8080/ready`.
 2. **Secours** (optionnel) : un serveur compatible OpenAI (speaches / faster-whisper) sur une autre machine, ajouté après Vibe dans la liste.
-3. **Résumé** : `/config` → Résumé. Le propriétaire du bot y saisit l'adresse du serveur compatible OpenAI (LM Studio `http://hôte:1234/v1`, Ollama `http://hôte:11434/v1` ou LiteLLM), choisit le modèle dans la liste proposée et teste. Le résumé peut aussi y être désactivé ; à défaut, le bloc `llm` du YAML s'applique.
+3. **Résumé** : `/config` → Résumé. Comme pour la transcription, une **liste de serveurs par ordre de priorité** (5 au plus) : si le premier échoue (éteint, occupé, erreur, modèle absent), le suivant prend le relais pour la même passe, et les passes suivantes repartent du serveur qui a répondu. Le propriétaire du bot ajoute un serveur compatible OpenAI (LM Studio `http://hôte:1234/v1`, Ollama `http://hôte:11434/v1` ou LiteLLM), choisit son modèle dans la liste proposée, puis peut le monter, le désactiver, le tester ou le supprimer ; les administrateurs peuvent tester et désactiver le résumé. La trace du compte rendu nomme le serveur qui a répondu. Sans serveur dans la liste, le bloc `llm` du YAML s'applique ; un serveur réglé avant cette version devient automatiquement « principal ».
    Côté machine : **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
 4. **LiteLLM (facultatif)** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), puis ajouter `COMPOSE_PROFILES=litellm` et `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, il suffit de régler le serveur dans `/config` → Résumé.
    Le bot n'a pas besoin de la clé maîtresse : créer une clé virtuelle limitée au modèle de résumé et la donner au bot dans `LLM_API_KEY` (sinon, la clé maîtresse est utilisée par défaut) :
@@ -111,7 +107,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 1. Sur https://discord.com/developers/applications, créer une application (icône prête à l'emploi : [assets/app-icon.png](assets/app-icon.png), 1024 × 1024 ; bannière : [assets/app-banner.png](assets/app-banner.png), 1360 × 480, à déposer dans **Bot → Banner**), puis ouvrir l'onglet **Bot**.
 2. Copier le token : c'est `DISCORD_TOKEN`.
 3. Activer **Server Members Intent**. Il sert à relancer les membres d'un rôle qui n'ont pas répondu.
-4. Inviter le bot sur le serveur : bouton **Ajouter à Discord** en haut de ce README pour le bot de production, ou, pour une autre application (dev), ce lien en remplaçant `CLIENT_ID` :
+4. Inviter le bot sur le serveur avec ce lien (remplacer `CLIENT_ID`) :
    ```
    https://discord.com/oauth2/authorize?client_id=CLIENT_ID&scope=bot+applications.commands&permissions=17892902038544
    ```

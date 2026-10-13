@@ -19,7 +19,7 @@ import { DURATION_MAX, DURATION_MIN } from '../../domain/meeting.js';
 import { formatOffset, parseOffsets } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
-import { effectiveLlm, listModels, testLlm } from '../../services/llmSettings.js';
+import { effectiveLlms, listModels, llmRowToConfig, testLlm, type LlmTest } from '../../services/llmSettings.js';
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
 import { assertUrlAllowed, hostOf } from '../../lib/hosts.js';
 import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, VOICE_LEADS_MIN, type ConfigContext, type ConfigSection, type VoiceMode } from '../embeds/configPanel.js';
@@ -60,7 +60,8 @@ function channelsOf(guild: Guild, type: ChannelType): ChannelInfo[] {
 
 async function context(ctx: AppContext, guildId: string, m: Messages, notice?: string, userId?: string): Promise<ConfigContext> {
   const settings = await ctx.settings.get(guildId);
-  const llm = effectiveLlm(settings, ctx.config);
+  const llm = await effectiveLlms(ctx.repos, settings, ctx.config);
+  const rows = llm.source === 'discord' ? await ctx.repos.listLlmBackends(guildId) : [];
   const { source, backends } = await effectiveBackends(ctx.repos, ctx.config, guildId);
   const names = backends.map((b) => b.name).join(', ');
   const transcription = source === 'yaml' && backends.length ? m.config.fromYamlSummary(names) : m.config.transcriptionSummary(backends.length, names);
@@ -68,10 +69,26 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
     settings,
     transcription,
     notice,
-    llm: { source: llm.source, enabled: llm.enabled, baseUrl: llm.config.baseUrl, model: llm.config.model, hasKey: Boolean(llm.config.apiKey) },
+    llm: {
+      source: llm.source,
+      enabled: llm.enabled,
+      servers:
+        llm.source === 'discord'
+          ? rows.map((r) => ({ id: r.id, name: r.name, url: r.url, model: r.model, enabled: r.enabled, hasKey: Boolean(r.apiKey) }))
+          : llm.servers.map((sv) => ({ name: sv.name, url: sv.config.baseUrl ?? '', model: sv.config.model, enabled: true, hasKey: Boolean(sv.config.apiKey) })),
+    },
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
     refusals: await ctx.optouts.list(guildId),
   };
+}
+
+type ShowExtra = Partial<Pick<ConfigContext, 'models' | 'confirmLlmDisable' | 'voiceMode' | 'llmSelected' | 'llmConfirmDelete'>> & { page?: number };
+
+/** Serveurs de résumé au plus (limite raisonnable des composants du panneau). */
+const MAX_LLM_SERVERS = 5;
+
+function formatTest(result: LlmTest, t: Messages['config']): string {
+  return result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!);
 }
 
 /** Actions du panneau. Réservé à « Gérer le serveur » (ou aux propriétaires du bot). */
@@ -84,11 +101,9 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     throw new UserError(m.backendPanel.forbidden);
   }
 
-  const show = async (section: Section | 'home', notice?: string, page?: number, models?: string[], voiceMode?: VoiceMode, confirmLlmDisable?: boolean) => {
-    const c = await context(ctx, guildId, m, notice, interaction.user.id);
-    if (models) c.models = models;
-    if (confirmLlmDisable) c.confirmLlmDisable = true;
-    if (voiceMode) c.voiceMode = voiceMode;
+  const show = async (section: Section | 'home', notice?: string, extra: ShowExtra = {}) => {
+    const { page, ...state } = extra;
+    const c = { ...(await context(ctx, guildId, m, notice, interaction.user.id)), ...state };
     const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
     if (type !== undefined) {
       const list = channelsOf(interaction.guild, type);
@@ -100,6 +115,14 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     if (interaction.isRepliable() && (interaction.deferred || interaction.replied)) await interaction.editReply(payload);
     else if (interaction.isMessageComponent()) await interaction.update(payload);
     else if (interaction.isModalSubmit() && interaction.isFromMessage()) await interaction.update(payload);
+  };
+
+  // Serveur de résumé visé (« s.<id> » dans l'identifiant du bouton).
+  const serverId = arg?.startsWith('s.') ? Number(arg.slice(2)) : Number.NaN;
+  const server = async () => {
+    const row = (await ctx.repos.listLlmBackends(guildId)).find((r) => r.id === serverId);
+    if (!row) throw new UserError(t.llmGone);
+    return row;
   };
 
   switch (action) {
@@ -117,7 +140,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
     case 'page': {
       const [section, page] = (arg ?? '').split('.');
       if (section !== 'forum' && section !== 'voice' && section !== 'alerts') return;
-      return show(section, undefined, Number(page));
+      return show(section, undefined, { page: Number(page) });
     }
 
     case 'forum': {
@@ -156,7 +179,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
         return show('voice', problem ? `${t.saved}\n${problem}` : t.saved);
       }
       // « Imposé » : le salon reste à choisir dans la liste qui apparaît.
-      else if (mode === 'fixed') return show('voice', t.pickVoiceNow, undefined, undefined, 'fixed');
+      else if (mode === 'fixed') return show('voice', t.pickVoiceNow, { voiceMode: 'fixed' });
       await ctx.meetings.replanGuild(guildId); // tâche de création du salon (ajoutée ou retirée)
       return show('voice', t.saved);
     }
@@ -272,47 +295,70 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       return show('alerts', t.alertsTestSent(channelId));
     }
 
+    // ---------------------------------------------------------------- serveurs de résumé
+    case 'llmPick': {
+      if (!interaction.isStringSelectMenu()) return;
+      return show('summary', undefined, { llmSelected: Number(interaction.values[0]) });
+    }
+    case 'llmCancel':
+      return show('summary', undefined, { llmSelected: serverId });
+    case 'llmAdd':
     case 'llmEdit': {
       if (!interaction.isButton()) return;
       if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
-      const current = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;
-      const url = new TextInputBuilder().setCustomId('url').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(true).setPlaceholder('http://pc-main.tailnet:1234/v1');
-      if (current.baseUrl) url.setValue(current.baseUrl);
+      const editing = action === 'llmEdit' ? await server() : null;
+      if (!editing && (await ctx.repos.listLlmBackends(guildId)).length >= MAX_LLM_SERVERS) return show('summary', t.llmFull(MAX_LLM_SERVERS));
+      const name = new TextInputBuilder().setCustomId('name').setStyle(TextInputStyle.Short).setMaxLength(40).setRequired(true).setPlaceholder('pc-salon');
+      const url = new TextInputBuilder().setCustomId('url').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(true).setPlaceholder('http://192.168.0.11:1234/v1');
       const model = new TextInputBuilder().setCustomId('model').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(false);
-      if (current.baseUrl && current.model) model.setValue(current.model);
       const key = new TextInputBuilder().setCustomId('key').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false);
+      if (editing) {
+        name.setValue(editing.name);
+        url.setValue(editing.url);
+        model.setValue(editing.model);
+      }
       await interaction.showModal(
         new ModalBuilder()
-          .setCustomId(encode({ type: 'cfg', action: 'llmSubmit' }))
-          .setTitle(t.llmModal)
+          .setCustomId(editing ? encode({ type: 'cfg', action: 'llmSubmit', arg: `s.${editing.id}` }) : encode({ type: 'cfg', action: 'llmAddSubmit' }))
+          .setTitle(editing ? t.llmModalEdit : t.llmModalAdd)
           .addLabelComponents(
+            new LabelBuilder().setLabel(t.llmNameField).setTextInputComponent(name),
             new LabelBuilder().setLabel(t.llmUrlField).setDescription(t.llmUrlHint).setTextInputComponent(url),
             new LabelBuilder().setLabel(t.llmModelField).setDescription(t.llmModelHint).setTextInputComponent(model),
-            new LabelBuilder().setLabel(t.llmKeyField).setDescription(t.llmKeyHint).setTextInputComponent(key),
+            new LabelBuilder().setLabel(t.llmKeyField).setDescription(editing ? t.llmKeyHint : t.llmKeyNewHint).setTextInputComponent(key),
           ),
       );
       return;
     }
+    case 'llmAddSubmit':
     case 'llmSubmit': {
       if (!interaction.isModalSubmit()) return;
       if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const editing = action === 'llmSubmit' ? await server() : null;
+      const name = interaction.fields.getTextInputValue('name').trim();
       const url = interaction.fields.getTextInputValue('url').trim().replace(/\/+$/, '');
       const model = interaction.fields.getTextInputValue('model').trim();
       const keyInput = interaction.fields.getTextInputValue('key').trim();
+      if (!name) return show('summary', `❌ ${m.errors.titleRequired}`);
       if (!/^https?:\/\/[^\s/]+/.test(url)) return show('summary', `❌ ${m.transcriptionConfig.badUrl}`);
       try {
         await assertUrlAllowed(url, ctx.config.ai.allowedHosts);
       } catch (err) {
         return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
       }
-      const settings = await ctx.settings.get(guildId);
+      const others = (await ctx.repos.listLlmBackends(guildId)).filter((r) => r.id !== editing?.id);
+      if (others.some((r) => r.name === name)) return show('summary', `❌ ${t.llmExists(name)}`);
       // Clé chiffrée en base ; changer d'hôte sans ressaisir la clé l'efface (elle ne part pas vers un autre serveur).
-      const sameHost = settings.llmBaseUrl !== null && hostOf(settings.llmBaseUrl) === hostOf(url);
-      const apiKey = keyInput && keyInput !== '-' ? encryptSecret(keyInput) : keyInput !== '-' && sameHost ? settings.llmApiKey : null;
+      const sameHost = editing !== null && hostOf(editing.url) === hostOf(url);
+      const apiKey = keyInput && keyInput !== '-' ? encryptSecret(keyInput) : keyInput !== '-' && sameHost ? editing.apiKey : null;
       await interaction.deferUpdate();
-      await ctx.repos.updateSettings(guildId, { llmBaseUrl: url, llmModel: model || null, llmApiKey: apiKey });
-      const llm = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;
-      // La liste des modèles s'affiche d'emblée : un modal ne peut pas la proposer.
+      const yaml = ctx.config.guild(guildId).llm;
+      let row = editing;
+      if (editing) await ctx.repos.updateLlmBackend(guildId, editing.id, { name, url, model: model || editing.model, apiKey });
+      else row = await ctx.repos.addLlmBackend({ guildId, name, url, model: model || yaml.model, apiKey });
+      row = (await ctx.repos.listLlmBackends(guildId)).find((r) => r.id === row!.id)!;
+      // La liste des modèles s'affiche d'emblée : un formulaire ne peut pas la proposer.
+      const llm = llmRowToConfig(row, yaml);
       let models: string[] = [];
       let listError: string | undefined;
       try {
@@ -320,39 +366,74 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       } catch (err) {
         listError = err instanceof Error ? err.message : String(err);
       }
-      if (!model) {
-        const hint = listError ? t.llmTestKo(listError) : models.length ? t.pickModelNow : t.noModels;
-        return show('summary', `${t.saved}\n${hint}`, undefined, models);
-      }
+      if (!model) return show('summary', `${t.saved}\n${listError ? t.llmTestKo(listError) : models.length ? t.pickModelNow : t.noModels}`, { llmSelected: row.id, models });
       const result = await testLlm(llm, ctx.config.ai.allowedHosts);
-      return show('summary', `${t.saved}\n${result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!)}`, undefined, models);
+      return show('summary', `${t.saved}\n${result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!)}`, { llmSelected: row.id, models });
     }
     case 'llmModels': {
       if (!interaction.isButton()) return;
       if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
       await interaction.deferUpdate();
       try {
-        const models = await listModels(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
-        return show('summary', models.length ? undefined : t.noModels, undefined, models);
+        const models = await listModels(llmRowToConfig(row, ctx.config.guild(guildId).llm), ctx.config.ai.allowedHosts);
+        return show('summary', models.length ? undefined : t.noModels, { llmSelected: row.id, models });
       } catch (err) {
-        return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
+        return show('summary', `❌ ${err instanceof Error ? err.message : err}`, { llmSelected: row.id });
       }
     }
     case 'llmModel': {
       if (!interaction.isStringSelectMenu()) return;
       if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
-      await ctx.repos.updateSettings(guildId, { llmModel: interaction.values[0] ?? null });
-      return show('summary', t.saved);
+      const row = await server();
+      await ctx.repos.updateLlmBackend(guildId, row.id, { model: interaction.values[0] ?? row.model });
+      return show('summary', t.saved, { llmSelected: row.id });
     }
-    case 'llmTest': {
+    case 'llmUp': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
+      const ids = (await ctx.repos.listLlmBackends(guildId)).map((r) => r.id);
+      const at = ids.indexOf(row.id);
+      if (at > 0) await ctx.repos.reorderLlmBackends(guildId, [...ids.slice(0, at - 1), row.id, ids[at - 1]!, ...ids.slice(at + 1)]);
+      return show('summary', t.saved, { llmSelected: row.id });
+    }
+    case 'llmToggleServer': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
+      await ctx.repos.updateLlmBackend(guildId, row.id, { enabled: !row.enabled });
+      return show('summary', t.saved, { llmSelected: row.id });
+    }
+    case 'llmDelete': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
+      return show('summary', t.llmDeleteAsk(row.name), { llmSelected: row.id, llmConfirmDelete: true });
+    }
+    case 'llmDeleteConfirm': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
+      await ctx.repos.removeLlmBackend(guildId, row.id);
+      const left = await ctx.repos.listLlmBackends(guildId);
+      return show('summary', left.length ? t.llmDeleted(row.name) : `${t.llmDeleted(row.name)}\n${t.llmBackToYaml}`);
+    }
+    case 'llmTest':
+    case 'llmTestAll': {
       if (!interaction.isButton()) return;
       await interaction.deferUpdate();
-      const result = await testLlm(effectiveLlm(await ctx.settings.get(guildId), ctx.config).config, ctx.config.ai.allowedHosts);
-      return show('summary', result.ok ? t.llmTestOk(result.ms!, result.model!) : t.llmTestKo(result.error!));
+      const yaml = ctx.config.guild(guildId).llm;
+      const rows = await ctx.repos.listLlmBackends(guildId);
+      const targets = action === 'llmTest' && Number.isFinite(serverId) ? rows.filter((r) => r.id === serverId) : rows.filter((r) => r.enabled);
+      if (targets.length === 0) {
+        // Pas de liste dans /config : le serveur du fichier de configuration.
+        const { servers } = await effectiveLlms(ctx.repos, await ctx.settings.get(guildId), ctx.config);
+        const lines = await Promise.all(servers.map(async (sv) => `**${sv.name}** · ${formatTest(await testLlm(sv.config, ctx.config.ai.allowedHosts), t)}`));
+        return show('summary', lines.join('\n') || t.summaryNone);
+      }
+      const lines = await Promise.all(targets.map(async (r) => `**${r.name}** · ${formatTest(await testLlm(llmRowToConfig(r, yaml), ctx.config.ai.allowedHosts), t)}`));
+      return show('summary', lines.join('\n'), Number.isFinite(serverId) ? { llmSelected: serverId } : {});
     }
     case 'llmToggle': {
       const settings = await ctx.settings.get(guildId);
-      if (settings.llmEnabled) return show('summary', t.llmDisableAsk, undefined, undefined, undefined, true);
+      if (settings.llmEnabled) return show('summary', t.llmDisableAsk, { confirmLlmDisable: true });
       await ctx.repos.updateSettings(guildId, { llmEnabled: true });
       return show('summary', t.saved);
     }
@@ -360,11 +441,9 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       await ctx.repos.updateSettings(guildId, { llmEnabled: false });
       return show('summary', t.saved);
     }
-    case 'llmReset': {
-      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
-      await ctx.repos.updateSettings(guildId, { llmBaseUrl: null, llmModel: null, llmApiKey: null });
-      return show('summary', t.saved);
-    }
+    case 'llmReset':
+      // Ancien bouton (un seul serveur) : la liste le remplace.
+      return show('summary');
 
     case 'toggleAutoRecord': {
       const settings = await ctx.settings.get(guildId);

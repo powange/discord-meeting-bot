@@ -3,6 +3,7 @@ import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
+import { FailoverLlm } from '../ai/llm/failover.js';
 import { summarizeMeeting } from '../ai/llm/summarize.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
 import { TranscriptionPool } from '../ai/transcription/pool.js';
@@ -16,7 +17,7 @@ import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeT
 import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, runFfmpeg, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
-import { effectiveLlm } from '../services/llmSettings.js';
+import { effectiveLlms } from '../services/llmSettings.js';
 import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
@@ -279,8 +280,8 @@ async function loadTranscript(deps: PipelineDeps, meeting: MeetingRow): Promise<
 async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, config } = deps;
   const { meeting, settings, m } = ctx;
-  const llmSettings = effectiveLlm(settings, config);
-  const cfg = llmSettings.config;
+  const llmSettings = await effectiveLlms(repos, settings, config);
+  const cfg = config.guild(meeting.guildId).llm;
   const { lines, names } = await loadTranscript(deps, meeting);
   const backends = [...new Set((await repos.upsertBlocks(meeting.id, [])).filter((b) => b.backend).map((b) => `${b.backend} (${b.model})`))];
 
@@ -289,12 +290,22 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
     return { passes: 0 };
   }
   // Résumé facultatif : sans LLM configuré (ou désactivé), l'étape est sautée et la transcription publiée seule.
-  if (!cfg.baseUrl || !llmSettings.enabled) {
+  if (llmSettings.servers.length === 0 || !llmSettings.enabled) {
     await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });
     return { skipped: true };
   }
 
-  const llm = new LlmClient(cfg, config.ai.allowedHosts);
+  // Serveurs par ordre de priorité : le suivant prend le relais si l'un échoue.
+  // Un serveur qui a un secours derrière lui ne réessaie pas : la bascule est plus rapide que
+  // plusieurs délais d'attente ; seul le dernier garde ses nouvelles tentatives.
+  const last = llmSettings.servers.length - 1;
+  const llm = new FailoverLlm(
+    llmSettings.servers.map((s, i) => ({
+      name: s.name,
+      client: new LlmClient(s.config, config.ai.allowedHosts, i < last ? { attempts: 1, delayMs: 0 } : undefined),
+    })),
+    ctx.log,
+  );
   const agenda = await repos.listAgenda(meeting.id);
   const corrections = (await repos.getSummary(meeting.id))?.corrections ?? [];
   const result = await summarizeMeeting(

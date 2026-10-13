@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { LlmClient } from '../ai/llm/client.js';
 import { fetchWithTimeout, trimSlash } from '../ai/http.js';
 import type { AppConfig, LlmConfig } from '../config/index.js';
-import type { GuildSettingsRow } from '../db/schema.js';
+import type { Repositories } from '../db/repositories.js';
+import type { GuildSettingsRow, LlmBackendRow } from '../db/schema.js';
 import { assertUrlAllowed } from '../lib/hosts.js';
 import { decryptSecret } from '../lib/secrets.js';
 
@@ -29,6 +30,41 @@ export function effectiveLlm(settings: GuildSettingsRow, config: AppConfig): Eff
     };
   }
   return { source: settings.llmModel ? 'discord' : 'yaml', enabled: settings.llmEnabled, config: { ...yaml, model } };
+}
+
+export interface LlmServer {
+  /** Nom affiché (« principal », « pc-salon »…) ; « yaml » pour le fichier de configuration. */
+  name: string;
+  config: LlmConfig;
+}
+
+export interface EffectiveLlms {
+  /** `discord` : liste gérée par /config → Résumé ; `yaml` : fichier de configuration. */
+  source: 'discord' | 'yaml';
+  enabled: boolean;
+  /** Serveurs actifs, par ordre de priorité (le suivant prend le relais en cas d'échec). */
+  servers: LlmServer[];
+}
+
+export function llmRowToConfig(row: LlmBackendRow, base: LlmConfig): LlmConfig {
+  const { apiKey: _ignored, ...rest } = base;
+  const apiKey = decryptSecret(row.apiKey);
+  return { ...rest, baseUrl: row.url, model: row.model, ...(apiKey ? { apiKey } : {}) };
+}
+
+/**
+ * Serveurs de résumé d'un serveur Discord : ceux de /config → Résumé (actifs, par priorité) dès
+ * qu'il y en a au moins un ; sinon celui du YAML. Les réglages fins (taille des morceaux,
+ * température, délai) viennent toujours du YAML.
+ */
+export async function effectiveLlms(repos: Repositories, settings: GuildSettingsRow, config: AppConfig): Promise<EffectiveLlms> {
+  const yaml = config.guild(settings.guildId).llm;
+  const rows = await repos.listLlmBackends(settings.guildId);
+  if (rows.length > 0) {
+    return { source: 'discord', enabled: settings.llmEnabled, servers: rows.filter((r) => r.enabled).map((r) => ({ name: r.name, config: llmRowToConfig(r, yaml) })) };
+  }
+  const single = effectiveLlm(settings, config).config;
+  return { source: 'yaml', enabled: settings.llmEnabled, servers: single.baseUrl ? [{ name: 'yaml', config: single }] : [] };
 }
 
 /** Modèles proposés par le serveur (GET /models), sans les modèles d'embedding. */

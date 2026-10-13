@@ -7,6 +7,7 @@ import type { Db } from './client.js';
 import {
   agendaItems,
   dateSlots,
+  llmBackends,
   dateVotes,
   audioSegments,
   captureStats,
@@ -33,6 +34,7 @@ import {
   type RecordingRow,
   type GuildSettingsRow,
   type DateSlotRow,
+  type LlmBackendRow,
   type MeetingRow,
   type RsvpRow,
   type ScheduledJobRow,
@@ -66,6 +68,14 @@ export class Repositories {
       .where(and(isNotNull(guildSettings.llmApiKey), sql`${guildSettings.llmApiKey} not like 'enc:%'`));
     for (const row of settings) {
       await this.db.update(guildSettings).set({ llmApiKey: encrypt(row.key!) }).where(eq(guildSettings.guildId, row.guildId));
+      count++;
+    }
+    const llms = await this.db
+      .select({ id: llmBackends.id, key: llmBackends.apiKey })
+      .from(llmBackends)
+      .where(and(isNotNull(llmBackends.apiKey), sql`${llmBackends.apiKey} not like 'enc:%'`));
+    for (const row of llms) {
+      await this.db.update(llmBackends).set({ apiKey: encrypt(row.key!) }).where(eq(llmBackends.id, row.id));
       count++;
     }
     const backends = await this.db
@@ -582,6 +592,38 @@ export class Repositories {
   }
 
   // ---------------------------------------------------------------- serveurs de transcription
+
+  // ---------------------------------------------------------------- serveurs de résumé
+
+  async listLlmBackends(guildId: string): Promise<LlmBackendRow[]> {
+    return this.db.select().from(llmBackends).where(eq(llmBackends.guildId, guildId)).orderBy(asc(llmBackends.position), asc(llmBackends.id));
+  }
+
+  /** Ajoute en fin de liste (priorité la plus basse) et renvoie le serveur créé. */
+  async addLlmBackend(values: Omit<typeof llmBackends.$inferInsert, 'position' | 'id' | 'createdAt'>): Promise<LlmBackendRow> {
+    return this.db.transaction(async (tx) => {
+      const [{ n } = { n: 0 }] = await tx.select({ n: sql<number>`count(*)::int` }).from(llmBackends).where(eq(llmBackends.guildId, values.guildId));
+      const [row] = await tx.insert(llmBackends).values({ ...values, position: n }).returning();
+      return row!;
+    });
+  }
+
+  async updateLlmBackend(guildId: string, id: number, patch: Partial<typeof llmBackends.$inferInsert>): Promise<void> {
+    await this.db.update(llmBackends).set(patch).where(and(eq(llmBackends.guildId, guildId), eq(llmBackends.id, id)));
+  }
+
+  /** Retire un serveur et recompacte les priorités. */
+  async removeLlmBackend(guildId: string, id: number): Promise<void> {
+    await this.db.delete(llmBackends).where(and(eq(llmBackends.guildId, guildId), eq(llmBackends.id, id)));
+    await this.reorderLlmBackends(guildId, (await this.listLlmBackends(guildId)).map((b) => b.id));
+  }
+
+  /** Applique un ordre de priorité (liste complète des ids). */
+  async reorderLlmBackends(guildId: string, ids: readonly number[]): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      for (const [position, id] of ids.entries()) await tx.update(llmBackends).set({ position }).where(and(eq(llmBackends.guildId, guildId), eq(llmBackends.id, id)));
+    });
+  }
 
   async listBackends(guildId: string): Promise<TranscriptionBackendRow[]> {
     return this.db.select().from(transcriptionBackends).where(eq(transcriptionBackends.guildId, guildId)).orderBy(asc(transcriptionBackends.position));

@@ -1,5 +1,6 @@
 import { chunkLines, estimateTokens } from '../../domain/transcript.js';
-import type { ChatMessage, LlmClient } from './client.js';
+import type { ChatMessage } from './client.js';
+import type { JsonLlm } from './failover.js';
 import { meetingSummarySchema, type MeetingSummary, type Topic } from './schema.js';
 
 export interface SummaryContext {
@@ -67,7 +68,7 @@ ${agenda}`;
  * notes sont fusionnées (par paquets si nécessaire) jusqu'à un résumé unique.
  */
 export async function summarizeMeeting(
-  llm: LlmClient,
+  llm: JsonLlm,
   ctx: SummaryContext,
   lines: readonly string[],
   chunkTokens: number,

@@ -127,22 +127,51 @@ describe('panneau /config', () => {
     expect(selects[0]!.default_values).toEqual([{ id: '222', type: 'role' }]);
   });
 
-  it('résumé : propriétaire → modifier, choisir le modèle, tester, désactiver ; admin → tester et désactiver', () => {
-    const llm = { source: 'discord' as const, enabled: true, baseUrl: 'http://127.0.0.1:1234/v1', model: 'qwen2.5-14b-instruct', hasKey: false };
-    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: true }, m))).toEqual(['llmEdit', 'llmModels', 'llmTest', 'llmToggle', 'llmReset', 'home']);
-    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: false }, m))).toEqual(['llmTest', 'llmToggle', 'home']);
-    expect(texts(renderConfigHome({ ...c, llm }, m))).toContain('**Résumé** · qwen2.5-14b-instruct');
+  const servers = [
+    { id: 11, name: 'principal', url: 'http://127.0.0.1:1234/v1', model: 'qwen2.5-14b-instruct', enabled: true, hasKey: false },
+    { id: 12, name: 'secours', url: 'http://192.168.0.20:11434/v1', model: 'qwen3:14b', enabled: true, hasKey: true },
+    { id: 13, name: 'vieux-pc', url: 'http://192.168.0.30:1234/v1', model: 'mistral', enabled: false, hasKey: false },
+  ];
+  const llm = { source: 'discord' as const, enabled: true, servers };
+
+  it('résumé : accueil = ordre de bascule des serveurs actifs ; désactivé ; rien de configuré', () => {
+    expect(texts(renderConfigHome({ ...c, llm }, m))).toContain('**Résumé** · qwen2.5-14b-instruct (principal) → qwen3:14b (secours)');
     expect(texts(renderConfigHome({ ...c, llm: { ...llm, enabled: false } }, m))).toContain('**Résumé** · désactivé');
+    expect(texts(renderConfigHome({ ...c, llm: { ...llm, servers: [] } }, m))).toContain(`**Résumé** · ${m.config.summaryNone}`);
   });
 
-  it('résumé : liste des modèles proposée après « Choisir le modèle »', () => {
-    const llm = { source: 'yaml' as const, enabled: true, baseUrl: 'http://x/v1', model: 'b', hasKey: false };
-    const view = renderConfigSection('summary', { ...c, llm, canEditAi: true, models: ['a', 'b'] }, m);
-    const select = flatten(view).find((x) => x.type === ComponentType.StringSelect)!;
+  it('résumé : liste par priorité ; propriétaire → choisir, ajouter, tout tester, désactiver ; admin → choisir et tester', () => {
+    const owner = renderConfigSection('summary', { ...c, llm, canEditAi: true }, m);
+    expect(texts(owner)).toContain('🟢 **1. principal**');
+    expect(texts(owner)).toContain('⚪ **3. vieux-pc**');
+    expect(ids(owner)).toEqual(['llmPick', 'llmAdd', 'llmTestAll', 'llmToggle', 'home']);
+    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: false }, m))).toEqual(['llmPick', 'llmTestAll', 'llmToggle', 'home']);
+  });
+
+  it('résumé : serveur choisi → ses actions (le premier ne peut pas monter), puis la liste de ses modèles', () => {
+    const view = renderConfigSection('summary', { ...c, llm, canEditAi: true, llmSelected: 11 }, m);
+    expect(ids(view)).toEqual(['llmPick', 'llmEdit', 'llmUp', 'llmToggleServer', 'llmTest', 'llmDelete', 'llmModels', 'llmAdd', 'llmTestAll', 'llmToggle', 'home']);
+    const up = flatten(view).find((x) => typeof x.custom_id === 'string' && (x.custom_id as string).includes(':llmUp:'))!;
+    expect(up.disabled).toBe(true);
+    expect(decode(up.custom_id as string)).toEqual({ type: 'cfg', action: 'llmUp', arg: 's.11' });
+    const withModels = renderConfigSection('summary', { ...c, llm, canEditAi: true, llmSelected: 12, models: ['qwen3:14b', 'mistral'] }, m);
+    const select = flatten(withModels).filter((x) => x.type === ComponentType.StringSelect)[1]!;
     expect((select.options as Array<{ value: string; default?: boolean }>).map((o) => [o.value, o.default ?? false])).toEqual([
-      ['a', false],
-      ['b', true],
+      ['qwen3:14b', true],
+      ['mistral', false],
     ]);
+  });
+
+  it('résumé : suppression demandée → confirmation', () => {
+    expect(ids(renderConfigSection('summary', { ...c, llm, canEditAi: true, llmSelected: 12, llmConfirmDelete: true }, m))).toEqual([
+      'llmPick', 'llmDeleteConfirm', 'llmCancel', 'llmAdd', 'llmTestAll', 'llmToggle', 'home',
+    ]);
+  });
+
+  it('résumé : serveur du fichier de configuration affiché, sans actions par serveur', () => {
+    const yaml = renderConfigSection('summary', { ...c, llm: { source: 'yaml', enabled: true, servers: [{ name: 'yaml', url: 'http://x/v1', model: 'b', enabled: true, hasKey: false }] }, canEditAi: true }, m);
+    expect(texts(yaml)).toContain(m.config.llmFromYaml);
+    expect(ids(yaml)).toEqual(['llmAdd', 'llmTestAll', 'llmToggle', 'home']);
   });
 
   it('enregistrement : liste des personnes qui refusent', () => {

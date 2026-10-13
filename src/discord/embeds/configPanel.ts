@@ -26,7 +26,15 @@ export interface ConfigContext {
   /** Résumé des serveurs de transcription (« 2 actifs : vibe-pc, speaches »). */
   transcription: string;
   /** LLM des résumés effectivement utilisé. */
-  llm?: { source: 'discord' | 'yaml'; enabled: boolean; baseUrl: string | undefined; model: string; hasKey: boolean };
+  llm?: {
+    source: 'discord' | 'yaml';
+    enabled: boolean;
+    /** Serveurs de résumé par priorité (sans id : ceux du fichier de configuration). */
+    servers: ReadonlyArray<{ id?: number; name: string; url: string; model: string; enabled: boolean; hasKey: boolean }>;
+  };
+  /** Serveur de résumé sélectionné (ses actions s'affichent) et suppression demandée. */
+  llmSelected?: number | undefined;
+  llmConfirmDelete?: boolean;
   /** Modèles proposés par le serveur LLM (après « Choisir le modèle »). */
   models?: readonly string[];
   /** Personnes qui refusent l'enregistrement (section Enregistrement). */
@@ -80,8 +88,10 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
     case 'summary': {
       const l = c.llm;
       if (!l || !l.enabled) return t.summaryOff;
-      if (!l.baseUrl) return t.summaryNone;
-      return `${l.model} · \`${l.baseUrl}\`${l.source === 'yaml' ? ` *(${t.fromYaml})*` : ''}`;
+      const active = l.servers.filter((sv) => sv.enabled);
+      if (active.length === 0) return t.summaryNone;
+      // Ordre de bascule : le premier répond, les suivants prennent le relais.
+      return `${active.map((sv) => `${sv.model} (${sv.name})`).join(' → ')}${l.source === 'yaml' ? ` *(${t.fromYaml})*` : ''}`;
     }
   }
 }
@@ -224,25 +234,68 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
     case 'summary': {
       const l = c.llm;
       const canEdit = c.canEditAi ?? false;
-      if (c.models?.length) {
+      const servers = l?.servers ?? [];
+      const list = servers.length
+        ? servers.map((sv, i) => `${sv.enabled ? '🟢' : '⚪'} **${i + 1}. ${sv.name}** · ${sv.model}${sv.hasKey ? ' · 🔑' : ''}\n-# \`${sv.url.slice(0, 120)}\``).join('\n')
+        : t.llmNoServer;
+      container.addTextDisplayComponents((x) => x.setContent(`${list}${l?.source === 'yaml' && servers.length ? `\n-# ${t.llmFromYaml}` : ''}`));
+      const listed = servers.filter((sv): sv is typeof sv & { id: number } => sv.id !== undefined);
+      const selected = listed.find((sv) => sv.id === c.llmSelected);
+      if (listed.length) {
         rows.push(
           new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
             new StringSelectMenuBuilder()
-              .setCustomId(cfg('llmModel'))
-              .setPlaceholder(t.pickModel)
-              .addOptions(c.models.slice(0, 25).map((id) => ({ label: id.slice(0, 100), value: id.slice(0, 100), default: id === l?.model }))),
+              .setCustomId(cfg('llmPick'))
+              .setPlaceholder(t.llmPick)
+              .addOptions(listed.map((sv, i) => ({ label: `${i + 1}. ${sv.name}`.slice(0, 100), value: String(sv.id), description: sv.model.slice(0, 100), default: sv.id === selected?.id }))),
           ),
         );
       }
-      const actions = new ActionRowBuilder<ButtonBuilder>();
-      if (canEdit) actions.addComponents(btn('llmEdit', t.llmEdit, '✏️', ButtonStyle.Primary));
-      if (canEdit && l?.baseUrl) actions.addComponents(btn('llmModels', t.llmModels, '📋'));
-      if (l?.baseUrl) actions.addComponents(btn('llmTest', t.llmTest, '🧪'));
+      if (selected) {
+        const arg = `s.${selected.id}`;
+        const at = listed.indexOf(selected);
+        if (c.llmConfirmDelete) {
+          rows.push(
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              btn('llmDeleteConfirm', t.llmDeleteConfirm, '🗑️', ButtonStyle.Danger).setCustomId(cfg('llmDeleteConfirm', arg)),
+              btn('llmCancel', t.llmCancel, '↩️').setCustomId(cfg('llmCancel', arg)),
+            ),
+          );
+        } else {
+          const actions = new ActionRowBuilder<ButtonBuilder>();
+          if (canEdit) {
+            actions.addComponents(
+              btn('llmEdit', t.llmEdit, '✏️', ButtonStyle.Primary).setCustomId(cfg('llmEdit', arg)),
+              btn('llmUp', t.llmUp, '⬆️').setCustomId(cfg('llmUp', arg)).setDisabled(at === 0),
+              btn('llmToggleServer', selected.enabled ? t.llmServerOff : t.llmServerOn, selected.enabled ? '⏸️' : '▶️').setCustomId(cfg('llmToggleServer', arg)),
+            );
+          }
+          actions.addComponents(btn('llmTest', t.llmTest, '🧪').setCustomId(cfg('llmTest', arg)));
+          if (canEdit) actions.addComponents(btn('llmDelete', t.llmDelete, '🗑️', ButtonStyle.Danger).setCustomId(cfg('llmDelete', arg)));
+          rows.push(actions);
+          if (canEdit) {
+            if (c.models?.length) {
+              rows.push(
+                new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+                  new StringSelectMenuBuilder()
+                    .setCustomId(cfg('llmModel', arg))
+                    .setPlaceholder(t.pickModel)
+                    .addOptions(c.models.slice(0, 25).map((id) => ({ label: id.slice(0, 100), value: id.slice(0, 100), default: id === selected.model }))),
+                ),
+              );
+            } else {
+              rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('llmModels', t.llmModels, '📋').setCustomId(cfg('llmModels', arg))));
+            }
+          }
+        }
+      }
+      const general = new ActionRowBuilder<ButtonBuilder>();
+      if (canEdit) general.addComponents(btn('llmAdd', t.llmAdd, '➕', ButtonStyle.Success).setDisabled(listed.length >= 5));
+      if (servers.length) general.addComponents(btn('llmTestAll', t.llmTestAll, '🧪'));
       // Désactiver le résumé se confirme (les prochains comptes rendus n'auront plus que l'audio et la transcription).
-      if (c.confirmLlmDisable) actions.addComponents(btn('llmDisableConfirm', t.llmDisableConfirm, '⏸️', ButtonStyle.Danger));
-      else actions.addComponents(btn('llmToggle', l?.enabled === false ? t.llmEnable : t.llmDisable, l?.enabled === false ? '▶️' : '⏸️'));
-      if (canEdit && l?.source === 'discord') actions.addComponents(btn('llmReset', t.llmReset, '↩️'));
-      rows.push(actions);
+      if (c.confirmLlmDisable) general.addComponents(btn('llmDisableConfirm', t.llmDisableConfirm, '⏸️', ButtonStyle.Danger));
+      else general.addComponents(btn('llmToggle', l?.enabled === false ? t.llmEnable : t.llmDisable, l?.enabled === false ? '▶️' : '⏸️'));
+      rows.push(general);
       break;
     }
     case 'recording':

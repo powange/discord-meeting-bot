@@ -192,6 +192,26 @@ export const recordingOptouts = pgTable(
 );
 
 /** Serveurs de transcription d'un serveur Discord (/config transcription), par ordre de priorité. */
+/**
+ * Serveurs de résumé (compatibles OpenAI : LM Studio, Ollama, LiteLLM), par ordre de priorité :
+ * en cas d'échec de l'un, le suivant prend le relais. Clé d'API chiffrée (APP_SECRET_KEY).
+ */
+export const llmBackends = pgTable(
+  'llm_backends',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    guildId: text().notNull(),
+    position: integer().notNull(),
+    name: text().notNull(),
+    url: text().notNull(),
+    model: text().notNull(),
+    apiKey: text(),
+    enabled: boolean().notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [unique().on(t.guildId, t.name), index().on(t.guildId, t.position)],
+);
+
 export const transcriptionBackends = pgTable(
   'transcription_backends',
   {
@@ -386,3 +406,4 @@ export type RsvpRow = typeof rsvps.$inferSelect;
 export type ScheduledJobRow = typeof scheduledJobs.$inferSelect;
 
 export type DateSlotRow = typeof dateSlots.$inferSelect;
+export type LlmBackendRow = typeof llmBackends.$inferSelect;
