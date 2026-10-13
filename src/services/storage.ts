@@ -145,10 +145,20 @@ export class StorageService {
     const client = this.makeClient(provider, async () => tokens.accessToken);
     const account = await client.account().catch(() => provider);
     const folder = (await this.repos.getStorage(guildId))?.folder ?? rootFolderName('');
-    await client.folder([folder]);
+    const root = await client.root(folder, null);
     const row = await this.repos.setStorage({ guildId, provider, credentials: encryptSecret(JSON.stringify(tokens)), account, connectedBy: userId });
+    await this.repos.updateStorage(guildId, { rootId: root.id, rootUrl: root.url ?? null });
     this.log.info({ guildId, provider }, 'Stockage connecté');
-    return row;
+    return { ...row, rootId: root.id, rootUrl: root.url ?? null };
+  }
+
+  /** Dossier racine (suivi même déplacé) ; son identifiant et son lien sont tenus à jour. */
+  private async root(target: { row: GuildStorageRow; client: StorageClient }, signal?: AbortSignal): Promise<string> {
+    const root = await target.client.root(target.row.folder, target.row.rootId, signal);
+    if (root.id !== target.row.rootId || (root.url ?? null) !== target.row.rootUrl) {
+      await this.repos.updateStorage(target.row.guildId, { rootId: root.id, rootUrl: root.url ?? null });
+    }
+    return root.id;
   }
 
   /** Vérification depuis /config : jetons valides et dossier racine accessible en écriture. */
@@ -157,7 +167,7 @@ export class StorageService {
       const target = await this.client(guildId);
       if (!target) return { ok: false, error: 'aucun stockage connecté' };
       const account = await target.client.account();
-      await target.client.folder([target.row.folder]);
+      await this.root(target);
       await this.repos.updateStorage(guildId, { lastOkAt: new Date(), lastError: null });
       return { ok: true, account };
     } catch (err) {
@@ -165,9 +175,10 @@ export class StorageService {
     }
   }
 
+  /** Nouveau nom : un nouveau dossier racine, créé à la prochaine copie (l'ancien est laissé tel quel). */
   async setFolder(guildId: string, name: string): Promise<string> {
     const folder = rootFolderName(name);
-    await this.repos.updateStorage(guildId, { folder });
+    await this.repos.updateStorage(guildId, { folder, rootId: null, rootUrl: null });
     return folder;
   }
 
@@ -186,7 +197,7 @@ export class StorageService {
     if (!target) return null;
     const path = [target.row.folder, meetingFolder];
     try {
-      const folder = await target.client.folder(path, signal);
+      const folder = await target.client.folder(await this.root(target, signal), meetingFolder, signal);
       for (const file of files) await target.client.put(folder, file.name, file.source, file.mime, signal);
       await this.repos.updateStorage(guildId, { lastOkAt: new Date(), lastError: null });
     } catch (err) {

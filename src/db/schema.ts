@@ -224,6 +224,9 @@ export const guildStorage = pgTable('guild_storage', {
   account: text().notNull(),
   /** Dossier racine des copies. */
   folder: text().notNull().default('Meeting recorder'),
+  /** Dossier racine suivi par son identifiant (il peut être déplacé dans un dossier partagé) et son lien. */
+  rootId: text(),
+  rootUrl: text(),
   connectedBy: text().notNull(),
   connectedAt: createdAt(),
   lastOkAt: tz(),

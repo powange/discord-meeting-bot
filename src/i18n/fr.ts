@@ -630,6 +630,8 @@ export const fr = {
         lastOk ? `Dernière copie réussie : <t:${Math.floor(lastOk.getTime() / 1000)}:R>` : 'Aucune copie pour le moment.',
         ...(lastError ? [`⚠️ Dernière erreur : ${lastError.slice(0, 200)}`] : []),
       ].join('\n'),
+    storageMoveHint: 'Pour enregistrer dans un dossier partagé ou un Drive partagé, déplacez ce dossier où vous voulez (ou partagez-le) : le bot le suit.',
+    storageOpenFolder: 'Ouvrir le dossier',
     storageConnect: (provider: string) => `Connecter ${provider}`,
     storagePickHint: 'Choisissez le service ; vous vous connecterez avec le compte de votre choix.',
     storageDevice: (provider: string, url: string, code: string) =>
@@ -651,7 +653,7 @@ export const fr = {
     storageFolder: 'Changer de dossier',
     storageFolderModal: 'Dossier des copies',
     storageFolderField: 'Nom du dossier',
-    storageFolderHint: 'Un dossier par réunion y sera créé. Les copies déjà faites restent dans l’ancien.',
+    storageFolderHint: 'Nouveau dossier, créé à la prochaine copie. Les copies déjà faites restent dans l’ancien.',
     storageDisconnect: 'Déconnecter',
     storageDisconnectConfirm: 'Confirmer la déconnexion',
     storageDisconnectAsk: 'Plus aucune copie ne sera faite. Les fichiers déjà copiés restent dans le stockage.',

@@ -225,7 +225,8 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const uploads: Array<{ path: string; name: string; size: number; text: string }> = [];
     const storage = new StorageService(repos, d.config, log, () => ({
       account: async () => 'asso@gmail.com',
-      folder: async (path) => path.join('/'),
+      root: async (name) => ({ id: name }),
+      folder: async (parent, name) => `${parent}/${name}`,
       put: async (folder, name, source) => {
         const data = 'data' in source ? source.data : await readFile(source.path);
         uploads.push({ path: folder, name, size: data.length, text: name.endsWith('.md') ? data.toString('utf8') : '' });

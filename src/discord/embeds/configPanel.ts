@@ -49,7 +49,7 @@ export interface ConfigContext {
   /** Stockage du serveur : services proposés, celui connecté, connexion en cours. */
   storage?: {
     available: readonly StorageProvider[];
-    connected?: { provider: StorageProvider; account: string; folder: string; lastOkAt: Date | null; lastError: string | null } | undefined;
+    connected?: { provider: StorageProvider; account: string; folder: string; rootUrl?: string | null; lastOkAt: Date | null; lastError: string | null } | undefined;
     /** Connexion par code (Google, OneDrive) ou par lien (Dropbox) en cours. */
     pending?: { provider: StorageProvider; url: string; code?: string } | undefined;
     confirmDisconnect?: boolean;
@@ -257,8 +257,14 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
         break;
       }
       if (st?.connected) {
-        container.addTextDisplayComponents((x) => x.setContent(t.storageStatus(st.connected!.folder, st.connected!.lastOkAt, st.connected!.lastError)));
+        const movable = st.connected.provider !== 'dropbox';
+        container.addTextDisplayComponents((x) =>
+          x.setContent(`${t.storageStatus(st.connected!.folder, st.connected!.lastOkAt, st.connected!.lastError)}${movable ? `\n-# ${t.storageMoveHint}` : ''}`),
+        );
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(btn('storageTest', t.storageTest, '🧪'), btn('storageFolder', t.storageFolder, '📁'));
+        if (st.connected.rootUrl?.startsWith('https://')) {
+          rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(st.connected.rootUrl).setLabel(t.storageOpenFolder).setEmoji('📂')));
+        }
         if (st.confirmDisconnect) {
           container.addTextDisplayComponents((x) => x.setContent(`⚠️ ${t.storageDisconnectAsk}`));
           row.addComponents(btn('storageDisconnectConfirm', t.storageDisconnectConfirm, '🔌', ButtonStyle.Danger));

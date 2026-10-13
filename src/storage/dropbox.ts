@@ -1,6 +1,6 @@
 import { asciiJson } from '../domain/storage.js';
 import { request, requestJson } from './http.js';
-import { chunks, sizeOf, type AccessToken, type FileSource, type StorageClient } from './types.js';
+import { chunks, sizeOf, type AccessToken, type FileSource, type StorageClient, type StorageFolder } from './types.js';
 
 const API = 'https://api.dropboxapi.com/2';
 const CONTENT = 'https://content.dropboxapi.com/2';
@@ -23,8 +23,13 @@ export class Dropbox implements StorageClient {
     return r.email ?? r.name?.display_name ?? 'Dropbox';
   }
 
-  async folder(path: readonly string[]): Promise<string> {
-    return `/${path.join('/')}`;
+  /** Le dossier de l'application ne se déplace pas : le dossier racine est retrouvé par son nom. */
+  async root(name: string): Promise<StorageFolder> {
+    return { id: `/${name}` };
+  }
+
+  async folder(parent: string, name: string): Promise<string> {
+    return `${parent}/${name}`;
   }
 
   async put(folder: string, name: string, source: FileSource, _mime: string, signal?: AbortSignal): Promise<void> {

@@ -15,12 +15,23 @@ export type AccessToken = () => Promise<string>;
 /** Fichier à envoyer : sur le disque (audio) ou en mémoire (Markdown). */
 export type FileSource = { path: string } | { data: Buffer };
 
+export interface StorageFolder {
+  id: string;
+  /** Lien pour l'ouvrir dans le navigateur, si le service en donne un. */
+  url?: string | undefined;
+}
+
 /** Opérations communes à Google Drive, OneDrive et Dropbox. */
 export interface StorageClient {
   /** Compte connecté (adresse ou nom), affiché dans /config. */
   account(): Promise<string>;
-  /** Dossier (créé au besoin) : chemin depuis la racine accessible au bot. Renvoie son identifiant. */
-  folder(path: readonly string[], signal?: AbortSignal): Promise<string>;
+  /**
+   * Dossier racine des copies : celui déjà connu (`knownId`) tant qu'il existe, même déplacé dans
+   * un dossier partagé ou un Drive partagé ; sinon retrouvé ou créé par son nom.
+   */
+  root(name: string, knownId: string | null, signal?: AbortSignal): Promise<StorageFolder>;
+  /** Sous-dossier (créé au besoin). Renvoie son identifiant. */
+  folder(parent: string, name: string, signal?: AbortSignal): Promise<string>;
   /** Envoie un fichier dans le dossier, en remplaçant celui du même nom. */
   put(folder: string, name: string, source: FileSource, mime: string, signal?: AbortSignal): Promise<void>;
 }

@@ -89,7 +89,7 @@ async function storageView(ctx: AppContext, guildId: string): Promise<ConfigCont
   const row = await ctx.storage.get(guildId);
   return {
     available: ctx.storage.available(),
-    connected: row ? { provider: row.provider, account: row.account, folder: row.folder, lastOkAt: row.lastOkAt, lastError: row.lastError } : undefined,
+    connected: row ? { provider: row.provider, account: row.account, folder: row.folder, rootUrl: row.rootUrl, lastOkAt: row.lastOkAt, lastError: row.lastError } : undefined,
   };
 }
 

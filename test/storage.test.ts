@@ -83,25 +83,45 @@ describe('noms de fichiers et de dossiers', () => {
 });
 
 describe('Google Drive', () => {
-  it('dossiers retrouvés ou créés ; nouveau fichier envoyé par morceaux dans une session', async () => {
+  it('racine retrouvée par son nom, sous-dossier créé ; nouveau fichier envoyé par morceaux dans une session', async () => {
     const calls = fakeFetch((c) => {
       if (c.url.includes('/drive/v3/files?q=')) return { json: { files: new URL(c.url).searchParams.get('q')!.includes("name = 'Asso'") ? [{ id: 'asso' }] : [] } };
-      if (c.url.endsWith('/drive/v3/files?fields=id')) return { json: { id: 'reunion' } };
+      if (c.url.includes('/drive/v3/files?fields=id')) return { json: { id: 'reunion' } };
       if (c.url.includes('uploadType=resumable')) return { headers: { location: 'https://upload.example/session' } };
       return { status: c.headers['content-range']?.endsWith('/5') ? 200 : 308 };
     });
     const drive = new GoogleDrive(token);
-    const folder = await drive.folder(['Asso', 'Réunion d’été']);
+    expect(await drive.root('Asso', null)).toEqual({ id: 'asso', url: 'https://drive.google.com/drive/folders/asso' });
+    const folder = await drive.folder('asso', 'Réunion d’été');
     expect(folder).toBe('reunion');
     await drive.put(folder, 'cr.md', { data: Buffer.from('hello') }, 'text/markdown');
-    const created = calls.find((c) => c.url.endsWith('fields=id'))!;
+    const created = calls.find((c) => c.url.includes('fields=id&supportsAllDrives=true'))!;
     expect(JSON.parse(created.body)).toEqual({ name: 'Réunion d’été', mimeType: 'application/vnd.google-apps.folder', parents: ['asso'] });
+    // Drives partagés inclus partout (le dossier a pu y être déplacé).
+    expect(calls.filter((c) => c.url.includes('googleapis.com')).every((c) => c.url.includes('supportsAllDrives=true'))).toBe(true);
     const session = calls.find((c) => c.url.includes('uploadType=resumable'))!;
     expect(session.method).toBe('POST');
     expect(JSON.parse(session.body)).toEqual({ name: 'cr.md', parents: ['reunion'] });
     expect(session.headers.authorization).toBe('Bearer tok');
     const put = calls.at(-1)!;
     expect([put.method, put.url, put.headers['content-range'], put.headers.authorization]).toEqual(['PUT', 'https://upload.example/session', 'bytes 0-4/5', undefined]);
+  });
+
+  it('racine déplacée dans un dossier partagé : suivie par son identifiant ; à la corbeille ou supprimée : recréée', async () => {
+    let state: 'ok' | 'trashed' | 'gone' = 'ok';
+    const calls = fakeFetch((c) => {
+      if (c.url.includes('/files/known?')) return state === 'gone' ? { status: 404, json: { error: { code: 404, message: 'File not found' } } } : { json: { id: 'known', trashed: state === 'trashed' } };
+      if (c.url.includes('/drive/v3/files?q=')) return { json: { files: [] } };
+      return { json: { id: 'fresh' } };
+    });
+    const drive = new GoogleDrive(token);
+    expect((await drive.root('Asso', 'known')).id).toBe('known');
+    expect(calls).toHaveLength(1); // aucune recherche par nom
+    state = 'trashed';
+    expect((await drive.root('Asso', 'known')).id).toBe('fresh');
+    state = 'gone';
+    expect((await drive.root('Asso', 'known')).id).toBe('fresh');
+    expect(JSON.parse(calls.at(-1)!.body)).toMatchObject({ name: 'Asso', parents: ['root'] });
   });
 
   it('fichier déjà copié : remplacé (même identifiant), pas dupliqué', async () => {
@@ -112,27 +132,36 @@ describe('Google Drive', () => {
     });
     await new GoogleDrive(token).put('reunion', 'cr.md', { data: Buffer.from('v2') }, 'text/markdown');
     const session = calls.find((c) => c.url.includes('uploadType=resumable'))!;
-    expect([session.method, session.url]).toEqual(['PATCH', 'https://www.googleapis.com/upload/drive/v3/files/f1?uploadType=resumable']);
+    expect([session.method, session.url]).toEqual(['PATCH', 'https://www.googleapis.com/upload/drive/v3/files/f1?uploadType=resumable&supportsAllDrives=true']);
   });
 });
 
 describe('OneDrive', () => {
-  it('dossier existant toléré (409) ; envoi en session, sans jeton sur l’adresse de session', async () => {
+  it('racine existante (409) retrouvée ; sous-dossier et envoi par identifiant, sans jeton sur l’adresse de session', async () => {
     const calls = fakeFetch((c) => {
-      if (c.url.endsWith('/children')) return c.url.includes('/root/children') ? { status: 409, json: { error: { code: 'nameAlreadyExists', message: 'exists' } } } : { status: 201, json: {} };
+      if (c.url.endsWith('/me/drive/root/children')) return { status: 409, json: { error: { code: 'nameAlreadyExists', message: 'exists' } } };
+      if (c.url.endsWith('/me/drive/root:/Asso')) return { json: { id: 'A!1', webUrl: 'https://onedrive.live.com/asso', parentReference: { driveId: 'd1' } } };
+      if (c.url.endsWith('/children')) return { status: 201, json: { id: 'A!2', parentReference: { driveId: 'd1' } } };
       if (c.url.endsWith('/createUploadSession')) return { json: { uploadUrl: 'https://up.example/1' } };
       return { status: 201, json: {} };
     });
     const od = new OneDrive(token);
-    const folder = await od.folder(['Asso', 'Réunion 1']);
-    expect(folder).toBe('Asso/Réunion 1');
-    expect(calls[1]!.url).toBe('https://graph.microsoft.com/v1.0/me/drive/root:/Asso:/children');
+    expect(await od.root('Asso', null)).toEqual({ id: 'd1/A!1', url: 'https://onedrive.live.com/asso' });
+    const folder = await od.folder('d1/A!1', 'Réunion 1');
+    expect(folder).toBe('d1/A!2');
+    expect(calls[2]!.url).toBe('https://graph.microsoft.com/v1.0/drives/d1/items/A!1/children');
     await od.put(folder, 'cr.md', { data: Buffer.from('hello') }, 'text/markdown');
     const session = calls.find((c) => c.url.endsWith('/createUploadSession'))!;
-    expect(session.url).toBe('https://graph.microsoft.com/v1.0/me/drive/root:/Asso/R%C3%A9union%201/cr.md:/createUploadSession');
+    expect(session.url).toBe('https://graph.microsoft.com/v1.0/drives/d1/items/A!2:/cr.md:/createUploadSession');
     expect(JSON.parse(session.body)).toEqual({ item: { '@microsoft.graph.conflictBehavior': 'replace' } });
     const put = calls.at(-1)!;
     expect([put.url, put.headers['content-range'], put.headers.authorization]).toEqual(['https://up.example/1', 'bytes 0-4/5', undefined]);
+  });
+
+  it('racine déplacée (autre drive, dossier partagé) : suivie par son identifiant', async () => {
+    const calls = fakeFetch(() => ({ json: { id: 'A!1', webUrl: 'https://x.sharepoint.com/asso', parentReference: { driveId: 'shared' } } }));
+    expect(await new OneDrive(token).root('Asso', 'd1/A!1')).toEqual({ id: 'shared/A!1', url: 'https://x.sharepoint.com/asso' });
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -140,7 +169,7 @@ describe('Dropbox', () => {
   it('envoi simple, chemin sous le dossier de l’application, fichier remplacé', async () => {
     const calls = fakeFetch(() => ({ json: {} }));
     const db = new Dropbox(token);
-    const folder = await db.folder(['Asso', 'Réunion']);
+    const folder = await db.folder((await db.root('Asso')).id, 'Réunion');
     await db.put(folder, 'cr.md', { data: Buffer.from('hello') }, 'text/markdown');
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('https://content.dropboxapi.com/2/files/upload');
@@ -219,6 +248,8 @@ describe('StorageService', () => {
           folder: 'Asso',
           connectedBy: 'u',
           connectedAt: new Date(),
+          rootId: null as string | null,
+          rootUrl: null as string | null,
           lastOkAt: null as Date | null,
           lastError: null as string | null,
         }
@@ -229,7 +260,12 @@ describe('StorageService', () => {
       updateStorage: vi.fn(async (_g: string, patch: object) => void (row = { ...row!, ...patch })),
       removeStorage: async () => void (row = undefined),
     };
-    const client = { account: vi.fn(async () => 'moi@gmail.com'), folder: vi.fn(async (p: readonly string[]) => p.join('/')), put: vi.fn(async () => undefined) };
+    const client = {
+      account: vi.fn(async () => 'moi@gmail.com'),
+      root: vi.fn(async (name: string, known: string | null) => ({ id: known ?? `id-${name}`, url: `https://drive/${known ?? `id-${name}`}` })),
+      folder: vi.fn(async (parent: string, name: string) => `${parent}/${name}`),
+      put: vi.fn(async () => undefined),
+    };
     const tokens: string[] = [];
     const service = new StorageService(repos as never, config, log, (_p, t) => ({
       ...client,
@@ -254,6 +290,19 @@ describe('StorageService', () => {
     expect(row()!.credentials.startsWith('enc:v1:')).toBe(true);
     expect(JSON.parse(decryptSecret(row()!.credentials)!)).toMatchObject({ accessToken: 'fresh', refreshToken: 'r2' });
     expect(row()!.lastOkAt).toBeInstanceOf(Date);
+  });
+
+  it('dossier racine déplacé par l’utilisateur : les copies vont dans le dossier suivi ; nouveau nom → nouveau dossier', async () => {
+    const { service, client, row } = setup({ expiresAt: Date.now() + 3_600_000 });
+    await service.upload('g', 'R1', [{ name: 'a', source: { data: Buffer.from('x') }, mime: 'text/plain' }]);
+    expect(row()!.rootId).toBe('id-Asso');
+    client.root.mockResolvedValueOnce({ id: 'id-Asso', url: 'https://drive/partage/id-Asso' }); // déplacé : même id, autre lien
+    await service.upload('g', 'R2', [{ name: 'a', source: { data: Buffer.from('x') }, mime: 'text/plain' }]);
+    expect(client.root).toHaveBeenLastCalledWith('Asso', 'id-Asso', undefined);
+    expect(client.folder).toHaveBeenLastCalledWith('id-Asso', 'R2', undefined);
+    expect(row()!.rootUrl).toBe('https://drive/partage/id-Asso');
+    await service.setFolder('g', 'Comptes rendus');
+    expect([row()!.folder, row()!.rootId, row()!.rootUrl]).toEqual(['Comptes rendus', null, null]);
   });
 
   it('échec d’envoi : erreur gardée pour /config, puis levée (étape en échec, relançable)', async () => {
@@ -283,7 +332,8 @@ describe('StorageService', () => {
     validated = true;
     await vi.advanceTimersByTimeAsync(5_000);
     expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
-    expect(client.folder).toHaveBeenCalledWith(['Meeting recorder']);
+    expect(client.root).toHaveBeenCalledWith('Meeting recorder', null);
+    expect(repos.updateStorage).toHaveBeenCalledWith('g', { rootId: 'id-Meeting recorder', rootUrl: 'https://drive/id-Meeting recorder' });
     expect(repos.setStorage).toHaveBeenCalledWith(expect.objectContaining({ guildId: 'g', provider: 'google', account: 'moi@gmail.com', connectedBy: 'admin' }));
   });
 

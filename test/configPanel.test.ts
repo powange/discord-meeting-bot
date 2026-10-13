@@ -208,6 +208,16 @@ describe('panneau /config', () => {
     expect(texts(renderConfigHome({ ...c, storage: { available: ['onedrive'], connected } }, m))).toContain('**Stockage** · OneDrive · asso@outlook.fr');
   });
 
+  it('stockage : lien vers le dossier, et explication pour le placer dans un dossier partagé (sauf Dropbox)', () => {
+    const base = { account: 'a@b.c', folder: 'Asso', lastOkAt: null, lastError: null };
+    const google = renderConfigSection('storage', { ...c, storage: { available: ['google'], connected: { ...base, provider: 'google', rootUrl: 'https://drive.google.com/drive/folders/x' } } }, m);
+    expect(flatten(google).find((x) => x.type === ComponentType.Button && x.url)?.url).toBe('https://drive.google.com/drive/folders/x');
+    expect(texts(google)).toContain(m.config.storageMoveHint);
+    const dropbox = renderConfigSection('storage', { ...c, storage: { available: ['dropbox'], connected: { ...base, provider: 'dropbox', rootUrl: null } } }, m);
+    expect(flatten(dropbox).some((x) => x.type === ComponentType.Button && x.url)).toBe(false);
+    expect(texts(dropbox)).not.toContain(m.config.storageMoveHint);
+  });
+
   it('stockage : connexion en cours — code et lien (Google, OneDrive) ; lien et saisie du code (Dropbox)', () => {
     const device = renderConfigSection('storage', { ...c, storage: { available: ['google'], pending: { provider: 'google', url: 'https://www.google.com/device', code: 'ABCD-EFGH' } } }, m);
     expect(texts(device)).toContain('`ABCD-EFGH`');

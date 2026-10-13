@@ -169,6 +169,13 @@
       "when": 1791913758721,
       "tag": "0023_guild_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791935069694,
+      "tag": "0024_storage_root",
+      "breakpoints": true
     }
   ]
 }

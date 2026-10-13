@@ -630,12 +630,12 @@ export class Repositories {
 
   /** Connexion (ou reconnexion) : remplace le stockage précédent, garde le dossier choisi. */
   async setStorage(values: Pick<GuildStorageRow, 'guildId' | 'provider' | 'credentials' | 'account' | 'connectedBy'>): Promise<GuildStorageRow> {
-    const fresh = { ...values, connectedAt: new Date(), lastOkAt: null, lastError: null };
+    const fresh = { ...values, connectedAt: new Date(), rootId: null, rootUrl: null, lastOkAt: null, lastError: null };
     const [row] = await this.db.insert(guildStorage).values(fresh).onConflictDoUpdate({ target: guildStorage.guildId, set: fresh }).returning();
     return row!;
   }
 
-  async updateStorage(guildId: string, patch: Partial<Pick<GuildStorageRow, 'credentials' | 'folder' | 'lastOkAt' | 'lastError'>>): Promise<void> {
+  async updateStorage(guildId: string, patch: Partial<Pick<GuildStorageRow, 'credentials' | 'folder' | 'rootId' | 'rootUrl' | 'lastOkAt' | 'lastError'>>): Promise<void> {
     await this.db.update(guildStorage).set(patch).where(eq(guildStorage.guildId, guildId));
   }
 
