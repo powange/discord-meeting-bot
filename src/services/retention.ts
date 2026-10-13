@@ -64,6 +64,13 @@ export class RetentionService {
       }
     }
 
+    // Filet de sécurité : mix sans perte d'une réunion close resté sur le disque (arrêt du bot).
+    const outputs = await this.repos.listMixOutputs();
+    for (const x of outputs.filter((o) => o.meetingStatus !== 'scheduled' && o.meetingStatus !== 'live' && typeof o.output?.master === 'string')) {
+      const master = await this.repos.dropMixMaster(x.meetingId);
+      if (master && this.insideDataDir(master)) await rm(master, { force: true }).catch(() => undefined);
+    }
+
     const mixes = (await this.repos.listMixOutputs()).map((x) => ({
       meetingId: x.meetingId,
       output: x.output ?? {},
@@ -76,7 +83,9 @@ export class RetentionService {
       const full = mixes.find((x) => x.meetingId === mix.meetingId)!;
       try {
         const parts = Array.isArray(full.output.parts) ? (full.output.parts as string[]) : [];
-        for (const file of [mix.file!, ...parts]) {
+        // Le mix sans perte (base des mises à jour) part avec l'audio complet.
+        const master = typeof full.output.master === 'string' ? [full.output.master] : [];
+        for (const file of [mix.file!, ...parts, ...master]) {
           if (!this.insideDataDir(file)) throw new Error(`chemin hors du dossier de données : ${file}`);
           await rm(file, { force: true });
         }

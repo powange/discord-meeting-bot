@@ -1,5 +1,5 @@
-import { openAsBlob } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { existsSync, openAsBlob } from 'node:fs';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
@@ -15,7 +15,7 @@ import { whisperPrompt } from '../domain/vocabulary.js';
 import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
 import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
-import { assembleWav, ffmpegPath, mixPlaced, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
+import { assembleWav, ffmpegPath, mixPlaced, runFfmpeg, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
 import { effectiveLlm } from '../services/llmSettings.js';
 import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
@@ -42,16 +42,19 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   const { meeting, settings, m, signal } = ctx;
   const recordings = await repos.listRecordingsForMeeting(meeting.id);
   const origin = recordings[0]?.startedAt.getTime();
-  const inputs: PlacedInput[] = [];
+  const placed = new Map<string, PlacedInput[]>(); // par session
   let endMs = 0;
   for (const rec of recordings) {
     const shift = rec.startedAt.getTime() - origin!;
+    const list: PlacedInput[] = [];
     for (const seg of await repos.listSegments(rec.id)) {
-      inputs.push({ file: seg.filePath, offsetMs: shift + seg.startMs });
+      list.push({ file: seg.filePath, offsetMs: shift + seg.startMs });
       endMs = Math.max(endMs, shift + seg.endMs);
     }
+    placed.set(rec.id, list);
   }
-  if (inputs.length === 0) return { empty: true };
+  const segmentCounts = Object.fromEntries([...placed].map(([id, list]) => [id, list.length]));
+  if ([...placed.values()].every((list) => list.length === 0)) return { empty: true };
 
   const thread = await fetchThread(client, meeting.threadId);
   const guild = await client.guilds.fetch(meeting.guildId).catch(() => null);
@@ -74,17 +77,40 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   const base = `reunion-${formatWhen(meeting.startsAt, settings.timezone, settings.locale, "yyyy-MM-dd-HH'h'mm")}`;
   const fileName = `${base}.ogg`;
   const file = join(dir, fileName);
+  // Mix sans perte (FLAC) gardé à côté : une nouvelle session s'y ajoute sans tout remixer, et
+  // l'audio déjà mixé n'est jamais réencodé plusieurs fois en Opus.
+  const master = join(dir, `${base}.flac`);
   const ffmpeg = ffmpegPath(config.ffmpegPath);
+
+  // Incrémental si le mix précédent couvre exactement les sessions déjà mixées (mêmes prises
+  // de parole) et que seules de nouvelles sessions sont arrivées ; sinon (retranscription,
+  // session modifiée, fichier absent), mix complet.
+  const prevMaster = typeof previous?.master === 'string' ? previous.master : null;
+  const prevCounts = (previous?.segmentCounts ?? null) as Record<string, number> | null;
+  const added = recordings.filter((r) => !prevCounts || !(r.id in prevCounts));
+  const incremental =
+    prevMaster !== null &&
+    prevCounts !== null &&
+    existsSync(prevMaster) &&
+    added.length > 0 &&
+    Object.entries(prevCounts).every(([id, n]) => segmentCounts[id] === n);
+  const inputs: PlacedInput[] = incremental
+    ? [{ file: prevMaster!, offsetMs: 0 }, ...added.flatMap((r) => placed.get(r.id) ?? [])]
+    : [...placed.values()].flat();
+
   ctx.progress(m.pipeline.progressMix(m.format.duration(endMs)));
   let parts: string[] = [];
   try {
-    await mixPlaced(ffmpeg, inputs, file, ['-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', `${kbps}k`, '-application', 'voip'], tmp, signal);
+    const nextMaster = join(tmp, 'master.flac');
+    await mixPlaced(ffmpeg, inputs, nextMaster, ['-threads', '1', '-ac', '1', '-ar', '48000', '-c:a', 'flac'], tmp, signal);
+    await rename(nextMaster, master);
+    await runFfmpeg(ffmpeg, ['-threads', '1', '-i', master, '-ac', '1', '-c:a', 'libopus', '-b:a', `${kbps}k`, '-application', 'voip', file], signal);
     if (plan && plan.parts > 1) parts = await splitAudio(ffmpeg, file, plan.partMs, plan.parts, (i) => join(dir, `${base}-partie${i + 1}.ogg`), signal);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
   const size = (await stat(file)).size;
-  const output: Record<string, unknown> = { file, parts, sizeBytes: size, durationMs: endMs, bitrateKbps: kbps };
+  const output: Record<string, unknown> = { file, master, parts, sizeBytes: size, durationMs: endMs, bitrateKbps: kbps, segmentCounts, incremental };
   if (!thread) return output;
   await ensureUnarchived(thread);
 

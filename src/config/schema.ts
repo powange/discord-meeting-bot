@@ -120,6 +120,8 @@ export const rootSchema = z.strictObject({
   /** Binaire ffmpeg (préparation de l'audio). Vide : ffmpeg-static en développement, sinon `ffmpeg` du PATH. */
   ffmpegPath: z.string().optional(),
   scheduler: z.strictObject({ tickSeconds: z.int().min(5).max(300).default(30) }).prefault({}),
+  /** Comptes rendus traités en même temps, tous serveurs confondus (GPU partagés : 1 par défaut). */
+  pipeline: z.strictObject({ maxConcurrent: z.int().min(1).max(8).default(1) }).prefault({}),
   defaults: z.unknown().optional(),
   guilds: z.record(snowflake, z.unknown()).default({}),
 });

@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import { MessageFlags, type Client } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
@@ -43,10 +44,17 @@ const STATUS_THROTTLE_MS = 3000;
  * remet l'étape en cours en attente, reprise au démarrage suivant.
  */
 export class PipelineService {
-  private readonly queue: string[] = [];
+  /** Réunions en attente, par serveur (ordre d'arrivée). */
+  private readonly pending = new Map<string, string[]>();
+  /** Réunions en cours de mise en file (serveur en cours de lecture en base). */
+  private readonly enqueuing = new Set<string>();
+  /** Traitements en cours : réunion → serveur. */
+  private readonly running = new Map<string, { guildId: string; done: Promise<void> }>();
+  /** Dernier serveur servi : le suivant dans l'ordre passe en premier (tour de rôle). */
+  private lastGuild: string | null = null;
   /** Réunions à retraiter dès la fin du traitement en cours (nouvel enregistrement entre-temps). */
   private readonly refreshAfterRun = new Set<string>();
-  private worker: Promise<void> | null = null;
+
   /** Compte rendu publié : la carte (liens) et le post épinglé (derniers comptes rendus) sont mis à jour. */
   private onPublished: (meeting: MeetingRow) => void = () => undefined;
   private readonly abort = new AbortController();
@@ -64,13 +72,13 @@ export class PipelineService {
    */
   async refresh(meetingId: string): Promise<void> {
     if (!(await this.hasSpeech(meetingId))) return;
-    if (this.queue[0] === meetingId) {
+    if (this.running.has(meetingId)) {
       this.refreshAfterRun.add(meetingId);
       return;
     }
     await this.deps.repos.ensurePipeline(meetingId);
     await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]);
-    this.enqueue(meetingId);
+    await this.enqueue(meetingId);
   }
 
   /**
@@ -96,7 +104,7 @@ export class PipelineService {
   /** Programme le traitement (étapes créées si besoin). */
   async schedule(meetingId: string): Promise<void> {
     await this.deps.repos.ensurePipeline(meetingId);
-    this.enqueue(meetingId);
+    await this.enqueue(meetingId);
   }
 
   /** Relance : les étapes en échec et les suivantes repassent en attente. */
@@ -104,7 +112,7 @@ export class PipelineService {
     const rows = await this.deps.repos.listPipeline(meetingId);
     const firstFailed = rows.findIndex((r) => r.status === 'failed');
     if (firstFailed >= 0) await this.deps.repos.resetSteps(meetingId, rows.slice(firstFailed).map((r) => r.step));
-    this.enqueue(meetingId);
+    await this.enqueue(meetingId);
   }
 
   /** Nouveau compte rendu : résumé et publication refaits ; la transcription aussi si demandé. */
@@ -112,11 +120,11 @@ export class PipelineService {
     await this.deps.repos.ensurePipeline(meetingId);
     if (retranscribe) await this.deps.repos.resetTranscription(meetingId);
     await this.deps.repos.resetSteps(meetingId, retranscribe ? [...PIPELINE_STEPS] : ['summarize', 'publish']);
-    this.enqueue(meetingId);
+    await this.enqueue(meetingId);
   }
 
   isQueued(meetingId: string): boolean {
-    return this.queue.includes(meetingId);
+    return this.running.has(meetingId) || this.enqueuing.has(meetingId) || [...this.pending.values()].some((q) => q.includes(meetingId));
   }
 
   /** Au démarrage : reprise des traitements interrompus. */
@@ -125,7 +133,7 @@ export class PipelineService {
       const rows = await this.deps.repos.listPipeline(meetingId);
       const running = rows.filter((r) => r.status === 'running').map((r) => r.step);
       await this.deps.repos.resetSteps(meetingId, running);
-      this.enqueue(meetingId);
+      await this.enqueue(meetingId);
     }
     // Clôture juste avant un arrêt du bot : le compte rendu n'avait pas encore été lancé.
     for (const meetingId of await this.deps.repos.listEndedWithoutPipeline()) await this.processIfNeeded(meetingId);
@@ -134,31 +142,63 @@ export class PipelineService {
   async stop(): Promise<void> {
     this.stopping = true;
     this.abort.abort();
-    await this.worker?.catch(() => undefined);
+    await Promise.allSettled([...this.running.values()].map((r) => r.done));
   }
 
-  private enqueue(meetingId: string): void {
-    if (this.stopping || this.queue.includes(meetingId)) return;
-    this.queue.push(meetingId);
-    this.worker ??= this.drain().finally(() => {
-      this.worker = null;
-    });
+  /**
+   * File par serveur, servie à tour de rôle, avec un plafond global de traitements simultanés
+   * (pipeline.maxConcurrent, 1 par défaut : les GPU de transcription et de résumé sont partagés).
+   * Un serveur n'attend donc que le traitement en cours, pas toute la file des autres. Une
+   * réunion n'est jamais traitée deux fois en même temps, ni deux réunions d'un même serveur.
+   */
+  private async enqueue(meetingId: string): Promise<void> {
+    if (this.stopping || this.isQueued(meetingId)) return;
+    // Marquée tout de suite : la recherche du serveur ne doit pas la faire paraître « libre ».
+    this.enqueuing.add(meetingId);
+    try {
+      const meeting = await this.deps.repos.getMeeting(meetingId);
+      if (!meeting || this.stopping) return;
+      const queue = this.pending.get(meeting.guildId) ?? [];
+      queue.push(meetingId);
+      this.pending.set(meeting.guildId, queue);
+    } finally {
+      this.enqueuing.delete(meetingId);
+    }
+    this.pump();
   }
 
-  private async drain(): Promise<void> {
-    while (this.queue.length > 0 && !this.stopping) {
-      const meetingId = this.queue[0]!;
+  /** Lance des traitements tant qu'il reste de la place et un serveur en attente. */
+  private pump(): void {
+    const max = this.deps.config.pipeline.maxConcurrent;
+    while (!this.stopping && this.running.size < max) {
+      const busy = new Set([...this.running.values()].map((r) => r.guildId));
+      const guilds = [...this.pending.keys()].filter((g) => (this.pending.get(g)?.length ?? 0) > 0 && !busy.has(g));
+      if (guilds.length === 0) return;
+      // Tour de rôle : le premier serveur après le dernier servi.
+      const after = this.lastGuild ? guilds.find((g) => g > this.lastGuild!) : undefined;
+      const guildId = after ?? [...guilds].sort()[0]!;
+      const meetingId = this.pending.get(guildId)!.shift()!;
+      if (this.pending.get(guildId)!.length === 0) this.pending.delete(guildId);
+      this.lastGuild = guildId;
+      const done = this.process(meetingId).finally(() => {
+        this.running.delete(meetingId);
+        this.pump();
+      });
+      this.running.set(meetingId, { guildId, done });
+    }
+  }
+
+  private async process(meetingId: string): Promise<void> {
+    for (;;) {
       try {
         await this.run(meetingId);
       } catch (err) {
         this.deps.log.error({ meetingId, err }, 'Traitement post-réunion en échec');
-      } finally {
-        // Mise à jour demandée pendant le traitement : la réunion reste en tête de file (jamais
-        // retirée puis remise, sinon elle paraîtrait « libre » un instant et serait doublée).
-        const again = this.refreshAfterRun.delete(meetingId) && !this.stopping;
-        if (again) await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]).catch((err) => this.deps.log.error({ meetingId, err }, 'Mise à jour du traitement impossible'));
-        else this.queue.shift();
       }
+      // Mise à jour demandée pendant le traitement : elle suit aussitôt, sans que la réunion
+      // paraisse « libre » un instant (elle serait doublée).
+      if (!this.refreshAfterRun.delete(meetingId) || this.stopping) return;
+      await this.deps.repos.resetSteps(meetingId, [...PIPELINE_STEPS]).catch((err) => this.deps.log.error({ meetingId, err }, 'Mise à jour du traitement impossible'));
     }
   }
 
@@ -213,6 +253,11 @@ export class PipelineService {
     }
     await status.update(details);
     this.onPublished(meeting);
+    // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
+    if ((await repos.getMeeting(meetingId))?.status === 'ended') {
+      const master = await repos.dropMixMaster(meetingId);
+      if (master) await rm(master, { force: true }).catch((err) => plog.warn({ err: errorMessage(err) }, 'Suppression du mix sans perte impossible'));
+    }
   }
 
   private async notifyFailure(meeting: MeetingRow, m: Messages): Promise<void> {

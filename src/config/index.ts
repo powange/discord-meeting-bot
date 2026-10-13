@@ -16,6 +16,7 @@ export interface AppConfig {
   diskMinFreeGb: number;
   ai: { allowedHosts: string[] };
   scheduler: { tickSeconds: number };
+  pipeline: { maxConcurrent: number };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
   guild(guildId: string): GuildBlock;
 }
@@ -68,6 +69,7 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     diskMinFreeGb: root.diskMinFreeGb,
     ai: root.ai,
     scheduler: root.scheduler,
+    pipeline: root.pipeline,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,
   };
 }

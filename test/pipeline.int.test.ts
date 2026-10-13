@@ -227,6 +227,63 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(out.sizeBytes as number).toBeGreaterThan(0);
   }, 60_000);
 
+  it('audio complet incrémental : une nouvelle session s’ajoute au mix sans perte existant', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const settings = await d.settings.get('g');
+    const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
+    const steps = createSteps(d);
+    await repos.ensurePipeline(meeting.id);
+    const first = await steps.mix(ctx);
+    expect(first).toMatchObject({ incremental: false, durationMs: 11_500 });
+    await repos.updateStep(meeting.id, 'mix', { status: 'done', output: first });
+
+    // Seconde session, 60 s après le début de la première (reprise après une coupure).
+    const startedAt = new Date('2026-10-15T16:01:00Z');
+    const rec = await repos.insertRecording({ meetingId: meeting.id, guildId: 'g', voiceChannelId: 'v', startedAt, dataDir });
+    const w = SegmentWriter.open(join(dataDir, rec.id, 'alice', '0.ogg'));
+    for (let i = 0; i < 100; i++) w.write(Buffer.from([0xf8, 0xff, 0xfe]), i * 20);
+    const seg = await w.close();
+    await repos.insertSegment({ recordingId: rec.id, userId: 'alice', startMs: 0, endMs: 2000, packets: seg.packets, filePath: seg.filePath });
+
+    const second = await steps.mix(ctx);
+    expect(second).toMatchObject({ incremental: true, durationMs: 62_000 });
+    const { execFile } = await import('node:child_process');
+    const { ffmpegPath } = await import('../src/lib/ffmpeg.js');
+    const seconds = (file: string) =>
+      new Promise<number>((resolve, reject) =>
+        execFile(ffmpegPath(), ['-i', file, '-f', 'null', '-'], (err, _out, stderr) => {
+          const times = [...stderr.matchAll(/time=(\d+):(\d+):([\d.]+)/g)];
+          const last = times.at(-1);
+          if (!last) return reject(err ?? new Error(stderr));
+          resolve(Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3]));
+        }),
+      );
+    // Le nouveau mix contient l'ancien (0 à 11,5 s), le silence, puis la seconde session (60 à 62 s).
+    expect(await seconds(second.master as string)).toBeCloseTo(62, 0);
+    expect(await seconds(second.file as string)).toBeCloseTo(62, 0);
+
+    // Rien de nouveau : mix complet (pas d'incrémental sans session ajoutée).
+    await repos.updateStep(meeting.id, 'mix', { status: 'done', output: second });
+    expect(await steps.mix(ctx)).toMatchObject({ incremental: false, durationMs: 62_000 });
+    for (const step of ['transcribe', 'summarize', 'publish'] as const) await repos.updateStep(meeting.id, step, { status: 'done' });
+  }, 60_000);
+
+  it('réunion close : le mix sans perte est supprimé une fois le compte rendu publié', async () => {
+    const meeting = await seedMeeting();
+    await repos.updateMeeting(meeting.id, { status: 'ended' });
+    const master = join(dataDir, `master-${meeting.id}.flac`);
+    const { writeFile } = await import('node:fs/promises');
+    const { existsSync } = await import('node:fs');
+    await writeFile(master, 'x');
+    const quick: StepFn = async () => ({});
+    const engine = new PipelineService(deps(), { mix: async () => ({ master, file: 'x.ogg' }), transcribe: quick, summarize: quick, publish: quick });
+    await engine.schedule(meeting.id);
+    await waitIdle(engine, meeting.id);
+    expect(existsSync(master)).toBe(false);
+    expect((await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output).toMatchObject({ master: null, file: 'x.ogg' });
+  }, 30_000);
+
   it('arrêt d’enregistrement : mise à jour enchaînée si un traitement tourne ; clôture sans doublon', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];
@@ -266,6 +323,49 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await engine.processIfNeeded(meeting.id);
     await waitIdle(engine, meeting.id);
     expect(calls).toHaveLength(12);
+  }, 30_000);
+
+  it('file par serveur : serveurs servis à tour de rôle, plafond global, jamais deux réunions d’un même serveur à la fois', async () => {
+    const meetingIn = (guildId: string) =>
+      repos.insertMeeting({ guildId, organizerId: 'o', title: guildId, startsAt: new Date('2026-10-15T16:00:00Z'), durationMin: 60, voiceChannelId: 'v' });
+    const [a1, a2, b1] = [await meetingIn('ga'), await meetingIn('ga'), await meetingIn('gb')];
+    const order: string[] = [];
+    let concurrent = 0;
+    let maxSeen = 0;
+    const sameGuildTogether: string[] = [];
+    const active = new Set<string>();
+    const step: StepFn = async (ctx) => {
+      if (ctx.meeting.guildId && [...active].some((id) => id !== ctx.meeting.id && id.startsWith(`${ctx.meeting.guildId}:`))) sameGuildTogether.push(ctx.meeting.id);
+      active.add(`${ctx.meeting.guildId}:${ctx.meeting.id}`);
+      concurrent++;
+      maxSeen = Math.max(maxSeen, concurrent);
+      order.push(ctx.meeting.id);
+      await new Promise((r) => setTimeout(r, 30));
+      concurrent--;
+      active.delete(`${ctx.meeting.guildId}:${ctx.meeting.id}`);
+      return {};
+    };
+    const quick: StepFn = async () => ({});
+    const steps = { mix: step, transcribe: quick, summarize: quick, publish: quick };
+
+    // Un seul traitement à la fois : ga, ga, gb arrivés dans cet ordre → ga, gb, ga.
+    const one = new PipelineService(deps(), steps);
+    for (const m of [a1, a2, b1]) await one.schedule(m.id);
+    for (const m of [a1, a2, b1]) await waitIdle(one, m.id);
+    expect(order).toEqual([a1.id, b1.id, a2.id]);
+    expect(maxSeen).toBe(1);
+
+    // Deux à la fois : les deux serveurs en parallèle, mais jamais deux réunions de ga ensemble.
+    order.length = 0;
+    maxSeen = 0;
+    const d = deps();
+    const two = new PipelineService({ ...d, config: { ...d.config, pipeline: { maxConcurrent: 2 } } }, steps);
+    for (const m of [a1, a2, b1]) await repos.resetSteps(m.id, ['mix', 'transcribe', 'summarize', 'publish']);
+    for (const m of [a1, a2, b1]) await two.schedule(m.id);
+    for (const m of [a1, a2, b1]) await waitIdle(two, m.id);
+    expect(maxSeen).toBe(2);
+    expect(sameGuildTogether).toEqual([]);
+    expect(order).toHaveLength(3);
   }, 30_000);
 
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {

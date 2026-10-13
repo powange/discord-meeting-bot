@@ -655,10 +655,22 @@ export class Repositories {
   /** Étapes « mix » terminées (audio complet local), avec le serveur de la réunion. */
   async listMixOutputs() {
     return this.db
-      .select({ meetingId: pipelineSteps.meetingId, guildId: meetings.guildId, finishedAt: pipelineSteps.finishedAt, output: pipelineSteps.output })
+      .select({ meetingId: pipelineSteps.meetingId, guildId: meetings.guildId, meetingStatus: meetings.status, finishedAt: pipelineSteps.finishedAt, output: pipelineSteps.output })
       .from(pipelineSteps)
       .innerJoin(meetings, eq(meetings.id, pipelineSteps.meetingId))
       .where(and(eq(pipelineSteps.step, 'mix'), eq(pipelineSteps.status, 'done')));
+  }
+
+  /**
+   * Mix sans perte d'une réunion terminée : il ne sert qu'à ajouter de nouvelles sessions, et
+   * pèse ~17 fois l'audio Opus. Retiré du résultat une fois la réunion close ; renvoie son chemin, à supprimer.
+   */
+  async dropMixMaster(meetingId: string): Promise<string | null> {
+    const row = (await this.listPipeline(meetingId)).find((r) => r.step === 'mix' && r.status === 'done');
+    const master = row?.output?.master;
+    if (typeof master !== 'string') return null;
+    await this.updateStep(meetingId, 'mix', { output: { ...row!.output, master: null } });
+    return master;
   }
 
   async markMixPurged(meetingId: string, output: Record<string, unknown>, at: Date): Promise<void> {

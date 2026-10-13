@@ -35,6 +35,11 @@ diskMinFreeGb: 5
 scheduler:
   tickSeconds: 30
 
+# Comptes rendus traités en même temps, tous serveurs confondus. Chaque serveur a sa file et les
+# serveurs sont servis à tour de rôle ; 1 par défaut, les GPU de transcription et de résumé étant partagés.
+pipeline:
+  maxConcurrent: 1
+
 # Valeurs par défaut pour tous les serveurs…
 defaults:
   # Réglages initiaux d'un serveur. Ils ne servent qu'à sa première utilisation :
