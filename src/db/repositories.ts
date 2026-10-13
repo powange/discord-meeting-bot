@@ -54,6 +54,28 @@ export class Repositories {
     return created!;
   }
 
+  /** Chiffre les clés d'API encore stockées en clair (APP_SECRET_KEY ajoutée après coup). Renvoie leur nombre. */
+  async encryptPlaintextSecrets(encrypt: (plain: string) => string): Promise<number> {
+    let count = 0;
+    const settings = await this.db
+      .select({ guildId: guildSettings.guildId, key: guildSettings.llmApiKey })
+      .from(guildSettings)
+      .where(and(isNotNull(guildSettings.llmApiKey), sql`${guildSettings.llmApiKey} not like 'enc:%'`));
+    for (const row of settings) {
+      await this.db.update(guildSettings).set({ llmApiKey: encrypt(row.key!) }).where(eq(guildSettings.guildId, row.guildId));
+      count++;
+    }
+    const backends = await this.db
+      .select({ id: transcriptionBackends.id, key: transcriptionBackends.apiKey })
+      .from(transcriptionBackends)
+      .where(and(isNotNull(transcriptionBackends.apiKey), sql`${transcriptionBackends.apiKey} not like 'enc:%'`));
+    for (const row of backends) {
+      await this.db.update(transcriptionBackends).set({ apiKey: encrypt(row.key!) }).where(eq(transcriptionBackends.id, row.id));
+      count++;
+    }
+    return count;
+  }
+
   /** Serveurs dont le forum des réunions est configuré. */
   async listConfiguredGuildIds(): Promise<string[]> {
     const rows = await this.db.select({ id: guildSettings.guildId }).from(guildSettings).where(isNotNull(guildSettings.forumChannelId));
@@ -574,21 +596,30 @@ export class Repositories {
       .from(recordings)
       .innerJoin(meetings, eq(meetings.id, recordings.meetingId))
       .where(and(isNull(recordings.purgedAt), isNotNull(recordings.endedAt)));
-    const out = [];
-    for (const r of recs) {
-      const steps = await this.listPipeline(r.meetingId);
-      const [{ n } = { n: 0 }] = await this.db
-        .select({ n: sql<number>`count(*)::int` })
-        .from(audioSegments)
-        .where(eq(audioSegments.recordingId, r.recordingId));
-      out.push({
-        ...r,
-        mix: steps.find((x) => x.step === 'mix')?.status ?? null,
-        transcribe: steps.find((x) => x.step === 'transcribe')?.status ?? null,
-        hasSegments: n > 0,
-      });
-    }
-    return out;
+    if (recs.length === 0) return [];
+    // Statuts des étapes et présence de parole en deux requêtes, pas deux par session.
+    const steps = await this.db
+      .select({ meetingId: pipelineSteps.meetingId, step: pipelineSteps.step, status: pipelineSteps.status })
+      .from(pipelineSteps)
+      .where(and(inArray(pipelineSteps.meetingId, [...new Set(recs.map((r) => r.meetingId))]), inArray(pipelineSteps.step, ['mix', 'transcribe'])));
+    const withSpeech = new Set(
+      (
+        await this.db
+          .selectDistinct({ id: audioSegments.recordingId })
+          .from(audioSegments)
+          .where(inArray(audioSegments.recordingId, recs.map((r) => r.recordingId)))
+      ).map((r) => r.id),
+    );
+    const statusOf = (meetingId: string, step: string) => steps.find((s) => s.meetingId === meetingId && s.step === step)?.status ?? null;
+    return recs.map((r) => ({ ...r, mix: statusOf(r.meetingId, 'mix'), transcribe: statusOf(r.meetingId, 'transcribe'), hasSegments: withSpeech.has(r.recordingId) }));
+  }
+
+  /** Au moins une prise de parole enregistrée pour la réunion. */
+  async hasSpeech(meetingId: string): Promise<boolean> {
+    const rows = await this.db.execute(
+      sql`select exists (select 1 from ${audioSegments} s join ${recordings} r on r.id = s.recording_id where r.meeting_id = ${meetingId}) as found`,
+    );
+    return (rows.rows[0] as { found?: boolean } | undefined)?.found === true;
   }
 
   async markRecordingPurged(id: string, at: Date): Promise<void> {

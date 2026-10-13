@@ -3,17 +3,33 @@
 # LiteLLM est facultatif : ajouter COMPOSE_PROFILES=litellm et LITELLM_MASTER_KEY pour le lancer.
 name: meeting-bot
 
+# Journaux Docker plafonnés (sinon ils grossissent sans limite sur le disque des enregistrements).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
 services:
   bot:
     # stable : dernière version publiée (git tag v…). Épingler une version : BOT_TAG=1.2.0.
     # latest suit chaque push sur main : à réserver aux essais.
     image: ghcr.io/powange/meeting-recorder:${BOT_TAG:-stable}
     restart: unless-stopped
+    logging: *logging
     # Le bot n'a besoin d'aucun privilège système.
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?DISCORD_TOKEN requis}
+      # Fuseau des tâches planifiées (purge de nuit…) et des journaux.
+      TZ: ${TZ:-Europe/Paris}
+      # Chiffre les clés d'API saisies dans /config (recommandé). Une phrase longue et aléatoire ;
+      # la changer rend les clés déjà enregistrées illisibles (à ressaisir).
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-}
+      # Adresses que le bot a le droit d'appeler (transcription, LLM), séparées par des virgules :
+      # noms, *.domaine, IP ou CIDR (ex. 192.168.0.0/24,*.tailnet). Vide : aucune restriction.
+      AI_ALLOWED_HOSTS: ${AI_ALLOWED_HOSTS:-}
       # Mot de passe alphanumérique : il est inséré tel quel dans l'URL.
       DATABASE_URL: postgres://bot:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}@postgres:5432/meetingbot
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -40,6 +56,7 @@ services:
   postgres:
     image: postgres:17.11
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: bot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -52,25 +69,46 @@ services:
       timeout: 3s
       retries: 10
 
-  # Sauvegarde quotidienne de la base (gzip), conservée 14 jours dans le volume « backups ».
+  # Sauvegarde quotidienne de la base à heure fixe (format pg_dump « custom », compressé),
+  # conservée 14 jours dans le volume « backups ». Rattrapée au démarrage si la dernière a plus
+  # d'un jour. Le conteneur passe « unhealthy » dans Portainer si aucune sauvegarde n'a réussi
+  # depuis 26 h.
   backup:
     image: postgres:17.11
     restart: unless-stopped
+    logging: *logging
     environment:
       PGHOST: postgres
       PGUSER: bot
       PGDATABASE: meetingbot
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ:-Europe/Paris}
+      BACKUP_AT: ${BACKUP_AT:-03:30}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
+        backup() {
+          f=/backups/meetingbot-$$(date +%F-%H%M).dump
+          if pg_dump --format=custom --no-owner --file="$$f.tmp" && mv "$$f.tmp" "$$f"; then
+            date +%s > /backups/last-ok; echo "sauvegarde OK : $$f"
+          else
+            rm -f "$$f.tmp"; echo "SAUVEGARDE EN ÉCHEC" >&2
+          fi
+          find /backups -name 'meetingbot-*' -mtime +$$BACKUP_KEEP_DAYS -delete
+        }
+        if [ ! -f /backups/last-ok ] || [ $$(( $$(date +%s) - $$(cat /backups/last-ok) )) -gt 86400 ]; then backup; fi
         while true; do
-          f=/backups/meetingbot-$$(date +%F-%H%M).sql.gz
-          if pg_dump --no-owner | gzip > "$$f.tmp" && mv "$$f.tmp" "$$f"; then echo "sauvegarde OK : $$f"; else echo "SAUVEGARDE EN ÉCHEC" >&2; rm -f "$$f.tmp"; fi
-          find /backups -name 'meetingbot-*.sql.gz' -mtime +$$BACKUP_KEEP_DAYS -delete
-          sleep 86400
+          now=$$(date +%s); next=$$(date -d "today $$BACKUP_AT" +%s)
+          [ "$$next" -le "$$now" ] && next=$$(date -d "tomorrow $$BACKUP_AT" +%s)
+          sleep $$(( next - now ))
+          backup
         done
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /backups/last-ok && [ $$(( $$(date +%s) - $$(cat /backups/last-ok) )) -lt 93600 ]']
+      interval: 30m
+      timeout: 5s
+      start_period: 10m
     volumes:
       - backups:/backups
     depends_on:
@@ -82,6 +120,7 @@ services:
     image: ghcr.io/berriai/litellm:v1.105.0
     profiles: [litellm]
     restart: unless-stopped
+    logging: *logging
     command: ['--config', '/app/config.yaml', '--port', '4000']
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}

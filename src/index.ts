@@ -11,6 +11,7 @@ import { registerCommands } from './discord/registerCommands.js';
 import { startHealthServer } from './lib/health.js';
 import { createLogger } from './lib/logger.js';
 import { buildInfo } from './lib/version.js';
+import { configureSecrets, encryptSecret, secretsEnabled } from './lib/secrets.js';
 import { PipelineService } from './pipeline/runner.js';
 import { createSteps } from './pipeline/steps.js';
 import { Scheduler } from './scheduler/index.js';
@@ -59,6 +60,13 @@ async function main(): Promise<void> {
       )
     : null;
   const repos = new Repositories(db);
+  configureSecrets(process.env.APP_SECRET_KEY);
+  if (secretsEnabled()) {
+    const encrypted = await repos.encryptPlaintextSecrets(encryptSecret);
+    if (encrypted > 0) log.info({ count: encrypted }, 'Clés d’API chiffrées en base');
+  } else {
+    log.warn('APP_SECRET_KEY absente : les clés d’API saisies dans /config sont stockées en clair');
+  }
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
   const hub = new HubService(client, repos, settings, log);
@@ -109,6 +117,7 @@ async function main(): Promise<void> {
       optouts.migrateRoles(ready, await repos.listOptoutRoles(), (guildId) => repos.updateSettings(guildId, { optoutRoleId: null })),
     );
     await step('registerCommands', () => registerCommands(ready, config.discord.commandGuildIds, log));
+    await step('cleanTemp', () => retention.cleanTemp());
     await step('pipelineResume', () => pipeline.resume());
     await step('hubWatchdog', () => hub.startWatchdog());
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles

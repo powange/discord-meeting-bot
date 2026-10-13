@@ -83,11 +83,8 @@ export class PipelineService {
     if (!covered) await this.refresh(meetingId);
   }
 
-  private async hasSpeech(meetingId: string): Promise<boolean> {
-    for (const rec of await this.deps.repos.listRecordingsForMeeting(meetingId)) {
-      if ((await this.deps.repos.listSegments(rec.id)).length > 0) return true;
-    }
-    return false;
+  private hasSpeech(meetingId: string): Promise<boolean> {
+    return this.deps.repos.hasSpeech(meetingId);
   }
 
   /** Programme le traitement (étapes créées si besoin). */

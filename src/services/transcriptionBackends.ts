@@ -7,6 +7,7 @@ import type { Repositories } from '../db/repositories.js';
 import type { TranscriptionBackendRow } from '../db/schema.js';
 import { ffmpegPath, runFfmpeg } from '../lib/ffmpeg.js';
 import { assertUrlAllowed } from '../lib/hosts.js';
+import { decryptSecret } from '../lib/secrets.js';
 
 export interface EffectiveBackends {
   /** `discord` : liste gérée par /config transcription ; `yaml` : valeur par défaut du fichier. */
@@ -15,12 +16,13 @@ export interface EffectiveBackends {
 }
 
 export function rowToConfig(row: TranscriptionBackendRow): BackendConfig {
+  const apiKey = decryptSecret(row.apiKey);
   return {
     name: row.name,
     type: row.type,
     url: row.url,
     model: row.model,
-    ...(row.apiKey ? { apiKey: row.apiKey } : {}),
+    ...(apiKey ? { apiKey } : {}),
     timeoutSec: row.timeoutSec,
     healthTimeoutSec: 3,
     concurrency: row.concurrency,

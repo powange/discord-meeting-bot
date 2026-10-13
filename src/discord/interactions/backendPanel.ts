@@ -16,9 +16,10 @@ import { encode, type TxAction } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { parseVocabulary, VOCABULARY_MAX_TERMS } from '../../domain/vocabulary.js';
-import { assertUrlAllowed } from '../../lib/hosts.js';
+import { assertUrlAllowed, hostOf } from '../../lib/hosts.js';
 import { moveTo, rowToConfig, testBackend, type BackendTest } from '../../services/transcriptionBackends.js';
 import { MAX_BACKENDS, renderBackendPanel, type PanelState } from '../embeds/backendPanel.js';
+import { encryptSecret } from '../../lib/secrets.js';
 
 type PanelInteraction = ButtonInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
 
@@ -217,6 +218,8 @@ function readBackendModal(interaction: ModalSubmitInteraction<'cached'>, m: Mess
   if (!name) throw new UserError(m.errors.titleRequired);
   if (!/^https?:\/\/[^\s/]+/.test(url)) throw new UserError(m.transcriptionConfig.badUrl);
   // Modification : champ vide = clé inchangée, « - » = clé supprimée.
-  const apiKey = editing ? (keyInput === '-' ? null : keyInput || editing.apiKey) : keyInput || null;
+  // Clé chiffrée en base ; changer d'adresse sans ressaisir la clé l'efface (elle ne part pas vers un autre hôte).
+  const sameHost = editing && hostOf(editing.url) === hostOf(url);
+  const apiKey = keyInput && keyInput !== '-' ? encryptSecret(keyInput) : editing && keyInput !== '-' && sameHost ? editing.apiKey : null;
   return { name, type, url, model, apiKey };
 }

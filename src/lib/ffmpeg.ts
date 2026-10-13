@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { setPriority } from 'node:os';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
@@ -23,6 +24,15 @@ export function ffmpegPath(configured?: string): string {
 export function runFfmpeg(bin: string, args: readonly string[], signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...args], { stdio: ['ignore', 'ignore', 'pipe'], signal });
+    // Priorité basse : le mix et la préparation des blocs ne doivent pas ralentir la réception
+    // vocale en direct (même processus pour tous les serveurs).
+    if (proc.pid) {
+      try {
+        setPriority(proc.pid, 10);
+      } catch {
+        // Plateforme sans priorité de processus : sans conséquence.
+      }
+    }
     let stderr = '';
     proc.stderr.on('data', (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-2000);

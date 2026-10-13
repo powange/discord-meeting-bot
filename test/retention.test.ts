@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mixesToPurge, rawTracksToPurge, type RawCandidate } from '../src/domain/retention.js';
+import { mixesToPurge, rawTracksToPurge, unprocessedTracksExpiringSoon, type RawCandidate } from '../src/domain/retention.js';
 
 const now = new Date('2026-12-01T00:00:00Z');
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
@@ -22,8 +22,8 @@ describe('rawTracksToPurge', () => {
   it.each<[string, Partial<RawCandidate>]>([
     ['trop récente', { endedAt: daysAgo(10) }],
     ['réunion encore ouverte', { meetingStatus: 'live' }],
-    ['traitement en échec', { transcribe: 'failed' }],
-    ['traitement jamais lancé', { mix: null, transcribe: null }],
+    ['traitement en échec (pas encore le double du délai)', { transcribe: 'failed' }],
+    ['traitement jamais lancé (pas encore le double du délai)', { mix: null, transcribe: null }],
     ['déjà purgée', { purgedAt: daysAgo(1) }],
     ['session en cours', { endedAt: null }],
     ['rétention désactivée (0)', { days: 0 }],
@@ -32,6 +32,14 @@ describe('rawTracksToPurge', () => {
   });
   it('session sans parole : purgée même sans traitement', () => {
     expect(rawTracksToPurge([raw({ hasSegments: false, mix: null, transcribe: null })], now)).toEqual(['r']);
+  });
+  it('traitement en échec : gardé deux fois plus longtemps, puis purgé (jamais à vie), avec un avis la veille', () => {
+    const failed = (age: number) => raw({ transcribe: 'failed', endedAt: daysAgo(age) });
+    expect(rawTracksToPurge([failed(59)], now)).toEqual([]);
+    expect(unprocessedTracksExpiringSoon([failed(59.5)], now)).toEqual(['r']);
+    expect(unprocessedTracksExpiringSoon([failed(40)], now)).toEqual([]);
+    expect(rawTracksToPurge([failed(60)], now)).toEqual(['r']);
+    expect(unprocessedTracksExpiringSoon([raw({ endedAt: daysAgo(59.5) })], now)).toEqual([]); // traité : rien à signaler
   });
 });
 

@@ -21,10 +21,11 @@ import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { effectiveLlm, listModels, testLlm } from '../../services/llmSettings.js';
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
-import { assertUrlAllowed } from '../../lib/hosts.js';
+import { assertUrlAllowed, hostOf } from '../../lib/hosts.js';
 import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, VOICE_LEADS_MIN, type ConfigContext, type ConfigSection, type VoiceMode } from '../embeds/configPanel.js';
 import { ensureStatusTags, missingForumPermissions } from '../forum.js';
 import { openBackendPanelInPlace } from './backendPanel.js';
+import { encryptSecret } from '../../lib/secrets.js';
 
 type CfgInteraction = Interaction<'cached'>;
 type Section = Exclude<ConfigSection, 'transcription'>;
@@ -301,7 +302,9 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
         return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
       }
       const settings = await ctx.settings.get(guildId);
-      const apiKey = keyInput === '-' ? null : keyInput || settings.llmApiKey;
+      // Clé chiffrée en base ; changer d'hôte sans ressaisir la clé l'efface (elle ne part pas vers un autre serveur).
+      const sameHost = settings.llmBaseUrl !== null && hostOf(settings.llmBaseUrl) === hostOf(url);
+      const apiKey = keyInput && keyInput !== '-' ? encryptSecret(keyInput) : keyInput !== '-' && sameHost ? settings.llmApiKey : null;
       await interaction.deferUpdate();
       await ctx.repos.updateSettings(guildId, { llmBaseUrl: url, llmModel: model || null, llmApiKey: apiKey });
       const llm = effectiveLlm(await ctx.settings.get(guildId), ctx.config).config;

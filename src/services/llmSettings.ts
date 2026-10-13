@@ -4,6 +4,7 @@ import { fetchWithTimeout, trimSlash } from '../ai/http.js';
 import type { AppConfig, LlmConfig } from '../config/index.js';
 import type { GuildSettingsRow } from '../db/schema.js';
 import { assertUrlAllowed } from '../lib/hosts.js';
+import { decryptSecret } from '../lib/secrets.js';
 
 export interface EffectiveLlm {
   /** `discord` : réglé par /config ; `yaml` : fichier de configuration. */
@@ -20,10 +21,11 @@ export function effectiveLlm(settings: GuildSettingsRow, config: AppConfig): Eff
   const model = settings.llmModel ?? yaml.model;
   if (settings.llmBaseUrl) {
     const { apiKey: _ignored, ...rest } = yaml;
+    const apiKey = decryptSecret(settings.llmApiKey);
     return {
       source: 'discord',
       enabled: settings.llmEnabled,
-      config: { ...rest, baseUrl: settings.llmBaseUrl, model, ...(settings.llmApiKey ? { apiKey: settings.llmApiKey } : {}) },
+      config: { ...rest, baseUrl: settings.llmBaseUrl, model, ...(apiKey ? { apiKey } : {}) },
     };
   }
   return { source: settings.llmModel ? 'discord' : 'yaml', enabled: settings.llmEnabled, config: { ...yaml, model } };

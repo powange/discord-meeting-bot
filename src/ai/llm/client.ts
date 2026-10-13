@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { LlmConfig } from '../../config/index.js';
-import { assertUrlAllowed } from '../../lib/hosts.js';
+import { assertUrlAllowed, errorSnippet } from '../../lib/hosts.js';
 import { fetchWithTimeout, isTimeout, trimSlash } from '../http.js';
 
 export interface ChatMessage {
@@ -116,14 +116,14 @@ export class LlmClient {
         if (typeof content !== 'string') throw new LlmError('LLM : réponse sans contenu');
         return { content, model: body.model ?? this.config.model, deployment: res.headers.get('x-litellm-model-id') };
       }
-      const text = (await res.text().catch(() => '')).slice(0, 300);
+      const raw = await res.text().catch(() => '');
       // Format refusé (400/422 mentionnant response_format) : on essaie le suivant.
       const next = FORMATS[FORMATS.indexOf(this.format) + 1];
-      if ((res.status === 400 || res.status === 422) && /response_format|json_schema|json_object/i.test(text) && next) {
+      if ((res.status === 400 || res.status === 422) && /response_format|json_schema|json_object/i.test(raw) && next) {
         this.format = next;
         continue;
       }
-      throw new LlmError(`LLM : erreur ${res.status} ${text}`, res.status === 429 || res.status >= 500);
+      throw new LlmError(`LLM : erreur ${res.status} ${errorSnippet(raw)}`.trim(), res.status === 429 || res.status >= 500);
     }
   }
 

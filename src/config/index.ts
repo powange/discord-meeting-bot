@@ -27,6 +27,7 @@ const FALLBACK = {
   logLevel: '${LOG_LEVEL:-info}',
   dataDir: '${DATA_DIR:-data}',
   ffmpegPath: '${FFMPEG_PATH:-}',
+  ai: { allowedHosts: '${AI_ALLOWED_HOSTS:-}' },
   defaults: {
     llm: { baseUrl: '${LLM_BASE_URL:-}', apiKey: '${LLM_API_KEY:-}', model: '${LLM_MODEL:-summary}' },
   },

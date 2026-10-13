@@ -317,7 +317,8 @@ export const transcriptSegments = pgTable(
     endAt: tz().notNull(),
     text: text().notNull(),
   },
-  (t) => [index().on(t.meetingId, t.startAt)],
+  // block_id : chaque bloc transcrit remplace ses segments, et la suppression d'un bloc cascade.
+  (t) => [index().on(t.meetingId, t.startAt), index().on(t.blockId)],
 );
 
 /** Résumé structuré d'une réunion, avec la trace des modèles utilisés. */

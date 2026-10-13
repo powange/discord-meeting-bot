@@ -1,9 +1,9 @@
-import { statfs } from 'node:fs/promises';
-import { rm } from 'node:fs/promises';
+import { readdir, rm, statfs } from 'node:fs/promises';
+import { join, resolve, sep } from 'node:path';
 import { schedule, type ScheduledTask } from 'node-cron';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
-import { mixesToPurge, rawTracksToPurge } from '../domain/retention.js';
+import { mixesToPurge, rawTracksToPurge, unprocessedTracksExpiringSoon } from '../domain/retention.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 
@@ -29,7 +29,7 @@ export class RetentionService {
   ) {}
 
   start(): void {
-    // Tous les jours à 4 h 17 (heure du serveur), hors des heures de réunion.
+    // Tous les jours à 4 h 17, heure du conteneur (TZ, Europe/Paris dans la stack), hors des heures de réunion.
     this.task = schedule('17 4 * * *', () => void this.runDaily(), { name: 'retention', noOverlap: true });
     void this.checkDisk();
   }
@@ -46,10 +46,16 @@ export class RetentionService {
   async purge(now = new Date()): Promise<PurgeReport> {
     const report: PurgeReport = { rawRecordings: 0, mixes: 0 };
 
-    const raw = await this.repos.listRawPurgeCandidates();
-    const toPurge = new Set(rawTracksToPurge(raw.map((r) => ({ ...r, days: this.config.guild(r.guildId).retention.rawTracksDays })), now));
+    const raw = (await this.repos.listRawPurgeCandidates()).map((r) => ({ ...r, days: this.config.guild(r.guildId).retention.rawTracksDays }));
+    const toPurge = new Set(rawTracksToPurge(raw, now));
+    const soon = unprocessedTracksExpiringSoon(raw, now);
+    if (soon.length > 0) {
+      await this.alert(`${soon.length} enregistrement(s) dont le compte rendu est en échec seront supprimés demain (pistes brutes) : relancez-les avant si besoin.`).catch(() => undefined);
+    }
     for (const r of raw.filter((x) => toPurge.has(x.recordingId))) {
       try {
+        // Garde-fou : on ne supprime jamais rien hors du dossier de données.
+        if (!this.insideDataDir(r.dataDir)) throw new Error(`chemin hors du dossier de données : ${r.dataDir}`);
         await rm(r.dataDir, { recursive: true, force: true });
         await this.repos.markRecordingPurged(r.recordingId, now);
         report.rawRecordings++;
@@ -69,9 +75,11 @@ export class RetentionService {
     for (const mix of mixesToPurge(mixes, now)) {
       const full = mixes.find((x) => x.meetingId === mix.meetingId)!;
       try {
-        await rm(mix.file!, { force: true });
         const parts = Array.isArray(full.output.parts) ? (full.output.parts as string[]) : [];
-        for (const part of parts) await rm(part, { force: true });
+        for (const file of [mix.file!, ...parts]) {
+          if (!this.insideDataDir(file)) throw new Error(`chemin hors du dossier de données : ${file}`);
+          await rm(file, { force: true });
+        }
         await this.repos.markMixPurged(mix.meetingId, full.output, now);
         report.mixes++;
       } catch (err) {
@@ -81,6 +89,25 @@ export class RetentionService {
 
     if (report.rawRecordings || report.mixes) this.log.info(report, 'Rétention : fichiers purgés');
     return report;
+  }
+
+  /**
+   * Au démarrage, avant toute reprise de traitement : dossiers temporaires laissés par un arrêt
+   * brutal (WAV de transcription, mix en cours).
+   */
+  async cleanTemp(): Promise<void> {
+    await rm(join(this.config.dataDir, 'tmp'), { recursive: true, force: true });
+    const meetingsDir = join(this.config.dataDir, 'meetings');
+    for (const guild of await readdir(meetingsDir).catch(() => [] as string[])) {
+      for (const meeting of await readdir(join(meetingsDir, guild)).catch(() => [] as string[])) {
+        await rm(join(meetingsDir, guild, meeting, 'tmp'), { recursive: true, force: true });
+      }
+    }
+  }
+
+  private insideDataDir(path: string): boolean {
+    const root = resolve(this.config.dataDir) + sep;
+    return resolve(path).startsWith(root);
   }
 
   /** Espace libre du dossier de données : alerte sous le seuil `diskMinFreeGb`. */

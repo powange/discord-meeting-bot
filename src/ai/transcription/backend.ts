@@ -1,6 +1,6 @@
 import type { BackendConfig } from '../../config/index.js';
 import type { RawSegment } from '../../domain/transcript.js';
-import { assertUrlAllowed, HostNotAllowedError } from '../../lib/hosts.js';
+import { assertUrlAllowed, errorSnippet, HostNotAllowedError } from '../../lib/hosts.js';
 import { fetchWithTimeout, isTimeout, RedirectError, trimSlash } from '../http.js';
 
 export interface TranscribeOptions {
@@ -102,7 +102,7 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     }
 
     if (!res.ok) {
-      const body = (await res.text().catch(() => '')).slice(0, 300);
+      const body = errorSnippet(await res.text().catch(() => ''));
       if (res.status === 429) throw new BackendError(`${this.name} : occupé`, 'busy');
       if (res.status >= 500) throw new BackendError(`${this.name} : erreur ${res.status} ${body}`, 'unavailable');
       throw new BackendError(`${this.name} : requête refusée (${res.status}) ${body}`, 'rejected');

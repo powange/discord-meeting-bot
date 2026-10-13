@@ -71,3 +71,32 @@ export async function assertUrlAllowed(url: string, patterns: readonly string[],
   }
   throw new HostNotAllowedError(`Hôte non autorisé : ${host} (voir ai.allowedHosts dans la configuration).`);
 }
+
+/** Hôte d'une URL (minuscules), ou la chaîne entière si elle n'est pas une URL. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Message d'erreur d'un serveur appelé, réduit à son champ « error » / « message » / « detail »
+ * (120 caractères au plus) : ces erreurs remontent dans Discord, et une page HTML ou une réponse
+ * brute d'un service interne n'a pas à y apparaître.
+ */
+export function errorSnippet(body: string): string {
+  try {
+    const json = JSON.parse(body) as Record<string, unknown>;
+    const err = json.error;
+    const candidate =
+      (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string' ? (err as { message: string }).message : undefined) ??
+      (typeof err === 'string' ? err : undefined) ??
+      (typeof json.message === 'string' ? json.message : undefined) ??
+      (typeof json.detail === 'string' ? json.detail : undefined);
+    return candidate ? candidate.replace(/\s+/g, ' ').slice(0, 120) : '';
+  } catch {
+    return '';
+  }
+}

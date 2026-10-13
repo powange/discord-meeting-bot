@@ -108,7 +108,11 @@ export const rootSchema = z.strictObject({
   ai: z
     .strictObject({
       /** Hôtes que le bot a le droit d'appeler (noms, *.domaine, IPv4, CIDR). Vide : pas de restriction. */
-      allowedHosts: z.array(z.string().min(1)).default([]),
+      // Liste YAML, ou chaîne séparée par des virgules (variable AI_ALLOWED_HOSTS sans fichier YAML).
+      allowedHosts: z.preprocess(
+        (v) => (typeof v === 'string' ? v.split(',').map((h) => h.trim()).filter(Boolean) : v),
+        z.array(z.string().min(1)).default([]),
+      ),
     })
     .prefault({}),
   /** Alerte quand l'espace libre du dossier de données passe sous ce seuil (Go). */

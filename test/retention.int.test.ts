@@ -54,11 +54,14 @@ describe.skipIf(!url)('Rétention (PostgreSQL + fichiers)', () => {
     const old = await seed('ancienne', { status: 'ended', endedDaysAgo: 400, stepsDone: true });
     const recent = await seed('recente', { status: 'ended', endedDaysAgo: 5, stepsDone: true });
     const open = await seed('ouverte', { status: 'live', endedDaysAgo: 400, stepsDone: true });
-    const failed = await seed('echec', { status: 'ended', endedDaysAgo: 400, stepsDone: false });
+    // Traitement en échec : gardé jusqu'au double du délai (60 j), puis purgé quand même.
+    const failed = await seed('echec', { status: 'ended', endedDaysAgo: 45, stepsDone: false });
+    const abandoned = await seed('abandon', { status: 'ended', endedDaysAgo: 400, stepsDone: false });
 
     const config = buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' }, dataDir: dir }, {});
     const report = await new RetentionService(repos, config, pino({ level: 'silent' })).purge(now);
-    expect(report).toEqual({ rawRecordings: 1, mixes: 2 }); // l'audio complet de « ouverte » a 400 j : purgé aussi (copie locale)
+    expect(report).toEqual({ rawRecordings: 2, mixes: 2 }); // l'audio complet de « ouverte » a 400 j : purgé aussi (copie locale)
+    expect(existsSync(abandoned.recDir)).toBe(false);
 
     expect(existsSync(old.recDir)).toBe(false);
     expect(existsSync(old.mixFile)).toBe(false);

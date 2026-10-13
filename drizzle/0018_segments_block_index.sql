@@ -1,0 +1,1 @@
+CREATE INDEX "transcript_segments_block_id_index" ON "transcript_segments" USING btree ("block_id");

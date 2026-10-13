@@ -193,11 +193,13 @@ Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migr
 
 - **Santé** : le conteneur du bot a un `HEALTHCHECK` (connexion à Discord et à la base). Portainer l'affiche « healthy » ou « unhealthy ».
 - **Alertes** : `/config` → Alertes. Choisir un salon réservé aux administrateurs. Le bot y signale un compte rendu en échec, un enregistrement coupé ou un disque presque plein, au plus une fois par heure et par cause.
-- **Sauvegarde automatique** : le service `backup` de la stack fait un `pg_dump` compressé chaque jour dans le volume `backups`, conservé 14 jours (`BACKUP_KEEP_DAYS`).
-- **Restaurer** :
+- **Sauvegarde automatique** : le service `backup` fait un `pg_dump` (format custom, compressé) chaque jour à 3 h 30 (`BACKUP_AT`, fuseau `TZ`) dans le volume `backups`, conservé 14 jours (`BACKUP_KEEP_DAYS`). Si la dernière sauvegarde a plus d'un jour au démarrage du conteneur, il en fait une tout de suite. Portainer affiche le conteneur **unhealthy** si aucune sauvegarde n'a réussi depuis 26 h.
+- **Restaurer** (remplace le contenu actuel de la base) :
   ```bash
   docker compose stop bot
-  gunzip -c meetingbot-AAAA-MM-JJ-HHMM.sql.gz | docker exec -i meeting-bot-postgres-1 psql -U bot -d meetingbot
+  docker compose exec -T postgres pg_restore -U bot -d meetingbot --clean --if-exists --no-owner < meetingbot-AAAA-MM-JJ-HHMM.dump
   docker compose start bot
   ```
-  Pour une base vide : la recréer avant l'import (`dropdb`/`createdb`). Les fichiers audio sont dans le volume `recordings`, à sauvegarder séparément si besoin.
+  Le fichier se récupère depuis le volume `backups` (`docker cp <conteneur backup>:/backups/… .`). Les anciennes sauvegardes `.sql.gz` se restaurent avec `gunzip -c … | psql`.
+- **Hors de la machine** : les sauvegardes restent sur le même disque que la base. Les copier ailleurs régulièrement, par exemple avec rclone vers un NAS : `rclone copy /var/lib/docker/volumes/<stack>_backups/_data nas:meeting-bot/backups`. Les fichiers audio sont dans le volume `recordings`, à copier de la même façon si besoin.
+- **Clés d'API** : définir `APP_SECRET_KEY` (phrase longue et aléatoire) pour qu'elles soient chiffrées en base et dans les sauvegardes. Les clés déjà enregistrées sont chiffrées au démarrage suivant.
