@@ -152,6 +152,7 @@ export class LlmClient {
         },
         this.config.timeoutSec * 1000,
         signal,
+        this.allowedHosts,
       );
     } catch (err) {
       if (isTimeout(err) && !signal?.aborted) throw new LlmError(`LLM : délai dépassé (${this.config.timeoutSec} s)`, true);

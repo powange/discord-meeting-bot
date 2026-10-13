@@ -86,6 +86,12 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 3. **Résumé** : `/config` → Résumé. Le propriétaire du bot y saisit l'adresse du serveur compatible OpenAI (LM Studio `http://hôte:1234/v1`, Ollama `http://hôte:11434/v1` ou LiteLLM), choisit le modèle dans la liste proposée et teste. Le résumé peut aussi y être désactivé ; à défaut, le bloc `llm` du YAML s'applique.
    Côté machine : **Ollama** (ou LM Studio) avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
 4. **LiteLLM (facultatif)** : copier [config/litellm.example.yaml](config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), puis ajouter `COMPOSE_PROFILES=litellm` et `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, il suffit de régler le serveur dans `/config` → Résumé.
+   Le bot n'a pas besoin de la clé maîtresse : créer une clé virtuelle limitée au modèle de résumé et la donner au bot dans `LLM_API_KEY` (sinon, la clé maîtresse est utilisée par défaut) :
+   ```bash
+   curl -s http://<hôte-litellm>:4000/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     -H 'content-type: application/json' -d '{"models": ["summary"], "key_alias": "meeting-recorder"}'
+   ```
+   Les clés virtuelles demandent une base de données côté LiteLLM (`DATABASE_URL` dans sa configuration) ; sans elle, garder la clé maîtresse.
 5. **Serveurs de transcription** : `/config` → Transcription. **Seuls les propriétaires du bot peuvent modifier la liste** : le propriétaire de l'application Discord, plus la liste `owners` du YAML. Les administrateurs des serveurs peuvent consulter et tester. Avec `ai.allowedHosts`, le bot n'appelle que les hôtes autorisés (par exemple `*.tailnet.ts.net`, `192.168.1.0/24`), et il ne suit jamais une redirection.
    - **Ajouter** un serveur, jusqu'à 4, avec un formulaire : nom, type Vibe ou compatible OpenAI, URL, modèle, clé d'API.
    - **Gérer chaque serveur** avec ses boutons : ✏️ Modifier · ⬆️ Monter · ⏸️ Désactiver / ▶️ Activer · 🧪 Tester · 🗑️ Supprimer (avec confirmation). L'ordre de la liste est l'ordre de bascule.
@@ -206,4 +212,6 @@ Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migr
   ```
   Le fichier se récupère depuis le volume `backups` (`docker cp <conteneur backup>:/backups/… .`). Les anciennes sauvegardes `.sql.gz` se restaurent avec `gunzip -c … | psql`.
 - **Hors de la machine** : les sauvegardes restent sur le même disque que la base. Les copier ailleurs régulièrement, par exemple avec rclone vers un NAS : `rclone copy /var/lib/docker/volumes/<stack>_backups/_data nas:meeting-bot/backups`. Les fichiers audio sont dans le volume `recordings`, à copier de la même façon si besoin.
+- **Appels sortants** : avec `AI_ALLOWED_HOSTS`, l'adresse est revérifiée au moment même de la connexion (un nom DNS ne peut pas changer d'adresse entre la vérification et l'appel).
+- **Conteneur** : sans privilèges, système de fichiers en lecture seule (écriture seulement dans `/data` et `/tmp`). Chaque image est analysée par Trivy ; une faille critique corrigeable bloque le déploiement d'une version.
 - **Clés d'API** : définir `APP_SECRET_KEY` (phrase longue et aléatoire) pour qu'elles soient chiffrées en base et dans les sauvegardes. Les clés déjà enregistrées sont chiffrées au démarrage suivant.

@@ -67,7 +67,7 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     const url = this.config.type === 'vibe' ? `${trimSlash(this.config.url)}/ready` : `${this.base}/models`;
     try {
       await assertUrlAllowed(url, this.allowedHosts);
-      const res = await fetchWithTimeout(url, { headers: this.headers() }, this.config.healthTimeoutSec * 1000, signal);
+      const res = await fetchWithTimeout(url, { headers: this.headers() }, this.config.healthTimeoutSec * 1000, signal, this.allowedHosts);
       if (this.config.type === 'vibe' && res.ok) {
         const body = (await res.json().catch(() => ({}))) as { model?: unknown };
         if (typeof body.model === 'string') this.loadedModel = body.model;
@@ -94,7 +94,7 @@ export class HttpTranscriptionBackend implements TranscriptionBackend {
     let res: Response;
     try {
       await assertUrlAllowed(this.base, this.allowedHosts);
-      res = await fetchWithTimeout(`${this.base}/audio/transcriptions`, { method: 'POST', body: form, headers: this.headers() }, this.config.timeoutSec * 1000, signal);
+      res = await fetchWithTimeout(`${this.base}/audio/transcriptions`, { method: 'POST', body: form, headers: this.headers() }, this.config.timeoutSec * 1000, signal, this.allowedHosts);
     } catch (err) {
       if (err instanceof HostNotAllowedError || err instanceof RedirectError) throw new BackendError(`${this.name} : ${err.message}`, 'rejected');
       if (isTimeout(err) && !signal?.aborted) throw new BackendError(`${this.name} : délai dépassé (${this.config.timeoutSec} s)`, 'timeout');

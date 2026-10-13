@@ -63,7 +63,8 @@ jobs:
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
@@ -74,6 +75,15 @@ jobs:
             APP_VERSION=${{ startsWith(github.ref, 'refs/tags/v') && steps.meta.outputs.version || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Provenance (comment l'image a été construite) et inventaire des paquets, attachés à l'image.
+          provenance: mode=max
+          sbom: true
+      # Failles critiques ayant un correctif : la version n'est pas déployée (le webhook est après).
+      - name: Analyse de vulnérabilités (Trivy 0.74.0)
+        run: >-
+          docker run --rm aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+          image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1
+          ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
       # Seulement pour une version publiée : un push sur main ne doit jamais couper une réunion en cours.
       - name: Déclencher le redéploiement Portainer
         if: startsWith(github.ref, 'refs/tags/v') && env.PORTAINER_WEBHOOK != ''

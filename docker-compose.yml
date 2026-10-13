@@ -17,9 +17,11 @@ services:
     image: ghcr.io/powange/meeting-recorder:${BOT_TAG:-stable}
     restart: unless-stopped
     logging: *logging
-    # Le bot n'a besoin d'aucun privilège système.
+    # Le bot n'a besoin d'aucun privilège système, et n'écrit que dans /data (volume) et /tmp.
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
+    read_only: true
+    tmpfs: [/tmp]
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?DISCORD_TOKEN requis}
       # Fuseau des tâches planifiées (purge de nuit…) et des journaux.
@@ -39,7 +41,8 @@ services:
       # Résumés : se règle dans /config → Résumé. À défaut, ces variables servent de valeur par
       # défaut (LiteLLM de la stack : http://litellm:4000/v1 ; Ollama : http://hôte:11434/v1).
       LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_API_KEY: ${LITELLM_MASTER_KEY:-}
+      # Avec LiteLLM : une clé virtuelle limitée au modèle « summary » (voir le README) plutôt que la clé maîtresse.
+      LLM_API_KEY: ${LLM_API_KEY:-${LITELLM_MASTER_KEY:-}}
       LLM_MODEL: ${LLM_MODEL:-summary}
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
       # CONFIG_PATH: /app/config/config.yaml

@@ -35,7 +35,7 @@ export function effectiveLlm(settings: GuildSettingsRow, config: AppConfig): Eff
 export async function listModels(llm: LlmConfig, allowedHosts: readonly string[]): Promise<string[]> {
   if (!llm.baseUrl) return [];
   await assertUrlAllowed(llm.baseUrl, allowedHosts);
-  const res = await fetchWithTimeout(`${trimSlash(llm.baseUrl)}/models`, { headers: llm.apiKey ? { Authorization: `Bearer ${llm.apiKey}` } : {} }, 5000);
+  const res = await fetchWithTimeout(`${trimSlash(llm.baseUrl)}/models`, { headers: llm.apiKey ? { Authorization: `Bearer ${llm.apiKey}` } : {} }, 5000, undefined, allowedHosts);
   if (!res.ok) throw new Error(`liste des modèles indisponible (${res.status})`);
   const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
   return (body.data ?? [])
