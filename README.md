@@ -93,7 +93,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 
 - **En local** : configurer `transcription` et `llm` dans `config/config.yaml`. ffmpeg est fourni par `ffmpeg-static`. Faire une réunion enregistrée, puis la clore (carte → ⚙️ Gérer → Terminer maintenant).
 - **Sur une réunion déjà enregistrée** : carte → ⚙️ Gérer → Régénérer le compte rendu.
-- **Tests automatiques** : `TEST_DATABASE_URL=… npm test` lance aussi un test de bout en bout : vraies pistes OGG, ffmpeg, bascule entre serveurs simulés, LLM simulé, relance et reprise.
+- **Tests automatiques** : `TEST_DATABASE_URL=… npm test` lance aussi un test de bout en bout : vraies pistes OGG, ffmpeg, bascule entre serveurs simulés, LLM simulé, relance et reprise. La couche Discord est testée avec de faux objets (`test/helpers/discordFakes.ts`) : droits de chaque action, routeur et messages d'erreur, rappels, surveillance des réunions, publication du compte rendu, démarrage d'un enregistrement.
 
 ## 1. Créer l'application Discord
 

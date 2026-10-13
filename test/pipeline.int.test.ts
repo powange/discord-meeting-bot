@@ -12,6 +12,7 @@ import { createDb, runMigrations, type Db } from '../src/db/client.js';
 import { Repositories } from '../src/db/repositories.js';
 import { PipelineService, type StepFn } from '../src/pipeline/runner.js';
 import { createSteps } from '../src/pipeline/steps.js';
+import { fakeThread } from './helpers/discordFakes.js';
 import { SegmentWriter } from '../src/recording/segmentWriter.js';
 import { SettingsService } from '../src/services/settings.js';
 
@@ -163,6 +164,56 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await repos.completeBlock(block.id, meeting.id, [{ userId: 'alice', startAt: new Date(), endAt: new Date(), text: 'Bonjour.' }], 'vibe-pc', 'm');
     expect(await steps.summarize(ctx)).toEqual({ skipped: true });
   }, 30_000);
+
+  it('publication : éditée sur place à la régénération, nouveaux responsables seuls mentionnés, republiée si un message manque', async () => {
+    const meeting = await repos.updateMeeting((await seedMeeting()).id, { threadId: 'thread-pub' });
+    const rec = (await repos.listRecordingsForMeeting(meeting!.id))[0]!;
+    await repos.insertPresence({ recordingId: rec.id, userId: '555', displayName: 'Carole', joinedAt: new Date('2026-10-15T16:00:00Z') });
+    await repos.insertPresence({ recordingId: rec.id, userId: '556', displayName: 'Dan', joinedAt: new Date('2026-10-15T16:00:00Z') });
+    const { thread, sent, edited, deleted } = fakeThread('thread-pub');
+    const d = { ...deps(), client: { guilds: { fetch: async () => ({ premiumTier: 0 }) }, channels: { fetch: async () => thread } } as unknown as Client };
+    const steps = createSteps(d);
+    const settings = await d.settings.get('g');
+    const ctx = { meeting: meeting!, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
+    await steps.transcribe(ctx);
+    await repos.ensurePipeline(meeting!.id);
+    const summary = (who: string[]) => ({
+      overview: 'Synthèse.',
+      topics: [{ agendaItemId: null, title: 'Budget', summary: 'Discuté.', decisions: [], actions: who.map((w) => ({ what: 'Faire', who: w, when: null })), openQuestions: [] }],
+    });
+    const publish = async () => {
+      const output = await steps.publish(ctx);
+      await repos.updateStep(meeting!.id, 'publish', { status: 'done', output });
+      return output;
+    };
+    const save = (who: string[]) => repos.saveSummary({ meetingId: meeting!.id, content: summary(who), llmModel: 'm', llmDeployments: [], transcriptionBackends: [], passes: 1 });
+
+    // 1re publication : Carole est mentionnée.
+    await save(['Carole']);
+    const first = await publish();
+    expect(sent.map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual(sent.map(() => ['555']));
+    const count = sent.length;
+
+    // Correction sans nouveau responsable : édition sur place, aucun message envoyé ni supprimé.
+    expect(await publish()).toMatchObject({ messageIds: first.messageIds });
+    expect(sent).toHaveLength(count);
+    expect(deleted).toEqual([]);
+    expect(edited.length).toBe(count);
+
+    // Nouveau responsable : republication, seul Dan est mentionné, l'ancien compte rendu supprimé ensuite.
+    await save(['Carole', 'Dan']);
+    const third = await publish();
+    expect(sent.slice(count).map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual(sent.slice(count).map(() => ['556']));
+    expect(deleted).toEqual(first.messageIds);
+
+    // Message supprimé à la main : republication (pas d'édition impossible).
+    await thread.messages.delete((third.messageIds as string[])[0]!);
+    const before = sent.length;
+    await publish();
+    expect(sent.length).toBeGreaterThan(before);
+    // Pipeline laissé terminé : les autres tests de ce fichier partagent la base.
+    for (const step of ['mix', 'transcribe', 'summarize'] as const) await repos.updateStep(meeting!.id, step, { status: 'done' });
+  }, 60_000);
 
   it('audio complet : toutes les prises de parole sur une même ligne de temps, en Opus', async () => {
     const meeting = await seedMeeting();
