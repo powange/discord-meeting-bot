@@ -6,6 +6,8 @@ import { PIPELINE_STEPS, type MeetingStatus, type PipelineStep, type RsvpStatus 
 import type { Db } from './client.js';
 import {
   agendaItems,
+  dateSlots,
+  dateVotes,
   audioSegments,
   captureStats,
   pipelineSteps,
@@ -30,6 +32,7 @@ import {
   type RecordingPresenceRow,
   type RecordingRow,
   type GuildSettingsRow,
+  type DateSlotRow,
   type MeetingRow,
   type RsvpRow,
   type ScheduledJobRow,
@@ -133,9 +136,9 @@ export class Repositories {
     return row;
   }
 
-  /** Réunions à venir ou en cours, tous serveurs confondus. */
+  /** Réunions à venir, en cours ou en sondage de date, tous serveurs confondus. */
   async listOpenMeetings(): Promise<MeetingRow[]> {
-    return this.db.select().from(meetings).where(inArray(meetings.status, ['scheduled', 'live']));
+    return this.db.select().from(meetings).where(inArray(meetings.status, ['scheduled', 'live', 'polling']));
   }
 
   /** Salons temporaires de réunions finies ou annulées, pas encore supprimés. */
@@ -177,6 +180,36 @@ export class Repositories {
   }
 
   // ---------------------------------------------------------------- rsvps
+
+  // ---------------------------------------------------------------- sondages de date
+
+  async insertSlots(meetingId: string, slots: ReadonlyArray<{ startsAt: Date; durationMin: number }>): Promise<void> {
+    if (slots.length === 0) return;
+    await this.db.insert(dateSlots).values(slots.map((s) => ({ meetingId, startsAt: s.startsAt, durationMin: s.durationMin })));
+  }
+
+  async listSlots(meetingId: string): Promise<DateSlotRow[]> {
+    return this.db.select().from(dateSlots).where(eq(dateSlots.meetingId, meetingId)).orderBy(asc(dateSlots.startsAt));
+  }
+
+  async deleteSlot(meetingId: string, slotId: number): Promise<void> {
+    await this.db.delete(dateSlots).where(and(eq(dateSlots.meetingId, meetingId), eq(dateSlots.id, slotId)));
+  }
+
+  async setVote(slotId: number, userId: string, answer: RsvpStatus): Promise<void> {
+    await this.db
+      .insert(dateVotes)
+      .values({ slotId, userId, answer })
+      .onConflictDoUpdate({ target: [dateVotes.slotId, dateVotes.userId], set: { answer, updatedAt: new Date() } });
+  }
+
+  async listVotes(meetingId: string): Promise<Array<{ slotId: number; userId: string; answer: RsvpStatus }>> {
+    return this.db
+      .select({ slotId: dateVotes.slotId, userId: dateVotes.userId, answer: dateVotes.answer })
+      .from(dateVotes)
+      .innerJoin(dateSlots, eq(dateSlots.id, dateVotes.slotId))
+      .where(eq(dateSlots.meetingId, meetingId));
+  }
 
   async deleteRsvp(meetingId: string, userId: string): Promise<void> {
     await this.db.delete(rsvps).where(and(eq(rsvps.meetingId, meetingId), eq(rsvps.userId, userId)));

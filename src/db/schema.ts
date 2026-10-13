@@ -89,6 +89,8 @@ export const meetings = pgTable(
     agendaLocked: boolean().notNull().default(false),
     startedAt: tz(),
     endedAt: tz(),
+    /** Sondage de date : fin des réponses (null une fois la date fixée, ou pour une réunion classique). */
+    pollClosesAt: tz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -122,6 +124,35 @@ export const agendaItems = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.meetingId, t.position)],
+);
+
+/** Créneaux proposés par un sondage de date. */
+export const dateSlots = pgTable(
+  'date_slots',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    meetingId: uuid()
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    startsAt: tz().notNull(),
+    durationMin: integer().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.meetingId, t.startsAt)],
+);
+
+/** Réponses au sondage : disponible (yes), si nécessaire (maybe), pas disponible (no). */
+export const dateVotes = pgTable(
+  'date_votes',
+  {
+    slotId: integer()
+      .notNull()
+      .references(() => dateSlots.id, { onDelete: 'cascade' }),
+    userId: text().notNull(),
+    answer: rsvpStatus().notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.slotId, t.userId] })],
 );
 
 /** Échéances (rappels, début, clôture auto) : la BDD est la source de vérité du scheduler. */
@@ -353,3 +384,5 @@ export type MeetingRow = typeof meetings.$inferSelect;
 export type AgendaItemRow = typeof agendaItems.$inferSelect;
 export type RsvpRow = typeof rsvps.$inferSelect;
 export type ScheduledJobRow = typeof scheduledJobs.$inferSelect;
+
+export type DateSlotRow = typeof dateSlots.$inferSelect;

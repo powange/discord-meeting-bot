@@ -9,6 +9,7 @@ import {
   type APIEmbed,
 } from 'discord.js';
 import { encode } from '../../domain/customId.js';
+import { bestSlot, respondents, type SlotTally } from '../../domain/datePoll.js';
 import { isOpen } from '../../domain/meeting.js';
 import { groupRsvps } from '../../domain/rsvp.js';
 import { discordTimestamp } from '../../domain/time.js';
@@ -40,6 +41,7 @@ const COLORS: Record<MeetingStatus, number> = {
   live: 0x57f287,
   ended: 0x95a5a6,
   cancelled: 0xed4245,
+  polling: 0xfee75c,
 };
 
 // Budget de caractères par zone, pour rester sous les 6000 caractères par message.
@@ -57,7 +59,10 @@ export function renderMeetingCard(
   recordingSince: Date | null = null,
   /** Réunion terminée : liens vers le compte rendu et l'audio publiés. */
   links: { report: string | null; audio: string | null } = { report: null, audio: null },
+  /** Sondage de date en cours : la grille remplace les inscriptions. */
+  poll?: PollView,
 ): RenderedMessage {
+  if (meeting.status === 'polling' && poll) return renderPollCard(meeting, poll, m);
   const groups = groupRsvps(rsvps);
   const mentions = (ids: string[]) =>
     ids.length === 0 ? m.card.nobody : joinLinesWithin(ids.map((id) => `<@${id}>`), RSVP_FIELD_BUDGET, m.card.more, ' ');
@@ -97,6 +102,69 @@ export function renderMeetingCard(
   );
 
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };
+}
+
+export interface PollView {
+  slots: ReadonlyArray<SlotTally & { label: string }>;
+  closesAt: Date | null;
+}
+
+/** Budget de noms par créneau (l'embed est limité à 6 000 caractères au total). */
+const SLOT_NAMES_BUDGET = 380;
+
+/** Carte d'un sondage de date : une ligne par créneau (réponses et noms), meilleur créneau marqué ⭐. */
+export function renderPollCard(meeting: CardMeeting, poll: PollView, m: Messages): RenderedMessage {
+  const p = m.datePoll;
+  const best = bestSlot(poll.slots);
+  const people = respondents(poll.slots).size;
+  const intro = [p.cardIntro(poll.closesAt ? discordTimestamp(poll.closesAt, 'f') : '—'), `-# ${p.legend}`, truncate(meeting.description, DESCRIPTION_BUDGET)];
+  const embed = new EmbedBuilder()
+    .setTitle(truncate(meeting.title, 256))
+    .setColor(COLORS.polling)
+    .setDescription(intro.filter(Boolean).join('\n\n'))
+    .addFields(...pollFields(poll.slots, (s) => (best?.slotId === s.slotId ? '⭐ ' : ''), m), { name: m.card.organizer, value: `<@${meeting.organizerId}>`, inline: true })
+    .setFooter({ text: `${m.card.footer(m.status.polling)} · ${people ? p.respondents(people) : p.noAnswers}` });
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(encode({ type: 'poll.answer', meetingId: meeting.id })).setLabel(p.answerButton).setEmoji('🗳️').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(encode({ type: 'meeting.manage', meetingId: meeting.id })).setLabel(m.buttons.manage).setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+  );
+  return { embeds: [embed.toJSON()], components: [row.toJSON()] };
+}
+
+/**
+ * Résultat figé du sondage, publié dans le post quand la date est fixée : la carte redevient
+ * une carte de réunion, ce message garde l'historique des réponses (créneau retenu marqué 📅).
+ */
+export function renderPollResults(title: string, slots: PollView['slots'], chosenSlotId: number, m: Messages): RenderedMessage {
+  const p = m.datePoll;
+  const people = respondents(slots).size;
+  const embed = new EmbedBuilder()
+    .setTitle(truncate(`🗳️ ${p.resultsTitle} · ${title}`, 256))
+    .setColor(COLORS.polling)
+    .setDescription(`-# ${p.legend}`)
+    .addFields(...pollFields(slots, (s) => (s.slotId === chosenSlotId ? '📅 ' : ''), m, (s) => (s.slotId === chosenSlotId ? ` · **${p.chosen}**` : '')))
+    .setFooter({ text: people ? p.respondents(people) : p.noAnswers });
+  return { embeds: [embed.toJSON()], components: [] };
+}
+
+/** Une ligne par créneau : décompte puis noms (disponibles, si nécessaire, pas disponibles). */
+function pollFields(
+  slots: PollView['slots'],
+  prefix: (s: SlotTally) => string,
+  m: Messages,
+  suffix: (s: SlotTally) => string = () => '',
+): Array<{ name: string; value: string; inline: boolean }> {
+  const names = (ids: string[]) => joinLinesWithin(ids.map((id) => `<@${id}>`), SLOT_NAMES_BUDGET / 3, m.card.more, ' ');
+  return slots.slice(0, 20).map((s) => {
+    const detail = [s.yes.length ? `✅ ${names(s.yes)}` : '', s.maybe.length ? `🟡 ${names(s.maybe)}` : '', s.no.length ? `❌ ${names(s.no)}` : '']
+      .filter(Boolean)
+      .join('\n');
+    return {
+      name: `${prefix(s)}${s.label}`,
+      value: `✅ ${s.yes.length} · 🟡 ${s.maybe.length} · ❌ ${s.no.length}${suffix(s)}${detail ? `\n${detail}` : ''}`,
+      inline: false,
+    };
+  });
 }
 
 /** Second message du post : l'ordre du jour et ses boutons. */

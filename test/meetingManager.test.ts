@@ -63,6 +63,6 @@ describe('choix d’enregistrement', () => {
   });
   it('accessible depuis le post épinglé', () => {
     const hub = renderHub([], m);
-    expect(hub.components[0]!.components.map((b) => decode((b as { custom_id: string }).custom_id)?.type)).toEqual(['meeting.create', 'consent.open']);
+    expect(hub.components[0]!.components.map((b) => decode((b as { custom_id: string }).custom_id)?.type)).toEqual(['meeting.create', 'poll.create', 'consent.open']);
   });
 });

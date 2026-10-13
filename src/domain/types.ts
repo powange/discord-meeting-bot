@@ -1,10 +1,11 @@
-export const MEETING_STATUSES = ['scheduled', 'live', 'ended', 'cancelled'] as const;
+/** « polling » : date pas encore fixée, sondage de disponibilités en cours. */
+export const MEETING_STATUSES = ['scheduled', 'live', 'ended', 'cancelled', 'polling'] as const;
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 
 export const RSVP_STATUSES = ['yes', 'maybe', 'no'] as const;
 export type RsvpStatus = (typeof RSVP_STATUSES)[number];
 
-export const JOB_KINDS = ['reminder', 'start', 'auto_end', 'record_start', 'voice_create'] as const;
+export const JOB_KINDS = ['reminder', 'start', 'auto_end', 'record_start', 'voice_create', 'poll_nudge', 'poll_close'] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
 export interface StatusTagIds {
@@ -12,6 +13,8 @@ export interface StatusTagIds {
   live: string;
   ended: string;
   cancelled: string;
+  /** Ajouté avec les sondages de date : absent des forums configurés avant. */
+  polling?: string;
 }
 
 export interface Rsvp {

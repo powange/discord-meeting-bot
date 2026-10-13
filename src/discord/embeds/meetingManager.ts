@@ -36,6 +36,20 @@ export function renderMeetingManager(
     );
 
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  // Sondage de date : modifier le texte, fixer la date, gérer les créneaux, annuler.
+  if (meeting.status === 'polling') {
+    const p = m.datePoll;
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button('poll.fix', p.fixDate, '📅', ButtonStyle.Primary),
+        button('poll.add', p.addSlot, '➕'),
+        button('poll.remove', p.removeSlot, '➖'),
+      ),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.edit', g.edit, '✏️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
+    );
+    for (const row of rows) container.addActionRowComponents(row);
+    return container.toJSON();
+  }
   const main = new ActionRowBuilder<ButtonBuilder>();
   if (open) main.addComponents(button('meeting.edit', g.edit, '✏️', ButtonStyle.Primary));
   main.addComponents(button('meeting.duplicate', g.duplicate, '📄'));

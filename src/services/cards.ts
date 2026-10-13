@@ -4,6 +4,8 @@ import type { MeetingRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { renderAgendaMessage, renderMeetingCard, type RenderedMessage } from '../discord/embeds/meetingCard.js';
 import { fetchThread, isUnknownMessage } from '../discord/threads.js';
+import { slotLabel, tallySlots } from '../domain/datePoll.js';
+import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import type { SettingsService } from './settings.js';
@@ -32,6 +34,12 @@ export class CardService {
   ) {}
 
   async renderCard(meeting: MeetingRow): Promise<RenderedMessage> {
+    if (meeting.status === 'polling') {
+      // Sondage de date : la grille de disponibilités remplace les inscriptions.
+      const [settings, slots, votes] = await Promise.all([this.settings.get(meeting.guildId), this.repos.listSlots(meeting.id), this.repos.listVotes(meeting.id)]);
+      const view = tallySlots(slots, votes).map((t) => ({ ...t, label: slotLabel(t, settings.timezone, settings.locale) }));
+      return renderMeetingCard(meeting, [], messages(settings.locale), null, undefined, { slots: view, closesAt: meeting.pollClosesAt });
+    }
     const [rsvps, m, recording, links] = await Promise.all([
       this.repos.listRsvps(meeting.id),
       this.settings.messages(meeting.guildId),

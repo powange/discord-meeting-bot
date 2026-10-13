@@ -6,6 +6,7 @@ export const fr = {
     live: 'En cours',
     ended: 'Terminée',
     cancelled: 'Annulée',
+    polling: 'Date à choisir',
   } satisfies Record<MeetingStatus, string>,
 
   rsvp: {
@@ -84,6 +85,58 @@ export const fr = {
     `2. Toujours dans \`/config\`, choisissez un salon d'**Alertes** réservé aux administrateurs.\n` +
     `3. Pour les comptes rendus : **Transcription** (serveur Vibe/Whisper) et **Résumé** (LM Studio, Ollama…).\n` +
     `Ensuite, le bouton « Nouvelle réunion » apparaît dans le post épinglé du forum.`,
+
+  datePoll: {
+    hubButton: 'Proposer des dates',
+    modalTitle: 'Proposer des dates',
+    slotsField: 'Créneaux proposés (un par ligne)',
+    slotsHint: '« 21/10 18h », « mar 21/10 18h-19h30 », « 15 janv. 18h ». De 2 à 10 créneaux.',
+    slotsPlaceholder: '21/10 18h-19h30\n23/10 18h30\n28/10 18h',
+    deadlineField: 'Réponses jusqu’à',
+    deadlineIn: (hours: number) => (hours === 24 ? 'Dans 1 jour' : `Dans ${hours / 24} jours`),
+    deadlineEve: 'La veille du premier créneau',
+    slotError: (error: string, line?: number) =>
+      ({
+        count: 'Proposez de 2 à 10 créneaux, un par ligne.',
+        format: `Ligne ${line} illisible. Exemples : « 21/10 18h », « mar 21/10 18h-19h30 », « 15 janv. 18h ».`,
+        invalid: `Ligne ${line} : cette date n'existe pas.`,
+        past: `Ligne ${line} : ce créneau est déjà passé.`,
+        duplicate: `Ligne ${line} : ce créneau est proposé deux fois.`,
+        duration: `Ligne ${line} : durée hors limites (5 min à 24 h).`,
+      })[error] ?? 'Créneaux illisibles.',
+    cardIntro: (closes: string) => `🗳️ **Date à choisir** : indiquez vos disponibilités avant ${closes}.`,
+    legend: '✅ disponible · 🟡 si nécessaire · ❌ pas disponible',
+    noAnswers: "Personne n'a encore répondu.",
+    respondents: (n: number) => `${n} personne${n > 1 ? 's ont' : ' a'} répondu`,
+    answerButton: 'Indiquer mes disponibilités',
+    panelTitle: 'Mes disponibilités',
+    panelHint: 'Pour chaque créneau, choisissez votre réponse : la grille du post se met à jour aussitôt.',
+    answers: { yes: 'Disponible', maybe: 'Si nécessaire', no: 'Pas disponible' } satisfies Record<RsvpStatus, string>,
+    notAnswered: 'pas encore répondu',
+    fixDate: 'Fixer la date',
+    pickFix: 'Créneau retenu (le mieux placé en premier)',
+    addSlot: 'Ajouter un créneau',
+    addSlotField: 'Nouveau créneau',
+    removeSlot: 'Retirer un créneau',
+    pickRemove: 'Créneau à retirer (ses réponses avec)',
+    slotAdded: 'Créneau ajouté.',
+    slotRemoved: 'Créneau retiré.',
+    fixed: (title: string, when: string, by: string | null) =>
+      `📅 La date de « ${title} » est fixée : ${when}${by ? ` (par ${by})` : ''}. Vos disponibilités ont été reprises dans les inscriptions.`,
+    fixedReply: 'Date fixée : la réunion est maintenant planifiée (rappels et événement Discord).',
+    undecided: (organizerId: string) =>
+      `⏳ <@${organizerId}> les réponses sont closes, mais aucun créneau ne se détache : choisissez-en un dans ⚙️ Gérer → Fixer la date.`,
+    nudge: (title: string, closes: string) => `🗳️ « ${title} » : indiquez vos disponibilités avant ${closes}.`,
+    tooManySlots: 'Le sondage a déjà 10 créneaux (limite de Discord pour le panneau de réponse).',
+    duplicateSlot: 'Ce créneau est déjà proposé.',
+    lastSlot: 'Impossible de retirer le dernier créneau : annulez plutôt la réunion.',
+    slotGone: "Ce créneau n'existe plus.",
+    notPolling: "La date de cette réunion n'est plus à choisir.",
+    hubSection: 'Dates à choisir',
+    resultsTitle: 'Résultat du sondage',
+    chosen: 'retenu',
+    answerFirst: 'La date n’est pas encore fixée : indiquez plutôt vos disponibilités avec le bouton 🗳️ de la carte.',
+  },
 
   hub: {
     threadName: '📌 Planifier une réunion',

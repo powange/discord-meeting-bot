@@ -8,8 +8,9 @@ const TAG_KEYS: Record<MeetingStatus, keyof StatusTagIds> = {
   live: 'live',
   ended: 'ended',
   cancelled: 'cancelled',
+  polling: 'polling',
 };
-const TAG_EMOJIS: Record<MeetingStatus, string> = { scheduled: '🗓️', live: '🟢', ended: '✅', cancelled: '❌' };
+const TAG_EMOJIS: Record<MeetingStatus, string> = { scheduled: '🗓️', live: '🟢', ended: '✅', cancelled: '❌', polling: '🗳️' };
 
 /** Permissions nécessaires au bot sur le forum. */
 export const FORUM_PERMISSIONS = {
@@ -62,9 +63,10 @@ export async function ensureStatusTags(forum: ForumChannel, m: Messages): Promis
 
 /** Remplace le tag de statut du post en conservant les autres tags posés à la main. */
 export async function applyStatusTag(thread: ThreadChannel, tagIds: StatusTagIds, status: MeetingStatus): Promise<void> {
-  const ours = new Set(Object.values(tagIds));
+  const ours = new Set(Object.values(tagIds).filter(Boolean));
   const others = thread.appliedTags.filter((id) => !ours.has(id));
-  const next = [tagIds[TAG_KEYS[status]], ...others].slice(0, 5);
+  const tag = tagIds[TAG_KEYS[status]];
+  const next = [...(tag ? [tag] : []), ...others].slice(0, 5);
   if (next.length === thread.appliedTags.length && next.every((id) => thread.appliedTags.includes(id))) return;
   await thread.setAppliedTags(next);
 }

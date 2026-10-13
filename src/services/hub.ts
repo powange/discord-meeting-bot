@@ -123,7 +123,7 @@ export class HubService {
       await existing.delete('Post épinglé incomplet, remplacé').catch(() => undefined);
     }
 
-    const payload = renderHub(await this.upcoming(forum.guildId), m, await this.repos.listRecentReports(forum.guildId, RECENT_REPORTS));
+    const payload = renderHub(await this.upcoming(forum.guildId), m, await this.repos.listRecentReports(forum.guildId, RECENT_REPORTS), await this.polls(forum.guildId));
     const thread = await forum.threads.create({
       name: m.hub.threadName,
       message: { ...payload, allowedMentions: { parse: [] } },
@@ -159,7 +159,7 @@ export class HubService {
     }
     await ensureUnarchived(thread);
     await message.edit({
-      ...renderHub(await this.upcoming(guildId), messages(settings.locale), await this.repos.listRecentReports(guildId, RECENT_REPORTS)),
+      ...renderHub(await this.upcoming(guildId), messages(settings.locale), await this.repos.listRecentReports(guildId, RECENT_REPORTS), await this.polls(guildId)),
       allowedMentions: { parse: [] },
     });
   }
@@ -169,6 +169,11 @@ export class HubService {
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     await Promise.allSettled(pending.map((id) => this.refreshNow(id)));
+  }
+
+  private async polls(guildId: string) {
+    const rows = await this.repos.listMeetings(guildId, ['polling']);
+    return rows.flatMap((r) => (r.threadId ? [{ threadId: r.threadId, closesAt: r.pollClosesAt }] : [])).slice(0, MAX_LISTED);
   }
 
   private async upcoming(guildId: string) {

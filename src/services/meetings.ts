@@ -2,13 +2,15 @@ import { ChannelType, MessageFlags, ThreadAutoArchiveDuration, type Client, type
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
-import { applyStatusTag, ensureUnarchived } from '../discord/forum.js';
+import { applyStatusTag, ensureStatusTags, ensureUnarchived } from '../discord/forum.js';
 import { ScheduledEvents, type EventData } from '../discord/scheduledEvent.js';
 import { fetchForum, fetchThread } from '../discord/threads.js';
-import { canReschedule, isOpen, threadName } from '../domain/meeting.js';
-import { planJobs } from '../domain/reminders.js';
+import { canReschedule, isOpen, pollThreadName, threadName } from '../domain/meeting.js';
+import { bestSlot, respondents, slotLabel, tallySlots, type SlotInput } from '../domain/datePoll.js';
+import { planJobs, planPollJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
 import { displayName, joinVoiceRows, sendWithMentions, voiceName } from '../discord/notify.js';
+import { renderPollResults } from '../discord/embeds/meetingCard.js';
 import { reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
@@ -117,6 +119,191 @@ export class MeetingService {
     return meeting;
   }
 
+  /**
+   * Sondage de date : le post est créé tout de suite (ordre du jour utilisable), avec la grille
+   * de disponibilités à la place des inscriptions. Pas d'événement ni de rappel avant que la
+   * date soit fixée ; la date provisoire est celle du premier créneau.
+   */
+  async createPoll(
+    guild: Guild,
+    organizerId: string,
+    input: { title: string; description: string; voiceChannelId: string | null; slots: readonly SlotInput[]; closesAt: Date },
+  ): Promise<MeetingRow> {
+    const settings = await this.settings.get(guild.id);
+    const m = messages(settings.locale);
+    const forum = await fetchForum(this.client, settings.forumChannelId);
+    if (!forum) throw new UserError(m.errors.forumNotConfigured);
+    if (!settings.tagIds) throw new UserError(m.errors.tagsMissing);
+    // Forum configuré avant les sondages : le tag « Date à choisir » est ajouté au premier.
+    let tagIds = settings.tagIds;
+    if (!tagIds.polling) {
+      tagIds = await ensureStatusTags(forum, m);
+      await this.repos.updateSettings(guild.id, { tagIds });
+    }
+    const first = input.slots[0]!;
+    let meeting = await this.repos.insertMeeting({
+      guildId: guild.id,
+      organizerId,
+      autoRecord: settings.autoRecordDefault,
+      title: input.title,
+      description: input.description,
+      startsAt: first.startsAt,
+      durationMin: first.durationMin,
+      voiceChannelId: input.voiceChannelId,
+      // Inséré directement en sondage : jamais visible un instant comme une réunion « À venir ».
+      status: 'polling',
+      pollClosesAt: input.closesAt,
+    });
+    let thread: ThreadChannel | null = null;
+    try {
+      await this.repos.insertSlots(meeting.id, input.slots);
+      const card = await this.cards.renderCard(meeting);
+      thread = await forum.threads.create({
+        name: pollThreadName(input.title),
+        autoArchiveDuration: ThreadAutoArchiveDuration.OneWeek,
+        ...(tagIds.polling ? { appliedTags: [tagIds.polling] } : {}),
+        message: { ...card, allowedMentions: { parse: [] } },
+        reason: `Sondage de date créé par ${organizerId}`,
+      });
+      const agenda = await thread.send({ ...(await this.cards.renderAgenda(meeting)), allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
+      meeting = (await this.repos.updateMeeting(meeting.id, { threadId: thread.id, agendaMessageId: agenda.id }))!;
+    } catch (err) {
+      await this.repos.deleteMeeting(meeting.id);
+      await thread?.delete().catch(() => undefined);
+      throw err;
+    }
+    await this.replan(meeting, settings);
+    this.onChange(guild.id);
+    this.log.info({ guildId: guild.id, meetingId: meeting.id, slots: input.slots.length }, 'Sondage de date créé');
+    return meeting;
+  }
+
+  /** Créneau ajouté à un sondage en cours. */
+  async addSlot(meetingId: string, slot: SlotInput): Promise<void> {
+    const meeting = await this.requirePolling(meetingId);
+    const slots = await this.repos.listSlots(meeting.id);
+    const m = await this.settings.messages(meeting.guildId);
+    if (slots.length >= 10) throw new UserError(m.datePoll.tooManySlots);
+    if (slots.some((s) => s.startsAt.getTime() === slot.startsAt.getTime())) throw new UserError(m.datePoll.duplicateSlot);
+    await this.repos.insertSlots(meeting.id, [slot]);
+    await this.cards.refreshNow(meeting.id);
+  }
+
+  /** Créneau retiré d'un sondage (ses réponses avec) ; il en reste toujours au moins un. */
+  async removeSlot(meetingId: string, slotId: number): Promise<void> {
+    const meeting = await this.requirePolling(meetingId);
+    const m = await this.settings.messages(meeting.guildId);
+    if ((await this.repos.listSlots(meeting.id)).length <= 1) throw new UserError(m.datePoll.lastSlot);
+    await this.repos.deleteSlot(meeting.id, slotId);
+    await this.cards.refreshNow(meeting.id);
+  }
+
+  /**
+   * Date fixée : la réunion devient une réunion ordinaire (« À venir ») au créneau choisi. Les
+   * réponses deviennent des inscriptions (disponible → Présent, si nécessaire → Peut-être), et
+   * ceux qui ont répondu sont prévenus. `by` = null quand la clôture est automatique.
+   */
+  async fixDate(guild: Guild, meetingId: string, slotId: number, by: string | null): Promise<MeetingRow> {
+    const settings = await this.settings.get(guild.id);
+    const m = messages(settings.locale);
+    const slots = await this.repos.listSlots(meetingId);
+    const slot = slots.find((s) => s.id === slotId);
+    if (!slot) throw new UserError(m.datePoll.slotGone);
+    const tally = tallySlots(slots, await this.repos.listVotes(meetingId));
+    const chosen = tally.find((t) => t.slotId === slotId)!;
+    const current = await this.requirePolling(meetingId);
+    const voice = await this.applyVoiceMode(settings, { title: current.title, description: current.description, startsAt: slot.startsAt, durationMin: slot.durationMin, voiceChannelId: current.voiceChannelId }, m, current).catch(() => null);
+    let meeting = await this.repos.transitionMeeting(meetingId, ['polling'], 'scheduled', {
+      startsAt: slot.startsAt,
+      durationMin: slot.durationMin,
+      pollClosesAt: null,
+      ...(voice ? { voiceChannelId: voice.voiceChannelId } : {}),
+    });
+    if (!meeting) throw new UserError(m.datePoll.notPolling);
+    for (const id of chosen.yes) await this.repos.setRsvp(meeting.id, id, 'yes');
+    for (const id of chosen.maybe) await this.repos.setRsvp(meeting.id, id, 'maybe');
+
+    const thread = await fetchThread(this.client, meeting.threadId).catch(() => null);
+    const eventId = await this.events.create(guild, this.eventData(meeting, thread?.url ?? '', m, settings));
+    if (eventId) meeting = (await this.repos.updateMeeting(meeting.id, { scheduledEventId: eventId }))!;
+    await this.replan(meeting, settings);
+    if (thread) {
+      await ensureUnarchived(thread).catch(() => undefined);
+      await thread.setName(threadName(meeting.title, meeting.startsAt, settings.timezone, settings.locale)).catch((err) => this.warn(meeting!, 'Renommage du post impossible', err));
+      if (settings.tagIds) await applyStatusTag(thread, settings.tagIds, 'scheduled').catch((err) => this.warn(meeting!, 'Mise à jour du tag impossible', err));
+      // Historique : la grille figée (créneau retenu marqué), la carte redevenant une carte de réunion.
+      const results = renderPollResults(meeting.title, tally.map((t) => ({ ...t, label: slotLabel(t, settings.timezone, settings.locale) })), slotId, m);
+      await thread.send({ ...results, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications }).catch((err) => this.warn(meeting!, 'Résultat du sondage non publié', err));
+      const when = formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when);
+      const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
+      const people = [...respondents(tally)];
+      await sendWithMentions(thread, m.datePoll.fixed(meeting.title, when, byName), m.thread.responders, people, joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m)).catch((err) =>
+        this.warn(meeting!, 'Annonce de la date impossible', err),
+      );
+    }
+    await this.cards.refreshNow(meeting.id);
+    this.onChange(meeting.guildId);
+    this.log.info({ meetingId, slotId, by }, 'Date du sondage fixée');
+    return meeting;
+  }
+
+  /**
+   * Fin des réponses (échéance) : la date est fixée s'il y a un meilleur créneau net ; sinon
+   * (égalité, aucune réponse) l'organisateur est mentionné pour trancher.
+   */
+  async closePoll(meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || meeting.status !== 'polling') return;
+    const tally = tallySlots(await this.repos.listSlots(meetingId), await this.repos.listVotes(meetingId));
+    const best = bestSlot(tally);
+    const guild = await this.guild(meeting);
+    if (best && guild) {
+      await this.fixDate(guild, meetingId, best.slotId, null);
+      return;
+    }
+    const m = await this.settings.messages(meeting.guildId);
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!thread) return;
+    await ensureUnarchived(thread);
+    await thread.send({ content: m.datePoll.undecided(meeting.organizerId), allowedMentions: { users: [meeting.organizerId] } });
+  }
+
+  /** Relance : membres du rôle configuré qui n'ont répondu à aucun créneau. */
+  async nudgePoll(meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || meeting.status !== 'polling') return;
+    const settings = await this.settings.get(meeting.guildId);
+    if (!settings.nudgeRoleId) return;
+    const m = messages(settings.locale);
+    const guild = await this.guild(meeting);
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!guild || !thread) return;
+    await guild.members.fetch();
+    const role = guild.roles.cache.get(settings.nudgeRoleId);
+    const answered = respondents(tallySlots(await this.repos.listSlots(meetingId), await this.repos.listVotes(meetingId)));
+    const missing = role ? [...role.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== meeting.organizerId).keys()] : [];
+    if (missing.length === 0) return;
+    await ensureUnarchived(thread);
+    const closes = formatWhen(meeting.pollClosesAt ?? meeting.startsAt, settings.timezone, settings.locale, m.format.when);
+    await sendWithMentions(thread, m.datePoll.nudge(meeting.title, closes), m.thread.nudge, missing);
+  }
+
+  /** Libellés des créneaux d'un sondage, dans le fuseau du serveur. */
+  async slotChoices(meeting: MeetingRow): Promise<Array<{ id: number; label: string; yes: number; maybe: number; no: number }>> {
+    const settings = await this.settings.get(meeting.guildId);
+    const tally = tallySlots(await this.repos.listSlots(meeting.id), await this.repos.listVotes(meeting.id));
+    return tally.map((t) => ({ id: t.slotId, label: slotLabel(t, settings.timezone, settings.locale), yes: t.yes.length, maybe: t.maybe.length, no: t.no.length }));
+  }
+
+  private async requirePolling(meetingId: string): Promise<MeetingRow> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || meeting.status !== 'polling') {
+      const m = await this.settings.messages(meeting?.guildId ?? '');
+      throw new UserError(m.datePoll.notPolling);
+    }
+    return meeting;
+  }
+
   async update(guild: Guild, meeting: MeetingRow, input: MeetingInput, by: string): Promise<MeetingRow> {
     const settings = await this.settings.get(guild.id);
     const m = messages(settings.locale);
@@ -194,7 +381,7 @@ export class MeetingService {
   }
 
   async cancel(meetingId: string, by: string, reason: string | null, options: { silent?: boolean } = {}): Promise<boolean> {
-    const meeting = await this.repos.transitionMeeting(meetingId, ['scheduled', 'live'], 'cancelled', { endedAt: new Date() });
+    const meeting = await this.repos.transitionMeeting(meetingId, ['polling', 'scheduled', 'live'], 'cancelled', { endedAt: new Date() });
     if (!meeting) return false;
     await this.hooks.beforeClose(meeting.id).catch((err) => this.warn(meeting, 'Arrêt de l’enregistrement impossible', err));
     const settings = await this.settings.get(meeting.guildId);
@@ -328,7 +515,7 @@ export class MeetingService {
   /** Post renommé et, si la date change, message à tous ceux qui ont répondu. */
   private async announceUpdate(thread: ThreadChannel, before: MeetingRow, updated: MeetingRow, settings: GuildSettingsRow, m: Messages): Promise<void> {
     await ensureUnarchived(thread);
-    const name = threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
+    const name = updated.status === 'polling' ? pollThreadName(updated.title) : threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
     if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
     if (updated.startsAt.getTime() === before.startsAt.getTime()) return;
     const when = formatWhen(updated.startsAt, settings.timezone, settings.locale, m.format.when);
@@ -392,6 +579,10 @@ export class MeetingService {
   }
 
   private async replan(meeting: MeetingRow, settings: GuildSettingsRow): Promise<void> {
+    if (meeting.status === 'polling') {
+      await this.repos.replaceJobs(meeting.id, meeting.pollClosesAt ? planPollJobs(meeting.pollClosesAt, new Date()) : []);
+      return;
+    }
     const lead = this.config.guild(meeting.guildId).recording.autoJoinLeadMin;
     await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead, settings.autoVoiceLeadMin));
   }

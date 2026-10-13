@@ -7,6 +7,18 @@ import { RSVP_STATUSES, type RsvpStatus } from './types.js';
  */
 export type Action =
   | { type: 'rsvp'; meetingId: string; status: RsvpStatus }
+  // Sondage de date (grille de disponibilités)
+  | { type: 'poll.create' }
+  | { type: 'poll.createSubmit' }
+  | { type: 'poll.createRetry' }
+  | { type: 'poll.answer'; meetingId: string }
+  | { type: 'poll.vote'; meetingId: string; slotId: number }
+  | { type: 'poll.fix'; meetingId: string }
+  | { type: 'poll.fixSelect'; meetingId: string }
+  | { type: 'poll.add'; meetingId: string }
+  | { type: 'poll.addSubmit'; meetingId: string }
+  | { type: 'poll.remove'; meetingId: string }
+  | { type: 'poll.removeSelect'; meetingId: string }
   | { type: 'agenda.add'; meetingId: string }
   | { type: 'agenda.addSubmit'; meetingId: string }
   | { type: 'agenda.manage'; meetingId: string }
@@ -92,6 +104,8 @@ export const MEETING_VERBS = [
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
 
+const POLL_VERBS = ['answer', 'fix', 'fixSelect', 'add', 'addSubmit', 'remove', 'removeSelect'] as const;
+
 const VERSION = 'v1';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -128,6 +142,14 @@ export function encode(action: Action): string {
     case 'meeting.createRetry':
       parts.push('meeting', 'createRetry');
       break;
+    case 'poll.create':
+    case 'poll.createSubmit':
+    case 'poll.createRetry':
+      parts.push('poll', action.type.split('.')[1]!);
+      break;
+    case 'poll.vote':
+      parts.push('poll', 'vote', action.meetingId, action.slotId);
+      break;
     case 'consent.open':
     case 'consent.refuse':
     case 'consent.accept':
@@ -152,6 +174,18 @@ export function decode(customId: string): Action | null {
     const [meetingId, status] = rest;
     if (!isUuid(meetingId) || !RSVP_STATUSES.includes(status as RsvpStatus) || rest.length !== 2) return null;
     return { type: 'rsvp', meetingId, status: status as RsvpStatus };
+  }
+
+  if (group === 'poll') {
+    const [verb, meetingId, slot] = rest;
+    if (rest.length === 1 && (verb === 'create' || verb === 'createSubmit' || verb === 'createRetry')) return { type: `poll.${verb}` };
+    if (!isUuid(meetingId)) return null;
+    if (verb === 'vote') {
+      const slotId = toId(slot);
+      return slotId !== null && rest.length === 3 ? { type: 'poll.vote', meetingId, slotId } : null;
+    }
+    if (rest.length === 2 && POLL_VERBS.includes(verb as (typeof POLL_VERBS)[number])) return { type: `poll.${verb as (typeof POLL_VERBS)[number]}`, meetingId };
+    return null;
   }
 
   if (group === 'cfg') {

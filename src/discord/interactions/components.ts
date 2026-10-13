@@ -27,28 +27,32 @@ import { renderMeetingManager } from '../embeds/meetingManager.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
+import { handleDatePoll, type PollAction } from './datePoll.js';
 
-type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
+export type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
 
 /** Traite un bouton, menu ou formulaire dont le customId a été décodé. */
 export async function handleAction(
   ctx: AppContext,
   interaction: ComponentInteraction,
-  action: Exclude<Action, { type: 'tx' } | { type: 'cfg' } | { type: 'consent.open' } | { type: 'consent.refuse' } | { type: 'consent.accept' }>,
+  rawAction: Exclude<Action, { type: 'tx' } | { type: 'cfg' } | { type: 'consent.open' } | { type: 'consent.refuse' } | { type: 'consent.accept' }>,
 ): Promise<void> {
-  if (action.type === 'meeting.create') {
+  if (rawAction.type === 'meeting.create') {
     if (!interaction.isButton()) return;
     return showCreateModal(ctx, interaction);
   }
-  if (action.type === 'meeting.createSubmit') {
+  if (rawAction.type === 'meeting.createSubmit') {
     if (!interaction.isModalSubmit()) return;
     return createSubmit(ctx, interaction);
   }
-  if (action.type === 'meeting.createRetry') {
+  if (rawAction.type === 'meeting.createRetry') {
     if (!interaction.isButton()) return;
     return showCreateModal(ctx, interaction, drafts.take(interaction.user.id, 'create'));
   }
+  if (rawAction.type.startsWith('poll.')) return handleDatePoll(ctx, interaction, rawAction as PollAction);
 
+  // Actions portant sur une réunion existante.
+  const action = rawAction as Exclude<typeof rawAction, PollAction | { type: 'meeting.create' | 'meeting.createSubmit' | 'meeting.createRetry' }>;
   const scope = await meetingScope(ctx, interaction, action.meetingId);
   const { meeting, m } = scope;
 
@@ -56,6 +60,7 @@ export async function handleAction(
     case 'rsvp': {
       if (!interaction.isButton()) return;
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
+      if (meeting.status === 'polling') throw new UserError(m.datePoll.answerFirst);
       // Second clic sur la réponse déjà donnée : elle est retirée.
       const current = (await ctx.repos.listRsvps(meeting.id)).find((r) => r.userId === interaction.user.id)?.status;
       if (current === action.status) await ctx.repos.deleteRsvp(meeting.id, interaction.user.id);

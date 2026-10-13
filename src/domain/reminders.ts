@@ -98,3 +98,15 @@ export function formatOffset(min: number): string {
   if (min % 60 === 0) return `${min / 60} h`;
   return `${min} min`;
 }
+
+/**
+ * Échéances d'un sondage de date : relance des non-répondants la veille de la fin des
+ * réponses (si elle est à plus d'un jour), puis clôture à la fin des réponses.
+ */
+export function planPollJobs(closesAt: Date, now: Date): PlannedJob[] {
+  const jobs: PlannedJob[] = [];
+  const nudgeAt = closesAt.getTime() - 24 * 3_600_000;
+  if (nudgeAt > now.getTime()) jobs.push({ kind: 'poll_nudge', offsetMin: 1440, dueAt: new Date(nudgeAt) });
+  jobs.push({ kind: 'poll_close', offsetMin: 0, dueAt: new Date(Math.max(closesAt.getTime(), now.getTime())) });
+  return jobs;
+}

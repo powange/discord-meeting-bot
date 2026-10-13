@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import type { MeetingStatus } from './types.js';
 
 const TRANSITIONS: Record<MeetingStatus, readonly MeetingStatus[]> = {
+  polling: ['scheduled', 'cancelled'],
   scheduled: ['live', 'ended', 'cancelled'],
   live: ['ended', 'cancelled'],
   ended: [],
@@ -12,9 +13,9 @@ export function canTransition(from: MeetingStatus, to: MeetingStatus): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
-/** Réunion encore « vivante » : RSVP et ODJ modifiables. */
+/** Réunion encore « vivante » : ordre du jour modifiable (et inscriptions, une fois la date fixée). */
 export function isOpen(status: MeetingStatus): boolean {
-  return status === 'scheduled' || status === 'live';
+  return status === 'scheduled' || status === 'live' || status === 'polling';
 }
 
 /** Date, durée et salon ne se modifient qu'avant le début. */
@@ -26,6 +27,12 @@ export const TITLE_MAX = 100;
 export const DESCRIPTION_MAX = 2000;
 export const DURATION_MIN = 5;
 export const DURATION_MAX = 24 * 60;
+
+/** Nom du post d'un sondage de date : la date n'est pas encore connue. */
+export function pollThreadName(title: string): string {
+  const name = `🗳️ Date à choisir · ${title}`;
+  return name.length <= 100 ? name : `${name.slice(0, 99)}…`;
+}
 
 /** Nom du post de forum : « Lun. 12/10 · 18h00 · Titre » (100 caractères max côté Discord). */
 export function threadName(title: string, startsAt: Date, zone: string, locale: string): string {

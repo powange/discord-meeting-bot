@@ -81,6 +81,12 @@ export class Scheduler {
       case 'voice_create':
         await this.ctx.meetings.ensureVoice(job.meetingId);
         return;
+      case 'poll_nudge':
+        await this.ctx.meetings.nudgePoll(job.meetingId);
+        return;
+      case 'poll_close':
+        await this.ctx.meetings.closePoll(job.meetingId);
+        return;
       case 'auto_end':
         // Ancienne clôture à heure fixe : remplacée par la clôture sur vocal vide (MeetingWatcher).
         return;
