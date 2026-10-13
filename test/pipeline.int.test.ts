@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import { createDb, runMigrations, type Db } from '../src/db/client.js';
 import { Repositories } from '../src/db/repositories.js';
 import { PipelineService, type StepFn } from '../src/pipeline/runner.js';
 import { createSteps } from '../src/pipeline/steps.js';
+import { StorageService } from '../src/services/storage.js';
 import { fakeThread } from './helpers/discordFakes.js';
 import { SegmentWriter } from '../src/recording/segmentWriter.js';
 import { SettingsService } from '../src/services/settings.js';
@@ -215,6 +216,44 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     for (const step of ['mix', 'transcribe', 'summarize'] as const) await repos.updateStep(meeting!.id, step, { status: 'done' });
   }, 60_000);
 
+  it('copie vers le stockage : compte rendu, transcription et audio dans un dossier par réunion ; rien sans stockage', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const settings = await d.settings.get('g');
+    const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
+    expect(await createSteps(d).export(ctx)).toEqual({ skipped: true }); // pas de StorageService
+    const uploads: Array<{ path: string; name: string; size: number; text: string }> = [];
+    const storage = new StorageService(repos, d.config, log, () => ({
+      account: async () => 'asso@gmail.com',
+      folder: async (path) => path.join('/'),
+      put: async (folder, name, source) => {
+        const data = 'data' in source ? source.data : await readFile(source.path);
+        uploads.push({ path: folder, name, size: data.length, text: name.endsWith('.md') ? data.toString('utf8') : '' });
+      },
+    }));
+    const steps = createSteps({ ...d, storage });
+    expect(await steps.export(ctx)).toEqual({ skipped: true }); // serveur sans stockage connecté
+
+    await steps.transcribe(ctx);
+    await steps.summarize(ctx);
+    await repos.ensurePipeline(meeting.id);
+    await repos.updateStep(meeting.id, 'summarize', { status: 'done', output: {} });
+    await repos.updateStep(meeting.id, 'mix', { status: 'done', output: await steps.mix(ctx) });
+    await repos.setStorage({ guildId: 'g', provider: 'google', credentials: JSON.stringify({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3_600_000 }), account: 'asso@gmail.com', connectedBy: 'o' });
+    await storage.setFolder('g', 'Asso');
+
+    const out = await steps.export(ctx);
+    expect(out).toEqual({ provider: 'google', path: 'Asso/2026-10-15 18h00 - Bureau', files: ['compte-rendu-2026-10-15.md', 'transcription-2026-10-15.md', 'reunion-2026-10-15-18h00.ogg'] });
+    expect(uploads.map((u) => u.path)).toEqual(Array(3).fill('Asso/2026-10-15 18h00 - Bureau'));
+    expect(uploads[0]!.text).toContain('Salutations.');
+    expect(uploads[1]!.text).toContain('**[18:00:00] Alice** : Bonjour à tous.');
+    expect(uploads[2]!.size).toBeGreaterThan(0);
+    expect((await repos.getStorage('g'))?.lastOkAt).toBeInstanceOf(Date);
+    await repos.removeStorage('g');
+    // Étapes terminées : pas de reprise de cette réunion dans les tests suivants.
+    for (const row of await repos.listPipeline(meeting.id)) await repos.updateStep(meeting.id, row.step, { status: 'done' });
+  }, 60_000);
+
   it('audio complet : toutes les prises de parole sur une même ligne de temps, en Opus', async () => {
     const meeting = await seedMeeting();
     const d = deps();
@@ -277,7 +316,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const { existsSync } = await import('node:fs');
     await writeFile(master, 'x');
     const quick: StepFn = async () => ({});
-    const engine = new PipelineService(deps(), { mix: async () => ({ master, file: 'x.ogg' }), transcribe: quick, summarize: quick, publish: quick });
+    const engine = new PipelineService(deps(), { mix: async () => ({ master, file: 'x.ogg' }), transcribe: quick, summarize: quick, publish: quick, export: quick });
     await engine.schedule(meeting.id);
     await waitIdle(engine, meeting.id);
     expect(existsSync(master)).toBe(false);
@@ -302,6 +341,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       transcribe: async () => (calls.push('transcribe'), {}),
       summarize: async () => (calls.push('summarize'), {}),
       publish: async () => (calls.push('publish'), {}),
+      export: async () => ({}),
     });
 
     await engine.refresh(meeting.id); // 1er arrêt d'enregistrement
@@ -346,7 +386,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       return {};
     };
     const quick: StepFn = async () => ({});
-    const steps = { mix: step, transcribe: quick, summarize: quick, publish: quick };
+    const steps = { mix: step, transcribe: quick, summarize: quick, publish: quick, export: quick };
 
     // Un seul traitement à la fois : ga, ga, gb arrivés dans cet ordre → ga, gb, ga.
     const one = new PipelineService(deps(), steps);
@@ -382,6 +422,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
         return {};
       },
       publish: async () => ({ url: 'https://discord.com/channels/g/thread-regen/42' }),
+      export: async () => ({ skipped: true }),
     });
     const textOf = () => sent.filter((p) => typeof p.content === 'string').map((p) => [p.content as string, (p.allowedMentions as { users?: string[] })?.users]);
 
@@ -405,11 +446,45 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(sent.slice(before).filter((p) => typeof p.content === 'string' && (p.content as string).includes('à jour'))).toEqual([]);
   }, 30_000);
 
+  it('copie vers le stockage en échec : compte rendu annoncé quand même, organisateur pas dérangé, alerte aux admins', async () => {
+    const meeting = (await repos.updateMeeting((await seedMeeting()).id, { threadId: 'thread-exp', organizerId: '900' }))!;
+    const { thread, sent } = fakeThread('thread-exp');
+    const alerts: string[] = [];
+    const d = {
+      ...deps(),
+      client: { guilds: { fetch: async () => ({ premiumTier: 0 }) }, channels: { fetch: async () => thread } } as unknown as Client,
+      alerts: { guild: async (_g: string, cause: string) => void alerts.push(cause) },
+    };
+    const quick: StepFn = async () => ({});
+    const engine = new PipelineService(d, {
+      mix: quick,
+      transcribe: quick,
+      summarize: quick,
+      publish: async () => ({ url: 'https://discord.com/channels/g/thread-exp/1' }),
+      export: async () => {
+        throw new Error('HTTP 403 storageQuotaExceeded');
+      },
+    });
+    const published: string[] = [];
+    engine.setOnPublished((m) => published.push(m.id));
+    await engine.regenerate(meeting.id, false, '555');
+    await waitIdle(engine, meeting.id);
+    expect(published).toEqual([meeting.id]);
+    const texts = sent.filter((p) => typeof p.content === 'string').map((p) => p.content as string);
+    expect(texts.some((t) => t.includes('à jour : https://discord.com/channels/g/thread-exp/1'))).toBe(true);
+    expect(texts.some((t) => t.includes("n'a pas pu être terminé"))).toBe(false);
+    expect(alerts).toEqual(['pipeline:export']);
+    expect((await repos.listPipeline(meeting.id)).find((r) => r.step === 'export')?.status).toBe('failed');
+    await repos.updateStep(meeting.id, 'export', { status: 'done' }); // pas de reprise dans les tests suivants
+  }, 30_000);
+
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];
     let failSummarize = true;
-    const fake = (name: string, fail = () => false): StepFn => async () => {
+    // Seuls les appels de cette réunion comptent : la reprise relance aussi celles des autres tests.
+    const fake = (name: string, fail = () => false): StepFn => async (ctx) => {
+      if (ctx.meeting.id !== meeting.id) return {};
       calls.push(name);
       if (fail()) throw new Error(`${name} KO`);
       return { ok: true };
@@ -419,6 +494,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       transcribe: fake('transcribe'),
       summarize: fake('summarize', () => failSummarize),
       publish: fake('publish'),
+      export: fake('export'),
     });
 
     await engine.schedule(meeting.id);
@@ -429,12 +505,13 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       ['transcribe', 'done', null],
       ['summarize', 'failed', 'summarize KO'],
       ['publish', 'pending', null],
+      ['export', 'pending', null],
     ]);
 
     failSummarize = false;
     await engine.retry(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toEqual(['mix', 'transcribe', 'summarize', 'summarize', 'publish']);
+    expect(calls).toEqual(['mix', 'transcribe', 'summarize', 'summarize', 'publish', 'export']);
     expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
 
     // Reprise : une étape restée « en cours » (arrêt brutal) est refaite au démarrage.

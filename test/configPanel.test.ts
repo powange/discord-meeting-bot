@@ -183,4 +183,39 @@ describe('panneau /config', () => {
   it('message de résultat affiché en haut de la section', () => {
     expect(texts(renderConfigSection('reminders', { ...c, notice: '✅ Enregistré.' }, m))).toContain('✅ Enregistré.');
   });
+
+  it('stockage : services proposés par l’opérateur ; aucun → explication, sans bouton', () => {
+    const none = renderConfigSection('storage', { ...c, storage: { available: [] } }, m);
+    expect(texts(none)).toContain(m.config.storageUnavailable);
+    expect(ids(none)).toEqual(['home']);
+    const view = renderConfigSection('storage', { ...c, storage: { available: ['google', 'dropbox'] } }, m);
+    const args = flatten(view)
+      .filter((x) => typeof x.custom_id === 'string')
+      .map((x) => decode(x.custom_id as string))
+      .map((a) => (a?.type === 'cfg' ? `${a.action}${a.arg ? `:${a.arg}` : ''}` : '?'));
+    expect(args).toEqual(['storageConnect:p.google', 'storageConnect:p.dropbox', 'home']);
+  });
+
+  it('stockage connecté : compte, dossier, dernière copie ou erreur ; déconnexion confirmée', () => {
+    const connected = { provider: 'onedrive' as const, account: 'asso@outlook.fr', folder: 'Asso', lastOkAt: new Date(1_700_000_000_000), lastError: 'HTTP 507 quota' };
+    const view = renderConfigSection('storage', { ...c, storage: { available: ['onedrive'], connected } }, m);
+    expect(texts(view)).toContain('OneDrive · asso@outlook.fr · 📁 Asso');
+    expect(texts(view)).toContain('<t:1700000000:R>');
+    expect(texts(view)).toContain('⚠️ Dernière erreur : HTTP 507 quota');
+    expect(ids(view)).toEqual(['storageTest', 'storageFolder', 'storageDisconnect', 'home']);
+    const confirm = renderConfigSection('storage', { ...c, storage: { available: ['onedrive'], connected, confirmDisconnect: true } }, m);
+    expect(ids(confirm)).toEqual(['storageTest', 'storageFolder', 'storageDisconnectConfirm', 'home']);
+    expect(texts(renderConfigHome({ ...c, storage: { available: ['onedrive'], connected } }, m))).toContain('**Stockage** · OneDrive · asso@outlook.fr');
+  });
+
+  it('stockage : connexion en cours — code et lien (Google, OneDrive) ; lien et saisie du code (Dropbox)', () => {
+    const device = renderConfigSection('storage', { ...c, storage: { available: ['google'], pending: { provider: 'google', url: 'https://www.google.com/device', code: 'ABCD-EFGH' } } }, m);
+    expect(texts(device)).toContain('`ABCD-EFGH`');
+    const link = flatten(device).find((x) => x.type === ComponentType.Button && x.url);
+    expect(link?.url).toBe('https://www.google.com/device');
+    expect(ids(device)).toEqual(['storageCancel', 'home']);
+    const dropbox = renderConfigSection('storage', { ...c, storage: { available: ['dropbox'], pending: { provider: 'dropbox', url: 'https://www.dropbox.com/oauth2/authorize?x' } } }, m);
+    expect(ids(dropbox)).toEqual(['storageCode', 'storageCancel', 'home']);
+  });
 });
+

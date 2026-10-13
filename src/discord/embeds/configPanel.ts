@@ -14,9 +14,10 @@ import type { GuildSettingsRow } from '../../db/schema.js';
 import { channelPage, type ChannelInfo } from '../../domain/channelChoices.js';
 import { encode, type CfgAction } from '../../domain/customId.js';
 import { formatOffset } from '../../domain/reminders.js';
+import type { StorageProvider } from '../../domain/storage.js';
 import type { Messages } from '../../i18n/index.js';
 
-export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'summary', 'alerts'] as const;
+export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'summary', 'storage', 'alerts'] as const;
 export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
 export interface ConfigContext {
@@ -45,6 +46,14 @@ export interface ConfigContext {
   confirmLlmDisable?: boolean;
   /** Mode « salon imposé » choisi, salon pas encore désigné. */
   voiceMode?: VoiceMode;
+  /** Stockage du serveur : services proposés, celui connecté, connexion en cours. */
+  storage?: {
+    available: readonly StorageProvider[];
+    connected?: { provider: StorageProvider; account: string; folder: string; lastOkAt: Date | null; lastError: string | null } | undefined;
+    /** Connexion par code (Google, OneDrive) ou par lien (Dropbox) en cours. */
+    pending?: { provider: StorageProvider; url: string; code?: string } | undefined;
+    confirmDisconnect?: boolean;
+  };
   notice?: string | undefined;
 }
 
@@ -85,6 +94,11 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
       return c.transcription;
     case 'alerts':
       return s.alertChannelId ? `<#${s.alertChannelId}>` : `*${t.none}*`;
+    case 'storage': {
+      const st = c.storage;
+      if (st?.connected) return t.storageSummary(t.storageProviders[st.connected.provider]!, st.connected.account, st.connected.folder);
+      return st?.available.length ? `*${t.storageNone}*` : `*${t.storageUnavailable}*`;
+    }
     case 'summary': {
       const l = c.llm;
       if (!l || !l.enabled) return t.summaryOff;
@@ -228,6 +242,45 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       rows.push(...channelRows('alerts', s.alertChannelId, t.pickAlerts, '#'));
       if (s.alertChannelId) {
         rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(btn('alertsTest', t.alertsTest, '🧪'), btn('alertsClear', t.alertsClear, '🔕')));
+      }
+      break;
+    }
+    case 'storage': {
+      const st = c.storage;
+      if (st?.pending) {
+        const name = t.storageProviders[st.pending.provider]!;
+        container.addTextDisplayComponents((x) => x.setContent(st.pending!.code ? t.storageDevice(name, st.pending!.url, st.pending!.code) : t.storageDropbox));
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(st.pending.url).setLabel(t.storageOpenPage).setEmoji('🌐'));
+        if (!st.pending.code) row.addComponents(btn('storageCode', t.storageEnterCode, '🔑', ButtonStyle.Primary));
+        row.addComponents(btn('storageCancel', t.storageCancel, '✖️'));
+        rows.push(row);
+        break;
+      }
+      if (st?.connected) {
+        container.addTextDisplayComponents((x) => x.setContent(t.storageStatus(st.connected!.folder, st.connected!.lastOkAt, st.connected!.lastError)));
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(btn('storageTest', t.storageTest, '🧪'), btn('storageFolder', t.storageFolder, '📁'));
+        if (st.confirmDisconnect) {
+          container.addTextDisplayComponents((x) => x.setContent(`⚠️ ${t.storageDisconnectAsk}`));
+          row.addComponents(btn('storageDisconnectConfirm', t.storageDisconnectConfirm, '🔌', ButtonStyle.Danger));
+        } else {
+          row.addComponents(btn('storageDisconnect', t.storageDisconnect, '🔌'));
+        }
+        rows.push(row);
+        break;
+      }
+      if (st?.available.length) {
+        container.addTextDisplayComponents((x) => x.setContent(t.storagePickHint));
+        rows.push(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            st.available.map((p) =>
+              new ButtonBuilder()
+                .setCustomId(cfg('storageConnect', `p.${p}`))
+                .setLabel(t.storageConnect(t.storageProviders[p]!))
+                .setEmoji(t.storageEmoji[p]!)
+                .setStyle(ButtonStyle.Primary),
+            ),
+          ),
+        );
       }
       break;
     }

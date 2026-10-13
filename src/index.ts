@@ -24,6 +24,7 @@ import { OwnersService } from './services/owners.js';
 import { RetentionService } from './services/retention.js';
 import { MeetingWatcher } from './services/meetingWatcher.js';
 import { RecordingService } from './services/recordings.js';
+import { StorageService } from './services/storage.js';
 import { SettingsService } from './services/settings.js';
 
 async function main(): Promise<void> {
@@ -76,7 +77,8 @@ async function main(): Promise<void> {
   const alerts = new AlertService(client, repos, log);
   recordings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
   meetings.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
-  const pipelineDeps = { client, repos, settings, config, log, alerts };
+  const storage = new StorageService(repos, config, log);
+  const pipelineDeps = { client, repos, settings, config, log, alerts, storage };
   const pipeline = new PipelineService(pipelineDeps, createSteps(pipelineDeps));
   meetings.hooks = {
     afterStart: (meeting) => recordings.onMeetingStarted(meeting),
@@ -89,7 +91,7 @@ async function main(): Promise<void> {
     hub.refresh(meeting.guildId);
   });
   const owners = new OwnersService(config.owners);
-  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts };
+  const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts, storage };
   const scheduler = new Scheduler(ctx);
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));

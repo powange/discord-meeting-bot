@@ -32,6 +32,7 @@ function setup(opts: { canPost: boolean; sendFails?: boolean }) {
     owners: { isOwner: () => false },
     settings: { get: async () => settings, messages: async () => m },
     optouts: { list: async () => [] },
+    storage: { get: async () => undefined, available: () => [] },
     repos: {
       listLlmBackends: async () => [],
       listBackends: async () => [],

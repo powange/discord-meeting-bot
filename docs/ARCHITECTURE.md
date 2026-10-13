@@ -17,7 +17,7 @@
 > - Clôture automatique d'une réunion **uniquement sur vocal vide** (MeetingWatcher), jamais sur l'heure de fin.
 >
 > Écarts de la phase 3 :
-> - Traitement **par réunion** (et non par session d'enregistrement) : toutes les sessions d'une réunion sont transcrites ensemble. Étapes `transcribe → summarize → publish` (mix et upload arrivent en phase 4).
+> - Traitement **par réunion** (et non par session d'enregistrement) : toutes les sessions d'une réunion sont transcrites ensemble. Étapes `mix → transcribe → summarize → publish → export` ; `export` copie compte rendu, transcription et audio vers le stockage connecté par le serveur (`guild_storage` : Google Drive, OneDrive ou Dropbox, jetons OAuth chiffrés), sautée sans stockage.
 > - Transcription par **blocs** (prises de parole proches d'une même personne, ≤ 5 min) : moins de requêtes, plus de contexte, peu de silence. Table `transcription_blocks` pour la reprise fine.
 > - Client LLM en `fetch` direct (pas de SDK) pour lire les en-têtes LiteLLM (`x-litellm-model-id`). Mode JSON validé par zod, avec une correction automatique si le JSON est invalide.
 > - Publication en **Components V2** (et non en embeds) : 4000 caractères de texte par message, découpage par sujet.

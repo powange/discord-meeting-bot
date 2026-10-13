@@ -40,6 +40,17 @@ scheduler:
 pipeline:
   maxConcurrent: 1
 
+# Stockages que chaque serveur peut connecter dans /config → Stockage (copie des comptes rendus,
+# transcriptions et audios). Un service sans identifiant n'est pas proposé. Voir le README.
+storage:
+  google:
+    clientId: ${GOOGLE_CLIENT_ID:-}
+    clientSecret: ${GOOGLE_CLIENT_SECRET:-}
+  onedrive:
+    clientId: ${ONEDRIVE_CLIENT_ID:-}
+  dropbox:
+    appKey: ${DROPBOX_APP_KEY:-}
+
 # Valeurs par défaut pour tous les serveurs…
 defaults:
   # Réglages initiaux d'un serveur. Ils ne servent qu'à sa première utilisation :

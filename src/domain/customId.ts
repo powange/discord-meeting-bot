@@ -88,6 +88,15 @@ export const CFG_ACTIONS = [
   'llmDeleteConfirm',
   'llmTestAll',
   'llmDisableConfirm',
+  'storageConnect',
+  'storageCode',
+  'storageCodeSubmit',
+  'storageCancel',
+  'storageTest',
+  'storageFolder',
+  'storageFolderSubmit',
+  'storageDisconnect',
+  'storageDisconnectConfirm',
 ] as const;
 export type CfgAction = (typeof CFG_ACTIONS)[number];
 
@@ -200,8 +209,8 @@ export function decode(customId: string): Action | null {
   if (group === 'cfg') {
     const [action, arg] = rest;
     if (rest.length > 2 || !CFG_ACTIONS.includes(action as CfgAction)) return null;
-    // « section.page » (pagination) ou « s.<id> » (serveur de résumé).
-    if (arg !== undefined && !/^[a-z]+\.\d{1,10}$/.test(arg)) return null;
+    // « section.page » (pagination), « s.<id> » (serveur de résumé) ou « p.<service> » (stockage).
+    if (arg !== undefined && !/^[a-z]+\.(\d{1,10}|[a-z]{1,20})$/.test(arg)) return null;
     return arg === undefined ? { type: 'cfg', action: action as CfgAction } : { type: 'cfg', action: action as CfgAction, arg };
   }
 

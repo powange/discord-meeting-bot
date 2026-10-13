@@ -39,9 +39,10 @@ export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disc
 
 /**
  * Étapes du traitement post-réunion, dans l'ordre d'exécution. Le mix passe en premier : l'audio
- * est publié même si la transcription ou le résumé échouent. (La phase 4 ajoutera l'upload.)
+ * est publié même si la transcription ou le résumé échouent. La copie vers le stockage du serveur
+ * (Google Drive, OneDrive, Dropbox) vient après la publication : un échec ne retarde pas le compte rendu.
  */
-export const PIPELINE_STEPS = ['mix', 'transcribe', 'summarize', 'publish'] as const;
+export const PIPELINE_STEPS = ['mix', 'transcribe', 'summarize', 'publish', 'export'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 
 export const STEP_STATUSES = ['pending', 'running', 'done', 'failed'] as const;

@@ -11,6 +11,7 @@ import { messages, type Messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import type { SettingsService } from '../services/settings.js';
+import type { StorageService } from '../services/storage.js';
 
 export interface StepContext {
   meeting: MeetingRow;
@@ -30,6 +31,8 @@ export interface PipelineDeps {
   alerts?: { guild(guildId: string, cause: string, message: string): Promise<void> };
   client: Client;
   repos: Repositories;
+  /** Stockage du serveur (copie des fichiers) : absent dans les tests. */
+  storage?: StorageService;
   settings: SettingsService;
   config: AppConfig;
   log: Logger;
@@ -121,7 +124,7 @@ export class PipelineService {
     if (requestedBy) await this.deps.repos.addReportRequester(meetingId, requestedBy);
     await this.deps.repos.ensurePipeline(meetingId);
     if (retranscribe) await this.deps.repos.resetTranscription(meetingId);
-    await this.deps.repos.resetSteps(meetingId, retranscribe ? [...PIPELINE_STEPS] : ['summarize', 'publish']);
+    await this.deps.repos.resetSteps(meetingId, retranscribe ? [...PIPELINE_STEPS] : ['summarize', 'publish', 'export']);
     await this.enqueue(meetingId);
   }
 
@@ -234,6 +237,11 @@ export class PipelineService {
         });
         await repos.updateStep(meetingId, row.step, { status: 'done', finishedAt: new Date(), output });
         plog.info({ step: row.step }, 'Étape terminée');
+        // Compte rendu publié : la carte, le post épinglé et les demandeurs n'attendent pas la copie vers le stockage.
+        if (row.step === 'publish') {
+          this.onPublished(meeting);
+          await this.notifyRequesters(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis de mise à jour impossible'));
+        }
       } catch (err) {
         if (this.abort.signal.aborted) {
           await repos.updateStep(meetingId, row.step, { status: 'pending' }); // reprise au redémarrage
@@ -244,8 +252,9 @@ export class PipelineService {
         await repos.updateStep(meetingId, row.step, { status: 'failed', finishedAt: new Date(), error: message });
         details.set(row.step, message);
         await status.update(details);
-        // L'organisateur est prévenu (le message de suivi, lui, est silencieux).
-        await this.notifyFailure(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec impossible'));
+        // L'organisateur est prévenu (le message de suivi, lui, est silencieux) ; pas pour la copie
+        // vers le stockage : le compte rendu est publié, c'est l'affaire des administrateurs (alerte).
+        if (row.step !== 'export') await this.notifyFailure(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec impossible'));
         const url = meeting.threadId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}` : '';
         await this.deps.alerts
           ?.guild(meeting.guildId, `pipeline:${row.step}`, m.alerts.stepFailed(meeting.title, m.pipeline.steps[row.step] ?? row.step, message.slice(0, 300), url))
@@ -254,8 +263,6 @@ export class PipelineService {
       }
     }
     await status.update(details);
-    this.onPublished(meeting);
-    await this.notifyRequesters(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis de mise à jour impossible'));
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
     if ((await repos.getMeeting(meetingId))?.status === 'ended') {
       const master = await repos.dropMixMaster(meetingId);
@@ -315,7 +322,9 @@ class StatusMessage {
     this.last = Date.now();
     const { repos, client, log } = this.deps;
     const meeting = (await repos.getMeeting(this.meeting.id)) ?? this.meeting;
-    const rows = await repos.listPipeline(meeting.id);
+    // Copie vers le stockage affichée seulement si le serveur en a un (ou si elle a eu lieu).
+    const storage = (await this.deps.storage?.get(meeting.guildId).catch(() => undefined)) !== undefined;
+    const rows = (await repos.listPipeline(meeting.id)).filter((r) => r.step !== 'export' || (r.status === 'done' ? r.output?.skipped !== true : storage || r.status === 'failed'));
     const views: StepView[] = rows.map((r) => ({
       step: r.step,
       status: r.status,

@@ -17,6 +17,7 @@ export interface AppConfig {
   ai: { allowedHosts: string[] };
   scheduler: { tickSeconds: number };
   pipeline: { maxConcurrent: number };
+  storage: { google: { clientId?: string | undefined; clientSecret?: string | undefined }; onedrive: { clientId?: string | undefined }; dropbox: { appKey?: string | undefined } };
   /** Config effective d'un serveur : `defaults` fusionné avec `guilds.<id>`. */
   guild(guildId: string): GuildBlock;
 }
@@ -29,6 +30,11 @@ const FALLBACK = {
   dataDir: '${DATA_DIR:-data}',
   ffmpegPath: '${FFMPEG_PATH:-}',
   ai: { allowedHosts: '${AI_ALLOWED_HOSTS:-}' },
+  storage: {
+    google: { clientId: '${GOOGLE_CLIENT_ID:-}', clientSecret: '${GOOGLE_CLIENT_SECRET:-}' },
+    onedrive: { clientId: '${ONEDRIVE_CLIENT_ID:-}' },
+    dropbox: { appKey: '${DROPBOX_APP_KEY:-}' },
+  },
   defaults: {
     llm: { baseUrl: '${LLM_BASE_URL:-}', apiKey: '${LLM_API_KEY:-}', model: '${LLM_MODEL:-summary}' },
   },
@@ -70,6 +76,7 @@ export function buildConfig(raw: unknown, env: NodeJS.ProcessEnv): AppConfig {
     ai: root.ai,
     scheduler: root.scheduler,
     pipeline: root.pipeline,
+    storage: root.storage,
     guild: (guildId) => perGuild.get(guildId) ?? defaults,
   };
 }

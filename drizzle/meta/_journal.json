@@ -162,6 +162,13 @@
       "when": 1791908992733,
       "tag": "0022_report_requesters",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791913758721,
+      "tag": "0023_guild_storage",
+      "breakpoints": true
     }
   ]
 }

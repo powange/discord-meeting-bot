@@ -214,6 +214,22 @@ export const llmBackends = pgTable(
   (t) => [unique().on(t.guildId, t.name), index().on(t.guildId, t.position)],
 );
 
+/** Stockage du serveur (Google Drive, OneDrive, Dropbox) : comptes rendus, transcriptions et audios y sont copiés. */
+export const guildStorage = pgTable('guild_storage', {
+  guildId: text().primaryKey(),
+  provider: text({ enum: ['google', 'onedrive', 'dropbox'] }).notNull(),
+  /** Jetons OAuth (JSON), chiffrés avec APP_SECRET_KEY. */
+  credentials: text().notNull(),
+  /** Compte connecté (adresse ou nom), affiché dans /config. */
+  account: text().notNull(),
+  /** Dossier racine des copies. */
+  folder: text().notNull().default('Meeting recorder'),
+  connectedBy: text().notNull(),
+  connectedAt: createdAt(),
+  lastOkAt: tz(),
+  lastError: text(),
+});
+
 export const transcriptionBackends = pgTable(
   'transcription_backends',
   {
@@ -395,6 +411,7 @@ export const summaries = pgTable('summaries', {
 export type RecordingRow = typeof recordings.$inferSelect;
 export type CaptureStatsRow = typeof captureStats.$inferSelect;
 export type TranscriptionBackendRow = typeof transcriptionBackends.$inferSelect;
+export type GuildStorageRow = typeof guildStorage.$inferSelect;
 export type PipelineStepRow = typeof pipelineSteps.$inferSelect;
 export type TranscriptionBlockRow = typeof transcriptionBlocks.$inferSelect;
 export type TranscriptSegmentRow = typeof transcriptSegments.$inferSelect;

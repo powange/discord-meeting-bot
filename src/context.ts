@@ -10,6 +10,7 @@ import type { OptoutService } from './services/optouts.js';
 import type { OwnersService } from './services/owners.js';
 import type { RecordingService } from './services/recordings.js';
 import type { SettingsService } from './services/settings.js';
+import type { StorageService } from './services/storage.js';
 
 export interface AppContext {
   config: AppConfig;
@@ -24,4 +25,5 @@ export interface AppContext {
   pipeline: PipelineService;
   owners: OwnersService;
   optouts: OptoutService;
+  storage: StorageService;
 }

@@ -1,6 +1,6 @@
 import { existsSync, openAsBlob } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
 import { FailoverLlm } from '../ai/llm/failover.js';
@@ -8,9 +8,10 @@ import { summarizeMeeting } from '../ai/llm/summarize.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
 import { TranscriptionPool } from '../ai/transcription/pool.js';
 import type { MeetingRow } from '../db/schema.js';
-import { renderReport, renderTranscriptMarkdown, resolvePerson } from '../discord/embeds/report.js';
+import { renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput } from '../discord/embeds/report.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
+import { meetingFolderName } from '../domain/storage.js';
 import { formatWhen } from '../domain/time.js';
 import { whisperPrompt } from '../domain/vocabulary.js';
 import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeTranscript, type TranscriptLine } from '../domain/transcript.js';
@@ -18,6 +19,7 @@ import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, runFfmpeg, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
 import { effectiveLlms } from '../services/llmSettings.js';
+import type { UploadFile } from '../services/storage.js';
 import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
@@ -28,6 +30,7 @@ export function createSteps(deps: PipelineDeps): Record<PipelineStep, StepFn> {
     transcribe: (ctx) => transcribe(deps, ctx),
     summarize: (ctx) => summarize(deps, ctx),
     publish: (ctx) => publish(deps, ctx),
+    export: (ctx) => exportFiles(deps, ctx),
   };
 }
 
@@ -337,9 +340,44 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
 
 // ---------------------------------------------------------------- publication
 
+/** Contenu du compte rendu (publication dans Discord et copie vers le stockage) ; null sans parole. */
+async function reportContent(deps: PipelineDeps, ctx: StepContext) {
+  const { repos } = deps;
+  const { meeting, settings, m } = ctx;
+  const summary = await repos.getSummary(meeting.id);
+  const { lines, names } = await loadTranscript(deps, meeting);
+  if (!summary || lines.length === 0) return null;
+
+  const recordings = await repos.listRecordingsForMeeting(meeting.id);
+  const durationMs = recordings.reduce((n, r) => n + ((r.endedAt ?? r.startedAt).getTime() - r.startedAt.getTime()), 0);
+  const subtitle = m.report.subtitle(formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when), m.format.duration(durationMs), names.size);
+  const people = new Map([...names].map(([id, name]) => [name, id]));
+  const llmTrace = summary.llmDeployments.length ? summary.llmDeployments.join(', ') : summary.llmModel;
+  const summarizeStep = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'summarize');
+  const summaryDisabled = summarizeStep?.output?.skipped === true;
+  const day = meeting.startsAt.toISOString().slice(0, 10);
+  const input: ReportInput = {
+    title: meeting.title,
+    subtitle,
+    agenda: (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title })),
+    summary: summary.content,
+    people,
+    trace: summaryDisabled
+      ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
+      : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
+    summaryDisabled,
+  };
+  const markdown = renderTranscriptMarkdown(
+    meeting.title,
+    subtitle,
+    lines.map((l) => ({ time: formatClock(l.startAt, settings.timezone), name: l.name, text: l.text })),
+  );
+  return { summary, people, input, markdown, transcriptFile: `transcription-${day}.md`, reportFile: `compte-rendu-${day}.md` };
+}
+
 async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, client } = deps;
-  const { meeting, settings, m } = ctx;
+  const { meeting, m } = ctx;
   const thread = await fetchThread(client, meeting.threadId);
   if (!thread) throw new Error('Post de la réunion introuvable');
 
@@ -349,47 +387,24 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const previousIds = Array.isArray(previous?.messageIds) ? (previous.messageIds as string[]) : [];
   const alreadyMentioned = new Set(Array.isArray(previous?.mentioned) ? (previous.mentioned as string[]) : []);
 
-  const summary = await repos.getSummary(meeting.id);
-  const { lines, names } = await loadTranscript(deps, meeting);
+  const content = await reportContent(deps, ctx);
   await ensureUnarchived(thread);
-  if (!summary || lines.length === 0) {
+  if (!content) {
     const message = await thread.send({ content: m.report.noSpeech, flags: MessageFlags.SuppressNotifications });
     await deleteMessages(thread, previousIds);
     return { messageIds: [message.id], url: message.url };
   }
-
-  const recordings = await repos.listRecordingsForMeeting(meeting.id);
-  const durationMs = recordings.reduce((n, r) => n + ((r.endedAt ?? r.startedAt).getTime() - r.startedAt.getTime()), 0);
-  const subtitle = m.report.subtitle(formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when), m.format.duration(durationMs), names.size);
-  const people = new Map([...names].map(([id, name]) => [name, id]));
-  const llmTrace = summary.llmDeployments.length ? summary.llmDeployments.join(', ') : summary.llmModel;
-  const summarizeStep = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'summarize');
-  const summaryDisabled = summarizeStep?.output?.skipped === true;
-  const transcriptFile = `transcription-${meeting.startsAt.toISOString().slice(0, 10)}.md`;
+  const { summary, people, transcriptFile, markdown } = content;
   const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
-
   const containers = renderReport(
     {
-      title: meeting.title,
-      subtitle,
-      agenda: (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title })),
-      summary: summary.content,
-      people,
-      trace: summaryDisabled
-        ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
-        : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
-      summaryDisabled,
-      ...(summaryDisabled ? {} : { correctMeetingId: meeting.id }),
+      ...content.input,
+      ...(content.input.summaryDisabled ? {} : { correctMeetingId: meeting.id }),
       transcriptFile,
       ...(audioUrl ? { audioUrl } : {}),
     },
     m,
-  );
-  const markdown = renderTranscriptMarkdown(
-    meeting.title,
-    subtitle,
-    lines.map((l) => ({ time: formatClock(l.startAt, settings.timezone), name: l.name, text: l.text })),
   );
 
   // Les responsables d'actions sont notifiés, une seule fois chacun : une correction ne
@@ -456,4 +471,35 @@ async function editReport(
     });
   }
   return messages[0]!.url;
+}
+
+// ---------------------------------------------------------------- copie vers le stockage
+
+/**
+ * Copie dans le stockage du serveur (/config → Stockage) : compte rendu et transcription en
+ * Markdown, audio complet. Un dossier par réunion ; une mise à jour remplace les fichiers.
+ */
+async function exportFiles(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
+  const { repos, storage } = deps;
+  const { meeting, settings, m } = ctx;
+  if (!storage || !(await storage.get(meeting.guildId))) return { skipped: true };
+
+  const files: UploadFile[] = [];
+  const content = await reportContent(deps, ctx);
+  if (content) {
+    if (!content.input.summaryDisabled) {
+      files.push({ name: content.reportFile, source: { data: Buffer.from(renderReportMarkdown(content.input, m), 'utf8') }, mime: 'text/markdown' });
+    }
+    files.push({ name: content.transcriptFile, source: { data: Buffer.from(content.markdown, 'utf8') }, mime: 'text/markdown' });
+  }
+  const mix = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
+  const audio = typeof mix?.file === 'string' && !mix.purgedAt && existsSync(mix.file) ? mix.file : null;
+  if (audio) files.push({ name: basename(audio), source: { path: audio }, mime: 'audio/ogg' });
+  if (files.length === 0) return { files: [] };
+
+  ctx.progress(m.pipeline.progressExport(files.length));
+  const folder = meetingFolderName(formatWhen(meeting.startsAt, settings.timezone, settings.locale, "yyyy-MM-dd HH'h'mm"), meeting.title);
+  const result = await storage.upload(meeting.guildId, folder, files, ctx.signal);
+  if (!result) return { skipped: true };
+  return { provider: result.provider, path: result.path, files: files.map((f) => f.name) };
 }

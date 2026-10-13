@@ -17,6 +17,7 @@ import type { AppContext } from '../../context.js';
 import { pageOf, type ChannelInfo } from '../../domain/channelChoices.js';
 import { encode, type CfgAction } from '../../domain/customId.js';
 import { DURATION_MAX, DURATION_MIN } from '../../domain/meeting.js';
+import type { StorageProvider } from '../../domain/storage.js';
 import { formatOffset, parseOffsets } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
 import { errorMessage, UserError } from '../../lib/errors.js';
@@ -80,10 +81,23 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
     },
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
     refusals: await ctx.optouts.list(guildId),
+    storage: await storageView(ctx, guildId),
   };
 }
 
-type ShowExtra = Partial<Pick<ConfigContext, 'models' | 'confirmLlmDisable' | 'voiceMode' | 'llmSelected' | 'llmConfirmDelete'>> & { page?: number };
+async function storageView(ctx: AppContext, guildId: string): Promise<ConfigContext['storage']> {
+  const row = await ctx.storage.get(guildId);
+  return {
+    available: ctx.storage.available(),
+    connected: row ? { provider: row.provider, account: row.account, folder: row.folder, lastOkAt: row.lastOkAt, lastError: row.lastError } : undefined,
+  };
+}
+
+type ShowExtra = Partial<Pick<ConfigContext, 'models' | 'confirmLlmDisable' | 'voiceMode' | 'llmSelected' | 'llmConfirmDelete'>> & {
+  page?: number;
+  storagePending?: NonNullable<ConfigContext['storage']>['pending'];
+  storageConfirm?: boolean;
+};
 
 /** Serveurs de résumé au plus (limite raisonnable des composants du panneau). */
 const MAX_LLM_SERVERS = 5;
@@ -103,8 +117,9 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
   }
 
   const show = async (section: Section | 'home', notice?: string, extra: ShowExtra = {}) => {
-    const { page, ...state } = extra;
+    const { page, storagePending, storageConfirm, ...state } = extra;
     const c = { ...(await context(ctx, guildId, m, notice, interaction.user.id)), ...state };
+    if (c.storage) c.storage = { ...c.storage, pending: storagePending, confirmDisconnect: storageConfirm ?? false };
     const type = section === 'home' ? undefined : CHANNEL_TYPES[section];
     if (type !== undefined) {
       const list = channelsOf(interaction.guild, type);
@@ -302,6 +317,82 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
         ));
       return show('alerts', sent ? t.alertsTestSent(channelId) : `❌ ${m.errors.alertChannel}`);
     }
+
+    // ---------------------------------------------------------------- stockage
+    case 'storageConnect': {
+      const provider = arg?.startsWith('p.') ? (arg.slice(2) as StorageProvider) : null;
+      if (!interaction.isButton()) return;
+      if (!provider || !ctx.storage.available().includes(provider)) return show('storage');
+      if (provider === 'dropbox') {
+        ctx.storage.cancel(guildId);
+        return show('storage', undefined, { storagePending: { provider, url: ctx.storage.dropboxLink(guildId, interaction.user.id) } });
+      }
+      await interaction.deferUpdate();
+      const name = t.storageProviders[provider]!;
+      const start = await ctx.storage.startDevice(guildId, interaction.user.id, provider, (result) => {
+        // Le panneau éphémère est mis à jour à la validation (ou à l'expiration du code).
+        const notice = result.ok
+          ? t.storageConnected(name, result.row.account)
+          : result.reason === 'expired'
+            ? `⌛ ${t.storageExpired}`
+            : t.storageDenied(result.detail ?? result.reason);
+        void show('storage', notice).catch((err) => ctx.log.debug({ err: errorMessage(err) }, 'Panneau de stockage non mis à jour'));
+      });
+      return show('storage', undefined, { storagePending: { provider, url: start.verificationUrl, code: start.userCode } });
+    }
+    case 'storageCode': {
+      if (!interaction.isButton()) return;
+      const input = new TextInputBuilder().setCustomId('code').setStyle(TextInputStyle.Short).setMinLength(10).setMaxLength(200).setRequired(true);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'cfg', action: 'storageCodeSubmit' }))
+          .setTitle(t.storageCodeModal)
+          .addLabelComponents(new LabelBuilder().setLabel(t.storageCodeField).setTextInputComponent(input)),
+      );
+      return;
+    }
+    case 'storageCodeSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      try {
+        const row = await ctx.storage.dropboxFinish(guildId, interaction.user.id, interaction.fields.getTextInputValue('code'));
+        if (!row) return show('storage', `⌛ ${t.storageCodeExpired}`);
+        return show('storage', t.storageConnected(t.storageProviders.dropbox!, row.account));
+      } catch (err) {
+        return show('storage', t.storageDenied(errorMessage(err)));
+      }
+    }
+    case 'storageCancel':
+      ctx.storage.cancel(guildId);
+      return show('storage');
+    case 'storageTest': {
+      if (!interaction.isButton()) return;
+      await interaction.deferUpdate();
+      const result = await ctx.storage.test(guildId);
+      return show('storage', result.ok ? t.storageTestOk(result.account) : t.storageTestKo(result.error));
+    }
+    case 'storageFolder': {
+      if (!interaction.isButton()) return;
+      const current = (await ctx.storage.get(guildId))?.folder ?? '';
+      const input = new TextInputBuilder().setCustomId('folder').setStyle(TextInputStyle.Short).setMaxLength(80).setRequired(true).setValue(current);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'cfg', action: 'storageFolderSubmit' }))
+          .setTitle(t.storageFolderModal)
+          .addLabelComponents(new LabelBuilder().setLabel(t.storageFolderField).setDescription(t.storageFolderHint).setTextInputComponent(input)),
+      );
+      return;
+    }
+    case 'storageFolderSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      if (!(await ctx.storage.get(guildId))) return show('storage');
+      await ctx.storage.setFolder(guildId, interaction.fields.getTextInputValue('folder'));
+      return show('storage', t.saved);
+    }
+    case 'storageDisconnect':
+      return show('storage', undefined, { storageConfirm: true });
+    case 'storageDisconnectConfirm':
+      await ctx.storage.disconnect(guildId);
+      return show('storage', t.storageDisconnected);
 
     // ---------------------------------------------------------------- serveurs de résumé
     case 'llmPick': {

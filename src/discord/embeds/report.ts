@@ -78,12 +78,8 @@ function splitText(text: string, max: number): string[] {
   return parts;
 }
 
-/**
- * Compte rendu publié dans le post : un ou plusieurs messages (Components V2), découpés par
- * sujet pour rester sous les limites de Discord. Les sujets suivent l'ordre du jour, puis les
- * sujets hors ODJ ; les points de l'ODJ non abordés sont listés à part.
- */
-export function renderReport(input: ReportInput, m: Messages): APIContainerComponent[] {
+/** Sections du compte rendu (titre, aperçu, sujets, points non abordés), en Markdown Discord. */
+function reportSections(input: ReportInput, m: Messages): string[] {
   const r = m.report;
   const order = new Map(input.agenda.map((a, i) => [a.id, i]));
   const topics = [...input.summary.topics].sort(
@@ -103,6 +99,17 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
     if (topics.length === 0) sections.push(r.empty);
     if (notCovered.length) sections.push(`### ${r.notCovered}\n${notCovered.map((a) => `- ${a.title}`).join('\n')}`);
   }
+  return sections;
+}
+
+/**
+ * Compte rendu publié dans le post : un ou plusieurs messages (Components V2), découpés par
+ * sujet pour rester sous les limites de Discord. Les sujets suivent l'ordre du jour, puis les
+ * sujets hors ODJ ; les points de l'ODJ non abordés sont listés à part.
+ */
+export function renderReport(input: ReportInput, m: Messages): APIContainerComponent[] {
+  const r = m.report;
+  const sections = reportSections(input, m);
   const footer = `-# ${input.trace}`;
 
   // Répartition des sections en messages, chacun sous le budget de texte.
@@ -148,4 +155,19 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
 /** Transcription complète en Markdown (pièce jointe). */
 export function renderTranscriptMarkdown(title: string, subtitle: string, lines: ReadonlyArray<{ time: string; name: string; text: string }>): string {
   return [`# Transcription — ${title}`, '', `*${subtitle}*`, '', ...lines.map((l) => `**[${l.time}] ${l.name}** : ${l.text}\n`)].join('\n');
+}
+
+/**
+ * Compte rendu en fichier Markdown (copie vers le stockage du serveur) : mêmes sections que dans
+ * Discord, responsables d'actions par leur nom, petits textes Discord (« -# ») en italique.
+ */
+export function renderReportMarkdown(input: ReportInput, m: Messages): string {
+  const { audioUrl: _link, ...rest } = input;
+  const sections = reportSections({ ...rest, people: new Map() }, m);
+  const text = [...sections, `-# ${input.trace}`].join('\n\n');
+  return `${text
+    .replace(/^## 📝 /m, '# ')
+    .split('\n')
+    .map((line) => (line.startsWith('-# ') ? `*${line.slice(3)}*` : line))
+    .join('\n')}\n`;
 }

@@ -68,6 +68,7 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
 | Transcription | Prises de parole regroupées en blocs par personne, assemblées en WAV 16 kHz par ffmpeg, puis envoyées au **premier backend disponible** de `transcription.backends`. Health check court, puis bascule au suivant en cas d'erreur, de délai dépassé ou de « occupé » (Vibe ne traite qu'une requête à la fois). Les hallucinations connues de Whisper sont filtrées, ainsi que les **échos** : la même phrase captée par le micro d'un voisin sans casque n'est gardée qu'une fois (`transcription.dropEchoes`). Pas de diarisation nécessaire : chaque piste a son auteur. **Vocabulaire** (`/config` → Transcription → 📖) : pseudos, noms de projets et jargon du serveur, transmis à Whisper avec les participants, les points d'ODJ et les noms propres des consignes de correction (sauf le terme fautif de « Pol et non Paul ») ; il sert aussi d'orthographe de référence au résumé. |
 | Résumé | **Facultatif** : sans modèle configuré, l'étape est sautée (⏭️) et le compte rendu se limite à l'audio et à la transcription. Avec un modèle, via LiteLLM, Ollama ou LM Studio. Structuré **par point d'ordre du jour** : synthèse, décisions, actions (qui / échéance), questions ouvertes, sujets hors ODJ, points non traités. Une réunion longue est résumée **en plusieurs passes** (morceaux, puis fusion). |
 | Publication | Compte rendu en Components V2, découpé sur plusieurs messages si besoin, avec la **transcription complète en `.md`** jointe. Les responsables d'actions reconnus sont mentionnés, donc notifiés. La trace des modèles utilisés est en pied de message. |
+| Copie vers le stockage | Si le serveur a connecté un **Google Drive, OneDrive ou Dropbox** (`/config` → ☁️ Stockage), dernière étape : le compte rendu et la transcription en Markdown, et l'audio complet, sont copiés dans `<dossier>/<date heure - titre>/`. Une correction ou une nouvelle session remplace les fichiers. Un échec ne retarde pas le compte rendu : l'étape passe en ❌ (🔁 Relancer), le salon d'alertes est prévenu, l'organisateur n'est pas dérangé. |
 | Échec | L'étape passe en ❌ avec l'erreur et un bouton **🔁 Relancer** (organisateur ou gestionnaire) : seule l'étape en échec et les suivantes sont refaites, les blocs déjà transcrits sont conservés. Un arrêt du bot reprend au démarrage. |
 | Corriger | Bouton **✏️ Corriger** sous le compte rendu (organisateur ou gestionnaire) : une consigne libre (« Pol et non Paul », « la décision était de reporter »). Elle est ajoutée aux consignes précédentes et transmise au modèle en priorité, puis le résumé est régénéré sans retranscrire. |
 | Régénérer | Carte → ⚙️ Gérer → « Régénérer le compte rendu » (ou 🔄 Régénérer sous le compte rendu), ou « Tout retranscrire ». L'ancien compte rendu est remplacé. |
@@ -95,6 +96,34 @@ Les pistes sont écrites dans `dataDir/recordings/<serveur>/<session>/<utilisate
    - **Tester** : un vrai essai (santé, puis transcription d'une seconde de silence), avec la latence affichée sous le serveur. Un test est aussi lancé automatiquement après chaque ajout ou modification.
    - **Clés d'API** : stockées en base, jamais réaffichées. En modification, laisser le champ vide conserve la clé, « - » la supprime.
    - Tant qu'aucun serveur n'est ajouté ici, la section `transcription.backends` du YAML s'applique.
+
+### Stockage des comptes rendus (Google Drive, OneDrive, Dropbox)
+
+Chaque serveur Discord choisit où copier ses comptes rendus, transcriptions et audios : `/config` → ☁️ **Stockage** → « Connecter … », puis connexion avec le compte de son choix (celui de l'association, par exemple). Le bot n'expose aucune page web, la connexion se fait donc ainsi :
+
+- **Google Drive, OneDrive** : le bot affiche un code ; on l'entre sur google.com/device ou microsoft.com/devicelogin, puis on autorise l'accès. Le panneau se met à jour tout seul.
+- **Dropbox** : « Ouvrir la page », autoriser l'accès, puis « Saisir le code » et coller le code affiché par Dropbox.
+
+Ensuite : 🧪 Tester, 📁 Changer de dossier (« Meeting recorder » par défaut), 🔌 Déconnecter (les fichiers déjà copiés restent). Accès au plus juste : Google Drive ne laisse voir au bot que les fichiers qu'il a créés, Dropbox le limite à `Applications/<nom de l'application>`. OneDrive n'a pas de réglage équivalent qui marche partout : l'accès porte sur le OneDrive, le bot n'écrit que dans son dossier. Les jetons sont chiffrés avec `APP_SECRET_KEY`.
+
+**Côté opérateur, une seule fois par service** : créer l'application OAuth du bot et mettre ses identifiants dans les variables de la stack. Un service sans identifiant n'est pas proposé dans `/config`.
+
+1. **Google Drive** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) — [console.cloud.google.com](https://console.cloud.google.com) :
+   - créer un projet, puis *API et services → Bibliothèque* : activer **Google Drive API** ;
+   - *Google Auth Platform* (écran de consentement) : audience **Externe**, nom de l'application et adresse de contact ; ajouter la portée `…/auth/drive.file` ;
+   - **Publier l'application** (statut « En production »). En mode « Test », Google révoque l'accès au bout de 7 jours et seuls les comptes de test peuvent se connecter. `drive.file` n'est pas une portée sensible : il n'y a pas de validation à demander à Google ;
+   - *Clients → Créer un client* : type **Téléviseurs et appareils à entrée limitée**. Copier l'ID client et le code secret.
+2. **OneDrive** (`ONEDRIVE_CLIENT_ID`) — [entra.microsoft.com](https://entra.microsoft.com) → *Inscriptions d'applications → Nouvelle inscription* :
+   - comptes pris en charge : **comptes de tout annuaire organisationnel et comptes Microsoft personnels** ; pas d'URI de redirection ;
+   - *Authentification* : **Autoriser les flux clients publics** → Oui ;
+   - *Autorisations d'API* : Microsoft Graph, délégué, `Files.ReadWrite` et `offline_access` ;
+   - copier l'**ID d'application (client)**. Il n'y a pas de secret à créer. Avec un compte professionnel, l'administrateur de l'organisation peut devoir approuver l'application.
+3. **Dropbox** (`DROPBOX_APP_KEY`) — [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) → *Create app* :
+   - **Scoped access**, **App folder**, puis un nom : le dossier sera `Applications/<nom>` ;
+   - onglet *Permissions* : cocher `files.content.write`, puis *Submit* ;
+   - copier l'**App key**. Pas de secret ni d'URI de redirection : la connexion utilise PKCE. En mode développement, une application Dropbox accepte jusqu'à 500 comptes.
+
+Puis redéployer la stack. Les clés se mettent aussi dans `storage` du YAML (voir [config/config.example.yaml](config/config.example.yaml)).
 
 ### Tester la phase 3
 

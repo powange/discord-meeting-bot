@@ -43,6 +43,12 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       # Avec LiteLLM : une clé virtuelle limitée au modèle « summary » (voir le README) plutôt que la clé maîtresse.
       LLM_API_KEY: ${LLM_API_KEY:-${LITELLM_MASTER_KEY:-}}
+      # Stockages que chaque serveur Discord peut connecter (/config → Stockage) : applications OAuth
+      # de l'opérateur, voir le README. Un service sans identifiant n'est pas proposé.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      ONEDRIVE_CLIENT_ID: ${ONEDRIVE_CLIENT_ID:-}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-summary}
       # Décommenter pour utiliser un fichier de configuration (surcharges par serveur, etc.)
       # CONFIG_PATH: /app/config/config.yaml

@@ -2,6 +2,9 @@ import { IANAZone } from 'luxon';
 import { z } from 'zod';
 import { LOCALES } from '../i18n/index.js';
 
+/** Texte facultatif : une variable d'environnement vide vaut « absent ». */
+const optionalText = z.preprocess((v) => (v === '' ? undefined : v), z.string().optional());
+
 export const snowflake = z.string().regex(/^\d{17,20}$/, 'identifiant Discord invalide');
 
 /**
@@ -113,6 +116,17 @@ export const rootSchema = z.strictObject({
         (v) => (typeof v === 'string' ? v.split(',').map((h) => h.trim()).filter(Boolean) : v),
         z.array(z.string().min(1)).default([]),
       ),
+    })
+    .prefault({}),
+  /**
+   * Applications OAuth de l'opérateur pour les stockages que chaque serveur peut connecter dans
+   * /config (Google Drive, OneDrive, Dropbox). Un service sans identifiant n'est pas proposé.
+   */
+  storage: z
+    .strictObject({
+      google: z.strictObject({ clientId: optionalText, clientSecret: optionalText }).prefault({}),
+      onedrive: z.strictObject({ clientId: optionalText }).prefault({}),
+      dropbox: z.strictObject({ appKey: optionalText }).prefault({}),
     })
     .prefault({}),
   /** Alerte quand l'espace libre du dossier de données passe sous ce seuil (Go). */

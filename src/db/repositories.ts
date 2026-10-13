@@ -20,6 +20,7 @@ import {
   recordingPresence,
   recordings,
   guildSettings,
+  guildStorage,
   meetings,
   rsvps,
   scheduledJobs,
@@ -33,6 +34,7 @@ import {
   type RecordingPresenceRow,
   type RecordingRow,
   type GuildSettingsRow,
+  type GuildStorageRow,
   type DateSlotRow,
   type LlmBackendRow,
   type MeetingRow,
@@ -84,6 +86,14 @@ export class Repositories {
       .where(and(isNotNull(transcriptionBackends.apiKey), sql`${transcriptionBackends.apiKey} not like 'enc:%'`));
     for (const row of backends) {
       await this.db.update(transcriptionBackends).set({ apiKey: encrypt(row.key!) }).where(eq(transcriptionBackends.id, row.id));
+      count++;
+    }
+    const storages = await this.db
+      .select({ guildId: guildStorage.guildId, credentials: guildStorage.credentials })
+      .from(guildStorage)
+      .where(sql`${guildStorage.credentials} not like 'enc:%'`);
+    for (const row of storages) {
+      await this.db.update(guildStorage).set({ credentials: encrypt(row.credentials) }).where(eq(guildStorage.guildId, row.guildId));
       count++;
     }
     return count;
@@ -610,6 +620,28 @@ export class Repositories {
   }
 
   // ---------------------------------------------------------------- serveurs de transcription
+
+  // ---------------------------------------------------------------- stockage du serveur
+
+  async getStorage(guildId: string): Promise<GuildStorageRow | undefined> {
+    const [row] = await this.db.select().from(guildStorage).where(eq(guildStorage.guildId, guildId));
+    return row;
+  }
+
+  /** Connexion (ou reconnexion) : remplace le stockage précédent, garde le dossier choisi. */
+  async setStorage(values: Pick<GuildStorageRow, 'guildId' | 'provider' | 'credentials' | 'account' | 'connectedBy'>): Promise<GuildStorageRow> {
+    const fresh = { ...values, connectedAt: new Date(), lastOkAt: null, lastError: null };
+    const [row] = await this.db.insert(guildStorage).values(fresh).onConflictDoUpdate({ target: guildStorage.guildId, set: fresh }).returning();
+    return row!;
+  }
+
+  async updateStorage(guildId: string, patch: Partial<Pick<GuildStorageRow, 'credentials' | 'folder' | 'lastOkAt' | 'lastError'>>): Promise<void> {
+    await this.db.update(guildStorage).set(patch).where(eq(guildStorage.guildId, guildId));
+  }
+
+  async removeStorage(guildId: string): Promise<void> {
+    await this.db.delete(guildStorage).where(eq(guildStorage.guildId, guildId));
+  }
 
   // ---------------------------------------------------------------- serveurs de résumé
 

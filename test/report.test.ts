@@ -1,6 +1,6 @@
 import { ComponentType, type APIContainerComponent } from 'discord.js';
 import { describe, expect, it } from 'vitest';
-import { MESSAGE_TEXT_BUDGET, renderReport, renderTranscriptMarkdown, resolvePerson, type ReportInput } from '../src/discord/embeds/report.js';
+import { MESSAGE_TEXT_BUDGET, renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput } from '../src/discord/embeds/report.js';
 import { messages } from '../src/i18n/index.js';
 
 const m = messages('fr');
@@ -129,5 +129,16 @@ describe('renderTranscriptMarkdown', () => {
     expect(renderTranscriptMarkdown('Bureau', 'lundi', [{ time: '18:00:05', name: 'Alice', text: 'Bonjour.' }])).toBe(
       '# Transcription — Bureau\n\n*lundi*\n\n**[18:00:05] Alice** : Bonjour.\n',
     );
+  });
+});
+
+describe('renderReportMarkdown', () => {
+  it('fichier lisible hors Discord : titre, sujets dans l’ordre, responsables par leur nom, sans lien ni mention', () => {
+    const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x' }, m);
+    expect(md.startsWith(`# ${m.report.title} · Bureau\n*lundi 12/10 · 42 min · 3 participants*`)).toBe(true);
+    expect(md.indexOf('Budget voté')).toBeLessThan(md.indexOf('Date fixée'));
+    expect(md).toContain('Réserver la salle — Marie-Anne · 📅 vendredi');
+    expect(md).not.toMatch(/<@\d+>|discord\.com|-# /);
+    expect(md.trimEnd().endsWith('*Transcription : vibe-pc · Résumé : qwen3 · 1 passe*')).toBe(true);
   });
 });
