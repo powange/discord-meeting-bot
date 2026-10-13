@@ -118,6 +118,52 @@ services:
       postgres:
         condition: service_healthy
 
+  # Facultatif (COMPOSE_PROFILES=offsite) : copie hors site, chaque nuit après la sauvegarde, des
+  # volumes « backups » et « recordings » vers une destination rclone (NAS, Google Drive…). Les
+  # fichiers supprimés ici sont gardés 30 jours dans <destination>/.supprimes avant d'être effacés.
+  # rclone.conf à créer sur l'hôte (voir le README). « unhealthy » sans copie réussie depuis 26 h.
+  offsite:
+    image: rclone/rclone:1.75.1
+    profiles: [offsite]
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      OFFSITE_AT: ${OFFSITE_AT:-04:30}
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-}
+      OFFSITE_KEEP_DELETED_DAYS: ${OFFSITE_KEEP_DELETED_DAYS:-30}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        [ -n "$$RCLONE_REMOTE" ] || { echo "RCLONE_REMOTE manquant (ex. nas:meeting-bot)" >&2; sleep 3600; exit 1; }
+        copy() {
+          ok=1
+          for dir in backups recordings; do
+            # Garde-fou : un volume vide (recréé par erreur) ne doit jamais vider la copie distante.
+            if [ -z "$$(ls -A /data/$$dir 2>/dev/null)" ]; then echo "/data/$$dir vide : ignoré"; continue; fi
+            rclone sync "/data/$$dir" "$$RCLONE_REMOTE/$$dir" --backup-dir "$$RCLONE_REMOTE/.supprimes/$$(date +%F)/$$dir" --exclude 'tmp/**' --exclude '*.tmp' || ok=0
+          done
+          rclone delete "$$RCLONE_REMOTE/.supprimes" --min-age "$${OFFSITE_KEEP_DELETED_DAYS}d" --rmdirs 2>/dev/null || true
+          if [ $$ok = 1 ]; then date +%s > /tmp/last-ok; echo "copie hors site OK"; else echo "COPIE HORS SITE EN ÉCHEC" >&2; fi
+        }
+        copy
+        while true; do
+          now=$$(date +%s); next=$$(date -d "$$OFFSITE_AT" +%s)
+          [ "$$next" -le "$$now" ] && next=$$((next + 86400))
+          sleep $$((next - now))
+          copy
+        done
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /tmp/last-ok && [ $$(( $$(date +%s) - $$(cat /tmp/last-ok) )) -lt 93600 ]']
+      interval: 30m
+      timeout: 5s
+      start_period: 2h
+    volumes:
+      - backups:/data/backups:ro
+      - recordings:/data/recordings:ro
+      # rclone.conf (créé avec « rclone config », voir le README)
+      - ${RCLONE_CONFIG_DIR:-/srv/meeting-bot/rclone}:/config/rclone
+
   # Facultatif : lancé seulement avec COMPOSE_PROFILES=litellm.
   litellm:
     image: ghcr.io/berriai/litellm:v1.105.0

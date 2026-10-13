@@ -208,7 +208,17 @@ Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migr
   docker compose start bot
   ```
   Le fichier se récupère depuis le volume `backups` (`docker cp <conteneur backup>:/backups/… .`). Les anciennes sauvegardes `.sql.gz` se restaurent avec `gunzip -c … | psql`.
-- **Hors de la machine** : les sauvegardes restent sur le même disque que la base. Les copier ailleurs régulièrement, par exemple avec rclone vers un NAS : `rclone copy /var/lib/docker/volumes/<stack>_backups/_data nas:meeting-bot/backups`. Les fichiers audio sont dans le volume `recordings`, à copier de la même façon si besoin.
+- **Copie hors site automatique** (facultative) : le service `offsite` copie chaque nuit (4 h 30, `OFFSITE_AT`) les volumes `backups` (base) et `recordings` (audio) vers un NAS ou Google Drive avec rclone. C'est un miroir : un fichier supprimé ici (purge de rétention) est gardé 30 jours dans `<destination>/.supprimes/<date>` (`OFFSITE_KEEP_DELETED_DAYS`) avant d'être effacé ; un volume vide n'est jamais recopié (il ne peut pas vider la copie distante). Portainer affiche le conteneur **unhealthy** sans copie réussie depuis 26 h.
+  1. Créer la configuration rclone sur l'hôte (une fois) :
+     ```bash
+     sudo mkdir -p /srv/meeting-bot/rclone
+     docker run --rm -it -v /srv/meeting-bot/rclone:/config/rclone rclone/rclone:1.75.1 config
+     ```
+     - **NAS Synology** : activer SFTP dans DSM (Panneau de configuration → Terminal et SNMP / Services de fichiers), puis dans `rclone config` : nouveau remote `nas`, type `sftp`, hôte, utilisateur et mot de passe du NAS.
+     - **Google Drive** : remote `drive`, type `drive` ; à la question « Use web browser to automatically authenticate? », répondre `n`, lancer la commande `rclone authorize "drive"` proposée sur un PC qui a un navigateur (rclone installé), puis coller le jeton obtenu.
+  2. Dans les variables de la stack : `COMPOSE_PROFILES=offsite` (ou `litellm,offsite` avec LiteLLM) et `RCLONE_REMOTE=nas:meeting-bot` (ou `drive:meeting-bot`) ; facultatifs : `OFFSITE_AT`, `OFFSITE_KEEP_DELETED_DAYS`, `RCLONE_CONFIG_DIR` (dossier de `rclone.conf`, `/srv/meeting-bot/rclone` par défaut).
+  3. Redéployer : une première copie part tout de suite (journal du conteneur `offsite` : « copie hors site OK »).
+  - **Restaurer depuis la copie** : `docker run --rm -v /srv/meeting-bot/rclone:/config/rclone -v $PWD:/restore rclone/rclone:1.75.1 copy nas:meeting-bot/backups /restore`, puis la procédure **Restaurer** ci-dessus avec le fichier `.dump` voulu.
 - **Appels sortants** : avec `AI_ALLOWED_HOSTS`, l'adresse est revérifiée au moment même de la connexion (un nom DNS ne peut pas changer d'adresse entre la vérification et l'appel).
 - **Conteneur** : sans privilèges, système de fichiers en lecture seule (écriture seulement dans `/data` et `/tmp`). Chaque image est analysée par Trivy ; une faille critique corrigeable bloque le déploiement d'une version.
 - **Clés d'API** : définir `APP_SECRET_KEY` (phrase longue et aléatoire) pour qu'elles soient chiffrées en base et dans les sauvegardes. Les clés déjà enregistrées sont chiffrées au démarrage suivant.
