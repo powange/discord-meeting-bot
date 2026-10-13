@@ -6,6 +6,7 @@ import {
   PermissionFlagsBits,
   TextInputBuilder,
   TextInputStyle,
+  type Channel,
   type ChatInputCommandInteraction,
   type ForumChannel,
   type Guild,
@@ -18,7 +19,7 @@ import { encode, type CfgAction } from '../../domain/customId.js';
 import { DURATION_MAX, DURATION_MIN } from '../../domain/meeting.js';
 import { formatOffset, parseOffsets } from '../../domain/reminders.js';
 import type { Messages } from '../../i18n/index.js';
-import { UserError } from '../../lib/errors.js';
+import { errorMessage, UserError } from '../../lib/errors.js';
 import { effectiveLlms, listModels, llmRowToConfig, testLlm, type LlmTest } from '../../services/llmSettings.js';
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
 import { assertUrlAllowed, hostOf } from '../../lib/hosts.js';
@@ -281,7 +282,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const channel = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
       if (!channel || channel.type !== ChannelType.GuildText) return show('alerts');
       await ctx.repos.updateSettings(guildId, { alertChannelId: channel.id });
-      return show('alerts', t.saved);
+      return show('alerts', canPost(channel) ? t.saved : `${t.saved}\n⚠️ ${m.errors.alertChannel}`);
     }
     case 'alertsClear':
       await ctx.repos.updateSettings(guildId, { alertChannelId: null });
@@ -290,9 +291,16 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const channelId = (await ctx.settings.get(guildId)).alertChannelId;
       if (!channelId) return show('alerts');
       const channel = await ctx.client.channels.fetch(channelId).catch(() => null);
-      if (!channel?.isSendable()) return show('alerts', `❌ ${m.errors.alertChannel}`);
-      await channel.send({ content: `🚨 ${t.alertsTestMessage}`, allowedMentions: { parse: [] } });
-      return show('alerts', t.alertsTestSent(channelId));
+      // isSendable() ne regarde que le type de salon : un salon réservé aux modérateurs passe,
+      // puis l'envoi échoue (Missing Access). On vérifie les permissions, et l'envoi lui-même.
+      const sent =
+        channel?.isSendable() &&
+        canPost(channel) &&
+        (await channel.send({ content: `🚨 ${t.alertsTestMessage}`, allowedMentions: { parse: [] } }).then(
+          () => true,
+          (err) => (ctx.log.warn({ guildId, channelId, err: errorMessage(err) }, 'Alerte de test impossible à poster'), false),
+        ));
+      return show('alerts', sent ? t.alertsTestSent(channelId) : `❌ ${m.errors.alertChannel}`);
     }
 
     // ---------------------------------------------------------------- serveurs de résumé
@@ -456,6 +464,13 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
 /** Catégorie du forum des réunions (emplacement par défaut des salons temporaires). */
 function forumParent(guild: Guild, forumId: string | null): string | null {
   return (forumId && guild.channels.cache.get(forumId)?.parentId) || null;
+}
+
+/** Le bot peut-il écrire dans ce salon (voir le salon, y envoyer des messages) ? */
+function canPost(channel: Channel): boolean {
+  if (!('guild' in channel) || !('permissionsFor' in channel)) return true;
+  const me = channel.guild.members.me;
+  return !me || channel.permissionsFor(me).has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]);
 }
 
 /** Permissions qui manquent au bot pour créer des salons dans la catégorie (ou à la racine du serveur). */
