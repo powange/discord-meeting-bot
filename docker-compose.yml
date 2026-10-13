@@ -5,8 +5,13 @@ name: meeting-bot
 
 services:
   bot:
-    image: ghcr.io/powange/meeting-recorder:${BOT_TAG:-latest}
+    # stable : dernière version publiée (git tag v…). Épingler une version : BOT_TAG=1.2.0.
+    # latest suit chaque push sur main : à réserver aux essais.
+    image: ghcr.io/powange/meeting-recorder:${BOT_TAG:-stable}
     restart: unless-stopped
+    # Le bot n'a besoin d'aucun privilège système.
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?DISCORD_TOKEN requis}
       # Mot de passe alphanumérique : il est inséré tel quel dans l'URL.
@@ -33,7 +38,7 @@ services:
     stop_grace_period: 20s
 
   postgres:
-    image: postgres:17
+    image: postgres:17.11
     restart: unless-stopped
     environment:
       POSTGRES_USER: bot
@@ -49,7 +54,7 @@ services:
 
   # Sauvegarde quotidienne de la base (gzip), conservée 14 jours dans le volume « backups ».
   backup:
-    image: postgres:17
+    image: postgres:17.11
     restart: unless-stopped
     environment:
       PGHOST: postgres

@@ -9,14 +9,22 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production DATA_DIR=/data
-# ffmpeg : transcription et mix (phases 3-4)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* \
+# ffmpeg : transcription et mix. pg_dump 17 (dépôt PGDG, Debian n'a que le 15) : sauvegarde
+# automatique avant chaque migration ; il doit être au moins de la version du serveur.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg postgresql-common ca-certificates \
+  && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+  && apt-get install -y --no-install-recommends postgresql-client-17 \
+  && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /data && chown node:node /data
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY drizzle ./drizzle
 COPY package.json ./
+# Version affichée au démarrage et dans /health (renseignées par la CI).
+ARG GIT_SHA=""
+ARG APP_VERSION=""
+ENV GIT_SHA=$GIT_SHA APP_VERSION=$APP_VERSION
 USER node
 # Santé : connexion Discord et base (serveur interne 127.0.0.1:$HEALTH_PORT, non publié).
 ENV HEALTH_PORT=3000

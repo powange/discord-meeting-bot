@@ -151,7 +151,14 @@ Commandes utiles :
 
 ## 3. Déploiement Portainer
 
-L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/meeting-recorder` (tags `latest`, `sha-…` et versions `vX.Y.Z`). La stack se contente de la récupérer.
+L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/meeting-recorder`. La stack se contente de la récupérer.
+
+| Tag | Mis à jour | Usage |
+|---|---|---|
+| `stable` | à chaque version publiée (`git tag v…`) | **production** (valeur par défaut de la stack) |
+| `1.2.0` | une fois, à la publication de cette version | épingler une version, revenir en arrière |
+| `latest` | à chaque push sur `main` | essais |
+| `sha-abc1234` | à chaque build | retrouver un build précis |
 
 1. L'image est publique (elle hérite de la visibilité du dépôt) : Portainer la récupère sans identifiants.
 2. Dans Portainer : *Stacks* → *Add stack* → **Repository**.
@@ -160,12 +167,27 @@ L'image est construite par GitHub Actions et publiée sur `ghcr.io/powange/meeti
    - Variables d'environnement :
      - `DISCORD_TOKEN`
      - `POSTGRES_PASSWORD` (alphanumérique)
-     - optionnelles : `LOG_LEVEL`, `BOT_TAG` (pour épingler une version, ex. `sha-abc1234`), `COMPOSE_PROFILES=litellm` + `LITELLM_MASTER_KEY` (LiteLLM dans la stack)
+     - optionnelles : `LOG_LEVEL`, `BOT_TAG` (`stable` par défaut ; `1.2.0` pour épingler une version), `COMPOSE_PROFILES=litellm` + `LITELLM_MASTER_KEY` (LiteLLM dans la stack)
    - Activer **GitOps updates → Webhook** et cocher **Re-pull image**.
-3. Redéploiement automatique : copier l'URL du webhook Portainer dans le secret GitHub `PORTAINER_WEBHOOK` du dépôt. Chaque push sur `main` déclenche alors tests → image → redéploiement.
+3. Redéploiement automatique : copier l'URL du webhook Portainer dans le secret GitHub `PORTAINER_WEBHOOK` du dépôt. Seule la **publication d'une version** redéploie : un push sur `main` construit l'image `latest` sans toucher à la production, ce qui évite de couper une réunion en cours.
+   ```bash
+   # version du package.json à jour, puis :
+   git tag v1.2.0 && git push origin v1.2.0   # tests → image stable + 1.2.0 → redéploiement
+   ```
+   Choisir un moment sans réunion : le redéploiement interrompt un enregistrement en cours.
 4. Configuration avancée (surcharges par serveur) : déposer un `config.yaml` sur l'hôte, par exemple `/srv/meeting-bot/config/config.yaml`. Décommenter ensuite `CONFIG_PATH` et le volume dans [docker-compose.yml](docker-compose.yml).
 
 Le bot n'expose aucun port : Nginx Proxy Manager n'est pas nécessaire. Les migrations s'appliquent au démarrage, et l'arrêt est propre sur `SIGTERM` : le scheduler s'arrête et les cartes en attente sont mises à jour.
+
+- **Quelle version tourne ?** Le premier message du journal donne la version et le commit (`Démarrage de meeting-recorder`), puis l'application Discord connectée (`Connecté à Discord` : id et nom, pour repérer un token de prod utilisé en dev). `/health` les renvoie aussi.
+- **Une seule instance par base** : un second bot pointé sur la même base (par exemple `npm run dev` avec l'URL de prod) attend 90 s puis s'arrête avec un message clair.
+- **Sauvegarde avant migration** : quand une nouvelle version apporte des migrations, le bot fait d'abord un `pg_dump` dans `/data/backups/pre-migration-….dump` (volume `recordings`, 5 gardées). Si la sauvegarde échoue, il s'arrête sans migrer.
+- **Revenir à la version précédente** : les migrations ne se défont pas. Arrêter la stack, restaurer la sauvegarde d'avant migration, puis redéployer avec `BOT_TAG=<version précédente>` :
+  ```bash
+  docker compose stop bot
+  docker compose cp bot:/data/backups/pre-migration-<date>.dump ./avant.dump   # ou docker cp depuis le volume
+  docker compose exec -T postgres pg_restore -U bot -d meetingbot --clean --if-exists < ./avant.dump
+  ```
 
 ### Supervision et sauvegarde
 

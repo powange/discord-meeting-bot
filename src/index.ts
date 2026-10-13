@@ -1,6 +1,8 @@
+import { join } from 'node:path';
 import { loadConfig } from './config/index.js';
 import type { AppContext } from './context.js';
 import { createDb, runMigrations } from './db/client.js';
+import { acquireInstanceLock, backupBeforeMigrations } from './db/startup.js';
 import { Repositories } from './db/repositories.js';
 import { createClient, Events } from './discord/client.js';
 import { restoreSuppressedEmbeds } from './discord/embedGuard.js';
@@ -8,6 +10,7 @@ import { routeInteraction } from './discord/interactions/router.js';
 import { registerCommands } from './discord/registerCommands.js';
 import { startHealthServer } from './lib/health.js';
 import { createLogger } from './lib/logger.js';
+import { buildInfo } from './lib/version.js';
 import { PipelineService } from './pipeline/runner.js';
 import { createSteps } from './pipeline/steps.js';
 import { Scheduler } from './scheduler/index.js';
@@ -25,8 +28,13 @@ import { SettingsService } from './services/settings.js';
 async function main(): Promise<void> {
   const config = loadConfig();
   const log = createLogger(config.logLevel);
+  const build = buildInfo();
+  log.info({ ...build, env: process.env.NODE_ENV ?? 'development' }, 'Démarrage de meeting-recorder');
 
   const { db, pool } = createDb(config.database.url);
+  // Une seule instance par base, puis sauvegarde avant de toucher au schéma.
+  const instanceLock = await acquireInstanceLock(pool, log);
+  await backupBeforeMigrations(pool, config.database.url, join(config.dataDir, 'backups'), log);
   await runMigrations(db);
   log.info('Migrations appliquées');
 
@@ -44,6 +52,7 @@ async function main(): Promise<void> {
             .catch(() => false),
         }),
         (err) => log.warn({ err: err.message, port: healthPort }, 'Serveur de santé indisponible (le bot continue)'),
+        { ...build },
       )
     : null;
   const repos = new Repositories(db);
@@ -71,7 +80,11 @@ async function main(): Promise<void> {
   await hub.load();
 
   client.once(Events.ClientReady, async (ready) => {
-    log.info({ user: ready.user.tag, guilds: ready.guilds.cache.size }, 'Connecté à Discord');
+    // Application connectée en clair : repère immédiatement un token de prod utilisé en dev (ou l'inverse).
+    log.info(
+      { application: { id: ready.application.id, name: ready.user.username }, user: ready.user.tag, guilds: ready.guilds.cache.size, ...build },
+      'Connecté à Discord',
+    );
     await owners.load(ready, log);
     // Ancien rôle « ne pas m'enregistrer » : ses membres sont repris en base, une fois.
     await optouts.migrateRoles(ready, await repos.listOptoutRoles(), (guildId) => repos.updateSettings(guildId, { optoutRoleId: null }));
@@ -126,6 +139,7 @@ async function main(): Promise<void> {
     await hub.flush().catch(() => undefined);
     await client.destroy();
     health?.close();
+    instanceLock.release();
     await pool.end();
     clearTimeout(force);
     log.info('Arrêté');
