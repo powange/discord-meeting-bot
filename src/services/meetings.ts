@@ -130,28 +130,20 @@ export class MeetingService {
     // Salon remplacé (changement de mode, autre salon choisi) : il n'est plus temporaire, et
     // l'ancien salon temporaire est supprimé. Sinon le nouveau, permanent, le serait en fin de réunion.
     const voiceChanged = input.voiceChannelId !== meeting.voiceChannelId;
-    const patch = voiceChanged && meeting.voiceTemporary ? { ...input, voiceTemporary: false, voiceDeletedAt: null } : input;
+    // Seuls les champs du formulaire : jamais statut, messages ou dates de fin lus avant la saisie.
+    const fields = { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: input.voiceChannelId };
+    const patch = voiceChanged && meeting.voiceTemporary ? { ...fields, voiceTemporary: false, voiceDeletedAt: null } : fields;
     let updated = (await this.repos.updateMeeting(meeting.id, patch))!;
+    // Échéances et événement d'abord : un échec Discord plus bas (post verrouillé, permission)
+    // ne doit pas laisser rappels et début à l'ancienne heure.
+    if (rescheduled) await this.replan(updated, settings);
     if (voiceChanged && meeting.voiceTemporary && meeting.voiceChannelId) await this.dropReplacedVoice(meeting, meeting.voiceChannelId);
-    const thread = await fetchThread(this.client, updated.threadId);
-    if (thread) {
-      await ensureUnarchived(thread);
-      const name = threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
-      if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
-      if (input.startsAt.getTime() !== meeting.startsAt.getTime()) {
-        const when = formatWhen(updated.startsAt, settings.timezone, settings.locale, m.format.when);
-        const startsIn = m.format.startsIn(Math.round((updated.startsAt.getTime() - Date.now()) / 60_000));
-        // Tous ceux qui ont répondu sont prévenus, y compris les absents (la nouvelle date leur convient peut-être).
-        // Ce message tient lieu des rappels qu'un avancement de l'heure aurait fait sauter.
-        const responders = (await this.repos.listRsvps(updated.id)).map((r) => r.userId);
-        await sendWithMentions(thread, m.thread.rescheduled(updated.title, when, startsIn), m.thread.responders, responders);
-      }
-    }
+    const thread = await fetchThread(this.client, updated.threadId).catch(() => null);
     if (updated.status === 'scheduled') {
       const eventId = await this.events.update(guild, updated.scheduledEventId, this.eventData(updated, thread?.url ?? '', m, settings));
       if (eventId !== updated.scheduledEventId) updated = (await this.repos.updateMeeting(updated.id, { scheduledEventId: eventId }))!;
     }
-    if (rescheduled) await this.replan(updated, settings);
+    if (thread) await this.announceUpdate(thread, meeting, updated, settings, m).catch((err) => this.warn(updated, 'Message de modification impossible', err));
     await this.cards.refreshNow(updated.id);
     this.onChange(updated.guildId);
     this.log.info({ meetingId: updated.id, by, rescheduled }, 'Réunion modifiée');
@@ -329,6 +321,20 @@ export class MeetingService {
     this.voiceFailureNotified.delete(updated.id);
     this.log.info({ meetingId: updated.id, channelId: channel.id }, 'Salon vocal temporaire créé');
     return updated;
+  }
+
+  /** Post renommé et, si la date change, message à tous ceux qui ont répondu. */
+  private async announceUpdate(thread: ThreadChannel, before: MeetingRow, updated: MeetingRow, settings: GuildSettingsRow, m: Messages): Promise<void> {
+    await ensureUnarchived(thread);
+    const name = threadName(updated.title, updated.startsAt, settings.timezone, settings.locale);
+    if (thread.name !== name) await thread.setName(name).catch((err) => this.warn(updated, 'Renommage du post impossible', err));
+    if (updated.startsAt.getTime() === before.startsAt.getTime()) return;
+    const when = formatWhen(updated.startsAt, settings.timezone, settings.locale, m.format.when);
+    const startsIn = m.format.startsIn(Math.round((updated.startsAt.getTime() - Date.now()) / 60_000));
+    // Tous ceux qui ont répondu sont prévenus, y compris les absents (la nouvelle date leur convient peut-être).
+    // Ce message tient lieu des rappels qu'un avancement de l'heure aurait fait sauter.
+    const responders = (await this.repos.listRsvps(updated.id)).map((r) => r.userId);
+    await sendWithMentions(thread, m.thread.rescheduled(updated.title, when, startsIn), m.thread.responders, responders);
   }
 
   /** Salon vocal : trouvé, introuvable (supprimé), ou inconnu (erreur passagère de Discord). */

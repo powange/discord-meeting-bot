@@ -134,7 +134,10 @@ export const scheduledJobs = pgTable(
     dueAt: tz().notNull(),
     doneAt: tz(),
     attempts: integer().notNull().default(0),
+    /** Bail d'exécution : l'échéance est en cours de traitement jusqu'à cette date. */
     lockedUntil: tz(),
+    /** Nouvelle tentative après un échec, pas avant cette date (distinct du bail : replanifiable). */
+    retryAt: tz(),
     lastError: text(),
   },
   (t) => [

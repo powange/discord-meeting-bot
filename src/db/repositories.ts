@@ -268,7 +268,7 @@ export class Repositories {
         .values(planned.map((j) => ({ meetingId, kind: j.kind, offsetMin: j.offsetMin, dueAt: j.dueAt })))
         .onConflictDoUpdate({
           target: [scheduledJobs.meetingId, scheduledJobs.kind, scheduledJobs.offsetMin],
-          set: { dueAt: sql`excluded.due_at`, doneAt: null, attempts: 0, lockedUntil: null, lastError: null },
+          set: { dueAt: sql`excluded.due_at`, doneAt: null, attempts: 0, lockedUntil: null, retryAt: null, lastError: null },
         });
     });
   }
@@ -289,6 +289,7 @@ export class Repositories {
          select id from ${scheduledJobs}
           where done_at is null and due_at <= ${now} and attempts < ${maxAttempts}
             and (locked_until is null or locked_until < ${now})
+            and (retry_at is null or retry_at <= ${now})
           order by due_at
           limit ${limit}
           for update skip locked)
@@ -307,7 +308,7 @@ export class Repositories {
     const backoffMs = 60_000 * 2 ** Math.max(0, job.attempts - 1);
     await this.db
       .update(scheduledJobs)
-      .set({ lastError: error.slice(0, 2000), lockedUntil: new Date(now.getTime() + backoffMs) })
+      .set({ lastError: error.slice(0, 2000), lockedUntil: null, retryAt: new Date(now.getTime() + backoffMs) })
       .where(eq(scheduledJobs.id, job.id));
   }
 
@@ -420,6 +421,21 @@ export class Repositories {
   }
 
   /** Réunions dont le traitement n'est pas terminé (reprise au démarrage). */
+  /** Réunions closes avec un enregistrement mais sans compte rendu lancé (arrêt du bot juste après la clôture). */
+  async listEndedWithoutPipeline(): Promise<string[]> {
+    const rows = await this.db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(
+        and(
+          eq(meetings.status, 'ended'),
+          sql`exists (select 1 from ${recordings} where ${recordings.meetingId} = ${meetings.id})`,
+          sql`not exists (select 1 from ${pipelineSteps} where ${pipelineSteps.meetingId} = ${meetings.id})`,
+        ),
+      );
+    return rows.map((r) => r.id);
+  }
+
   async listUnfinishedPipelines(): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ meetingId: pipelineSteps.meetingId })

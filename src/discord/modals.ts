@@ -184,7 +184,8 @@ export function readMeetingModal(
 
   if (!options.reschedulable) {
     if (!options.current) throw new Error('Réunion actuelle requise pour une modification partielle');
-    return { ...options.current, title, description };
+    const { startsAt, durationMin, voiceChannelId } = options.current;
+    return { title, description, startsAt, durationMin, voiceChannelId };
   }
 
   const { startsAt, durationMin: rangeDuration } = readDayAndTime(interaction, m, options.timezone);

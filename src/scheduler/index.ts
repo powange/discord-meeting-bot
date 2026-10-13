@@ -1,4 +1,3 @@
-import { schedule, type ScheduledTask } from 'node-cron';
 import type { AppContext } from '../context.js';
 import type { ScheduledJobRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -14,24 +13,28 @@ const BATCH = 20;
 const MAX_ATTEMPTS = 5;
 
 /**
- * Scheduler interne : un tick node-cron lit en BDD les échéances dues. Rien n'est gardé en
+ * Scheduler interne : un tick périodique lit en BDD les échéances dues. Rien n'est gardé en
  * mémoire, donc un redémarrage ne perd aucun rappel (les échéances manquées sont rattrapées
  * au tick suivant, sauf les rappels devenus inutiles).
  */
 export class Scheduler {
-  private task: ScheduledTask | null = null;
+  private timer: NodeJS.Timeout | null = null;
   private running: Promise<void> | null = null;
+  /** Dernier passage terminé (exposé par /health). */
+  lastTickAt: Date | null = null;
 
   constructor(private readonly ctx: AppContext) {}
 
   start(): void {
-    const every = this.ctx.config.scheduler.tickSeconds;
-    this.task = schedule(`*/${every} * * * * *`, () => this.tick(), { name: 'scheduled-jobs', noOverlap: true });
+    // setInterval plutôt qu'une expression cron : « */45 » dans le champ des secondes ne donne pas
+    // une période de 45 s. tick() ignore un passage si le précédent n'est pas fini.
+    this.timer = setInterval(() => void this.tick(), this.ctx.config.scheduler.tickSeconds * 1000);
     void this.tick();
   }
 
   async stop(): Promise<void> {
-    await this.task?.stop();
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     await this.running;
   }
 
@@ -41,6 +44,7 @@ export class Scheduler {
       .catch((err) => this.ctx.log.error({ err }, 'Tick du scheduler en échec'))
       .finally(() => {
         this.running = null;
+        this.lastTickAt = new Date();
       });
     return this.running;
   }
@@ -108,21 +112,31 @@ export class Scheduler {
     batches.push(...mentionBatches(targets.length > 0 ? `${intro}\n${m.thread.reminderTargets} ` : intro, targets));
 
     if (settings.nudgeRoleId && isNudgeReminder(job.offsetMin, settings.reminderOffsetsMin)) {
-      const guild = await this.ctx.client.guilds.fetch(meeting.guildId);
-      await guild.members.fetch(); // nécessite l'intent privilégié GuildMembers
-      const role = guild.roles.cache.get(settings.nudgeRoleId);
-      const expected = role ? [...role.members.filter((mb) => !mb.user.bot).keys()] : [];
-      const missing = nonResponders(expected, rsvps, [meeting.organizerId]);
-      if (missing.length > 0) batches.push(...mentionBatches(`${m.thread.nudge} `, missing));
+      // La relance est un plus : son échec (intent GuildMembers absent, délai) ne doit pas
+      // empêcher le rappel lui-même.
+      try {
+        const guild = await this.ctx.client.guilds.fetch(meeting.guildId);
+        await guild.members.fetch(); // nécessite l'intent privilégié GuildMembers
+        const role = guild.roles.cache.get(settings.nudgeRoleId);
+        const expected = role ? [...role.members.filter((mb) => !mb.user.bot).keys()] : [];
+        const missing = nonResponders(expected, rsvps, [meeting.organizerId]);
+        if (missing.length > 0) batches.push(...mentionBatches(`${m.thread.nudge} `, missing));
+      } catch (err) {
+        this.ctx.log.warn({ meetingId: meeting.id, err: errorMessage(err) }, 'Relance des non-répondants impossible');
+      }
     }
 
     await ensureUnarchived(thread);
     for (const [i, batch] of batches.entries()) {
-      await thread.send({
+      const send = thread.send({
         content: batch.content,
         allowedMentions: { users: batch.users },
         ...(i === 0 ? { components: joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m) } : {}),
       });
+      // Le premier message est le rappel : son échec fait réessayer l'échéance. Les suivants
+      // (mentions en surplus) ne la font pas réessayer, sinon le premier partirait deux fois.
+      if (i === 0) await send;
+      else await send.catch((err) => this.ctx.log.warn({ meetingId: meeting.id, err: errorMessage(err) }, 'Lot de mentions non envoyé'));
     }
   }
 }

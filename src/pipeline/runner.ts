@@ -124,6 +124,8 @@ export class PipelineService {
       await this.deps.repos.resetSteps(meetingId, running);
       this.enqueue(meetingId);
     }
+    // Clôture juste avant un arrêt du bot : le compte rendu n'avait pas encore été lancé.
+    for (const meetingId of await this.deps.repos.listEndedWithoutPipeline()) await this.processIfNeeded(meetingId);
   }
 
   async stop(): Promise<void> {

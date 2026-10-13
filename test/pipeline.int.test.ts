@@ -197,7 +197,8 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     });
 
     await engine.refresh(meeting.id); // 1er arrêt d'enregistrement
-    await new Promise((r) => setTimeout(r, 50));
+    // Attendre que le premier traitement soit vraiment commencé (pas un délai fixe : sous charge, il peut tarder).
+    for (let i = 0; i < 200 && !calls.includes('mix'); i++) await new Promise((r) => setTimeout(r, 10));
     await engine.refresh(meeting.id); // 2e arrêt pendant le traitement → mise à jour après
     release();
     await waitIdle(engine, meeting.id);

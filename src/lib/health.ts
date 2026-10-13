@@ -3,6 +3,9 @@ import { createServer, type Server } from 'node:http';
 export interface HealthStatus {
   discord: boolean;
   database: boolean;
+  /** Faux si le scheduler (rappels, débuts de réunion) ne tourne pas alors que Discord est prêt. */
+  scheduler?: boolean;
+  lastTickAt?: string | null;
 }
 
 /**
@@ -20,9 +23,9 @@ export function startHealthServer(
     if (req.url !== '/health') return void res.writeHead(404).end();
     const timeout = new Promise<HealthStatus>((resolve) => setTimeout(() => resolve({ discord: false, database: false }), 3000));
     Promise.race([check(), timeout])
-      .catch(() => ({ discord: false, database: false }))
+      .catch((): HealthStatus => ({ discord: false, database: false }))
       .then((status) => {
-        const ok = status.discord && status.database;
+        const ok = status.discord && status.database && status.scheduler !== false;
         res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' }).end(JSON.stringify({ ok, ...status, ...info }));
       });
   });

@@ -50,6 +50,9 @@ async function main(): Promise<void> {
             .query('select 1')
             .then(() => true)
             .catch(() => false),
+          // Un tick manqué pendant 5 minutes une fois Discord prêt : rappels et débuts bloqués.
+          scheduler: !client.isReady() || (scheduler.lastTickAt !== null && Date.now() - scheduler.lastTickAt.getTime() < 300_000),
+          lastTickAt: scheduler.lastTickAt?.toISOString() ?? null,
         }),
         (err) => log.warn({ err: err.message, port: healthPort }, 'Serveur de santé indisponible (le bot continue)'),
         { ...build },
@@ -80,32 +83,42 @@ async function main(): Promise<void> {
   const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));
   await hub.load();
 
+  // Chaque étape d'initialisation est indépendante : une erreur passagère (base, Discord) dans
+  // l'une ne doit pas empêcher les autres, surtout pas le scheduler et la surveillance.
+  const step = async (name: string, fn: () => unknown) => {
+    try {
+      await fn();
+    } catch (err) {
+      log.error({ err, step: name }, 'Étape de démarrage en échec');
+    }
+  };
   client.once(Events.ClientReady, async (ready) => {
     // Application connectée en clair : repère immédiatement un token de prod utilisé en dev (ou l'inverse).
     log.info(
       { application: { id: ready.application.id, name: ready.user.username }, user: ready.user.tag, guilds: ready.guilds.cache.size, ...build },
       'Connecté à Discord',
     );
-    await owners.load(ready, log);
-    // Ancien rôle « ne pas m'enregistrer » : ses membres sont repris en base, une fois.
-    await optouts.migrateRoles(ready, await repos.listOptoutRoles(), (guildId) => repos.updateSettings(guildId, { optoutRoleId: null }));
-    try {
-      await registerCommands(ready, config.discord.commandGuildIds, log);
-    } catch (err) {
-      log.error({ err }, 'Enregistrement des commandes impossible');
-    }
-    await recordings.recoverInterrupted().catch((err) => log.error({ err }, 'Reprise des enregistrements interrompus impossible'));
+    // Les sessions restées « en cours » sont marquées interrompues avant que la surveillance ne tourne.
+    await step('recoverInterrupted', () => recordings.recoverInterrupted());
     scheduler.start();
     watcher.start();
     retention.start();
-    await pipeline.resume().catch((err) => log.error({ err }, 'Reprise des comptes rendus impossible'));
-    hub.startWatchdog();
+    await step('owners', () => owners.load(ready, log));
+    // Ancien rôle « ne pas m'enregistrer » : ses membres sont repris en base, une fois.
+    await step('optoutRoles', async () =>
+      optouts.migrateRoles(ready, await repos.listOptoutRoles(), (guildId) => repos.updateSettings(guildId, { optoutRoleId: null })),
+    );
+    await step('registerCommands', () => registerCommands(ready, config.discord.commandGuildIds, log));
+    await step('pipelineResume', () => pipeline.resume());
+    await step('hubWatchdog', () => hub.startWatchdog());
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
     // des réunions ouvertes, sans notification (simple édition des messages existants).
-    for (const meeting of await repos.listOpenMeetings().catch(() => [])) {
-      cards.refresh(meeting.id);
-      if (meeting.status === 'live') await recordings.syncControl(meeting.id).catch((err) => log.warn({ err }, 'Message de contrôle impossible'));
-    }
+    await step('refreshCards', async () => {
+      for (const meeting of await repos.listOpenMeetings()) {
+        cards.refresh(meeting.id);
+        if (meeting.status === 'live') await recordings.syncControl(meeting.id).catch((err) => log.warn({ err }, 'Message de contrôle impossible'));
+      }
+    });
   });
   client.on(Events.InteractionCreate, (interaction) => void routeInteraction(ctx, interaction));
   client.on(Events.MessageUpdate, (_old, message) => {
@@ -137,7 +150,7 @@ async function main(): Promise<void> {
       pipeline.stop(),
     ]);
     await scheduler.stop().catch(() => undefined);
-    watcher.stop();
+    await watcher.stop();
     await retention.stop().catch(() => undefined);
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);

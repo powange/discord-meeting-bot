@@ -18,7 +18,7 @@ export class MeetingWatcher {
   private readonly lastHumanAt = new Map<string, Date>();
   private readonly startedAt = new Date();
   private timer: NodeJS.Timeout | null = null;
-  private running = false;
+  private running: Promise<void> | null = null;
 
   constructor(
     private readonly client: Client,
@@ -32,13 +32,21 @@ export class MeetingWatcher {
     this.timer = setInterval(() => void this.check(), CHECK_INTERVAL_MS);
   }
 
-  stop(): void {
+  /** Arrête la surveillance et attend le passage en cours (qui peut être en train de clore une réunion). */
+  async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    await this.running;
   }
 
-  async check(now = new Date()): Promise<void> {
-    if (this.running) return;
-    this.running = true;
+  check(now = new Date()): Promise<void> {
+    if (this.running) return this.running;
+    this.running = this.doCheck(now).finally(() => {
+      this.running = null;
+    });
+    return this.running;
+  }
+
+  private async doCheck(now: Date): Promise<void> {
     try {
       const live = await this.repos.listOpenMeetings().then((rows) => rows.filter((r) => r.status === 'live'));
       const liveIds = new Set(live.map((r) => r.id));
@@ -83,8 +91,6 @@ export class MeetingWatcher {
       }
     } catch (err) {
       this.log.error({ err }, 'Surveillance des réunions en échec');
-    } finally {
-      this.running = false;
     }
   }
 }

@@ -17,10 +17,14 @@ describe('shouldCloseForEmpty', () => {
   it('réunion qui déborde : jamais close tant que quelqu’un est là', () => {
     expect(shouldCloseForEmpty({ ...base, humansPresent: 2, lastHumanAt: t('19:30'), now: t('23:00') })).toBe(false);
   });
-  it('dernier participant parti : délai depuis son départ, même avant la fin prévue', () => {
-    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:44') })).toBe(false);
-    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:40'), now: t('18:45') })).toBe(true);
+  it('dernier participant parti après la fin prévue : délai depuis son départ', () => {
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('19:40'), now: t('19:44') })).toBe(false);
     expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('19:40'), now: t('19:45') })).toBe(true);
+  });
+  it('vocal vide avant la fin prévue (passage bref, pause) : jamais close avant la fin prévue + délai', () => {
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:01'), now: t('18:06') })).toBe(false);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:01'), now: t('19:04') })).toBe(false);
+    expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: t('18:01'), now: t('19:05') })).toBe(true);
   });
   it('personne n’est jamais venu : délai depuis la fin prévue (pas depuis le début)', () => {
     expect(shouldCloseForEmpty({ ...base, humansPresent: 0, lastHumanAt: null, now: t('18:10') })).toBe(false);

@@ -14,7 +14,7 @@ const seed = { timezone: 'Europe/Paris', locale: 'fr' as const, reminderOffsetsM
 
 describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
   let db: Db;
-  let pool: { end(): Promise<void> };
+  let pool: { end(): Promise<void>; query(sql: string): Promise<{ rows: Array<{ n: number }> }> };
   let repos: Repositories;
 
   beforeAll(async () => {
@@ -120,6 +120,17 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect((await repos.claimDueJobs(new Date(now.getTime() + 30_000), 10, 5)).filter((j) => j.meetingId === m.id)).toHaveLength(0);
     const retried = (await repos.claimDueJobs(new Date(now.getTime() + 61_000), 10, 5)).filter((j) => j.meetingId === m.id);
     expect(retried.map((j) => [j.attempts, j.lastError])).toEqual([[2, 'boom']]);
+  });
+
+  it('échec en attente de nouvelle tentative : supprimé si on retire ce rappel des réglages', async () => {
+    const m = await newMeeting(new Date(Date.now() + 3_600_000));
+    await repos.replaceJobs(m.id, [{ kind: 'reminder', offsetMin: 90, dueAt: new Date(Date.now() - 1000) }]);
+    const now = new Date();
+    const [job] = (await repos.claimDueJobs(now, 10, 5)).filter((j) => j.meetingId === m.id);
+    await repos.failJob(job!, 'boom', now);
+    await repos.replaceJobs(m.id, []); // délai de 90 min retiré de /config → Rappels
+    const left = await pool.query(`select count(*)::int as n from scheduled_jobs where meeting_id = '${m.id}'`);
+    expect(left.rows[0]?.n).toBe(0);
   });
 
   it('enregistrement : session active, présences, segments', async () => {

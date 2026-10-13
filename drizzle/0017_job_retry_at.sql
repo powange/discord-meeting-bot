@@ -1,0 +1,1 @@
+ALTER TABLE "scheduled_jobs" ADD COLUMN "retry_at" timestamp with time zone;

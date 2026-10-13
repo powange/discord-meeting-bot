@@ -37,7 +37,7 @@ export function correctionTerms(corrections: readonly string[]): string[] {
   const terms: string[] = [];
   for (const correction of corrections) {
     // Retire « et non Paul », « pas Paul », « au lieu de Paul », « plutôt que Paul » (mot suivant compris).
-    const kept = correction.replace(/\b(?:et non|non pas|et pas|pas|au lieu de|au lieu d'|plutôt que|plutôt qu')\s*[«"“]?\s*[\p{L}\p{N}'’-]+(?:\s*[»"”])?/giu, ' ');
+    const kept = correction.replace(/\b(?:(?:et non|non pas|et pas|pas|au lieu de|plutôt que)\s+|(?:au lieu d|plutôt qu)['’]\s*)[«"“]?\s*[\p{L}\p{N}'’-]+(?:\s*[»"”])?/giu, ' ');
     for (const [, quoted] of kept.matchAll(/[«"“]\s*([^»"”]{2,60}?)\s*[»"”]/gu)) terms.push(quoted!);
     for (const [word] of kept.matchAll(/\p{Lu}[\p{L}\p{N}'’-]{2,}/gu)) {
       if (!STOPWORDS.has(word.toLowerCase().replace(/['’].*$/, ''))) terms.push(word);

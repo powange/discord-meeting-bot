@@ -12,6 +12,9 @@ describe('termes tirés des consignes de correction', () => {
     expect(correctionTerms(['Pol et non Paul'])).toEqual(['Pol']);
     expect(correctionTerms(['Il faut écrire Kévin, pas Kevin'])).toEqual(['Kévin']);
     expect(correctionTerms(['Apothicaire au lieu de Apoticaire'])).toEqual(['Apothicaire']);
+    // « pas » en début de mot n'est pas une négation.
+    expect(correctionTerms(['Pascal et non Pascale'])).toEqual(['Pascal']);
+    expect(correctionTerms(["Ophélie au lieu d'Ofélie"])).toEqual(['Ophélie']);
   });
 
   it('termes entre guillemets ; mots courants en début de phrase ignorés', () => {

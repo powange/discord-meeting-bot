@@ -50,6 +50,9 @@ export function shouldCloseForEmpty(input: {
   graceMin: number;
 }): boolean {
   if (input.humansPresent > 0) return false;
-  const since = input.lastHumanAt ?? input.plannedEnd;
+  // Jamais avant la fin prévue : quelqu'un passé brièvement en avance ne doit pas clore la
+  // réunion avant l'arrivée des autres.
+  const last = input.lastHumanAt ?? input.plannedEnd;
+  const since = last > input.plannedEnd ? last : input.plannedEnd;
   return input.now.getTime() - since.getTime() >= input.graceMin * 60_000;
 }
