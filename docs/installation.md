@@ -18,13 +18,13 @@
    ```
    Permissions demandées :
    - Gérer les salons, nécessaire pour créer les tags du forum
-   - Gérer les permissions, pour réserver au bot la création de posts dans le forum (`/config` → Forum des réunions, facultatif)
+   - Gérer les rôles (appelée « Gérer les permissions » dans les réglages d'un salon), pour réserver au bot la création de posts dans le forum (`/config` → Forum des réunions, facultatif)
    - Voir les salons, Envoyer des messages, Envoyer des messages dans les fils
    - Gérer les fils, Gérer les messages (pour garder le post épinglé vide), Intégrer des liens, Joindre des fichiers (audio et transcription du compte rendu), Voir l'historique
    - Créer et gérer les événements
    - Se connecter (enregistrement)
    - Changer le pseudo : le bot s'appelle « 🔴 Enregistrement » pendant une capture
-5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions. Le bouton **🔒 Réserver la création de posts au bot** empêche ensuite les membres de créer des posts à la main ; ils peuvent toujours répondre dans les posts des réunions et utiliser les boutons. Un bot déjà invité avec l'ancien lien n'a pas « Gérer les permissions » : l'ajouter à son rôle, ou l'inviter de nouveau avec ce lien.
+5. Sur le serveur, créer un **salon forum** (ex. `#réunions`) puis le choisir dans `/config` → Forum des réunions. Le bouton **🔒 Réserver la création de posts au bot** empêche ensuite les membres de créer des posts à la main ; ils peuvent toujours répondre dans les posts des réunions et utiliser les boutons. Un bot déjà invité avec l'ancien lien n'a pas cette permission. Le plus sûr est de la lui donner sur le forum seulement : forum → Modifier le salon → Permissions → ajouter le rôle du bot → « Gérer les permissions » ✅. (Au niveau du serveur, elle s'appelle « Gérer les rôles » et permettrait aussi au bot de modifier les rôles placés sous le sien.)
 
 ## 2. Déployer avec Portainer
 

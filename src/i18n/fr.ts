@@ -643,7 +643,7 @@ export const fr = {
     postsReservedDone: '✅ Création de posts réservée au bot. Les membres peuvent toujours répondre dans les posts et cliquer.',
     postsOpenDone: '✅ Les membres peuvent de nouveau créer des posts.',
     postsNeedPermission:
-      "Il me manque la permission « Gérer les permissions » sur ce forum : ajoutez-la à mon rôle (Paramètres du serveur → Rôles), ou invitez-moi de nouveau avec le lien du README.",
+      "Il me manque la permission « Gérer les permissions » sur ce forum. Forum → Modifier le salon → Permissions → ajoutez mon rôle → « Gérer les permissions » ✅ (dans les rôles du serveur, elle s'appelle « Gérer les rôles »).",
     pickAlerts: "Choisir le salon d'alertes…",
     summaryOff: 'désactivé',
     summaryNone: 'aucun modèle configuré',
