@@ -252,6 +252,9 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(uploads[1]!.text).toContain('**[18:00:00] Alice** : Bonjour à tous.');
     expect(uploads[2]!.size).toBeGreaterThan(0);
     expect((await repos.getStorage('g'))?.lastOkAt).toBeInstanceOf(Date);
+    // Réunion à 1 h 30 du matin (heure de Paris) : fichiers datés du jour même, pas de la veille (UTC).
+    const night = { ...ctx, meeting: { ...meeting, startsAt: new Date('2026-10-15T23:30:00Z') } };
+    expect(await steps.export(night)).toMatchObject({ path: 'Asso/2026-10-16 01h30 - Bureau', files: ['compte-rendu-2026-10-16.md', 'transcription-2026-10-16.md', 'reunion-2026-10-15-18h00.ogg'] });
     await repos.removeStorage('g');
     // Étapes terminées : pas de reprise de cette réunion dans les tests suivants.
     for (const row of await repos.listPipeline(meeting.id)) await repos.updateStep(meeting.id, row.step, { status: 'done' });

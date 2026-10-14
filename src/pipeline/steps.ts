@@ -355,7 +355,8 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
   const llmTrace = summary.llmDeployments.length ? summary.llmDeployments.join(', ') : summary.llmModel;
   const summarizeStep = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'summarize');
   const summaryDisabled = summarizeStep?.output?.skipped === true;
-  const day = meeting.startsAt.toISOString().slice(0, 10);
+  // Date de la réunion dans le fuseau du serveur (une réunion à 1 h du matin n'est pas datée de la veille).
+  const day = formatWhen(meeting.startsAt, settings.timezone, settings.locale, 'yyyy-MM-dd');
   const input: ReportInput = {
     title: meeting.title,
     subtitle,
