@@ -332,8 +332,19 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect((await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output).toMatchObject({ master: null, file: 'x.ogg' });
   }, 30_000);
 
+  it('post supprimé à la main : l’arrêt de l’enregistrement ne lance pas de compte rendu', async () => {
+    const meeting = await seedMeeting(); // threadId vidé (post supprimé)
+    const calls: string[] = [];
+    const quick: StepFn = async (ctx) => (ctx.meeting.id === meeting.id && calls.push(ctx.meeting.id), {});
+    const engine = new PipelineService(deps(), { mix: quick, transcribe: quick, summarize: quick, publish: quick, export: quick });
+    await engine.refresh(meeting.id);
+    await engine.processIfNeeded(meeting.id);
+    expect(engine.isQueued(meeting.id)).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it('arrêt d’enregistrement : mise à jour enchaînée si un traitement tourne ; clôture sans doublon', async () => {
-    const meeting = await seedMeeting();
+    const meeting = (await repos.updateMeeting((await seedMeeting()).id, { threadId: 'thread-refresh' }))!; // un post où publier (sinon rien n'est traité)
     const calls: string[] = [];
     let release!: () => void;
     let gate: Promise<void> | null = new Promise((r) => (release = r));

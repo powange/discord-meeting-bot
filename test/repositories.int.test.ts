@@ -35,6 +35,22 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
     expect(s2.timezone).toBe('Europe/Brussels');
   });
 
+  it('derniers comptes rendus : sans ceux dont le post a été supprimé ; posts à vérifier au démarrage', async () => {
+    const make = async (title: string, threadId: string | null, status: 'ended' | 'scheduled', endedDaysAgo = 1) => {
+      const mt = await repos.insertMeeting({ guildId: 'rr', organizerId: 'o', title, startsAt: new Date('2026-10-01T16:00:00Z'), durationMin: 60, voiceChannelId: 'v' });
+      await repos.updateMeeting(mt.id, { threadId, status, endedAt: status === 'ended' ? new Date(Date.now() - endedDaysAgo * 86_400_000) : null });
+      await repos.ensurePipeline(mt.id);
+      await repos.updateStep(mt.id, 'publish', { status: 'done', output: { url: `https://discord.com/x/${title}` } });
+      return mt;
+    };
+    await make('gardé', 't1', 'ended');
+    await make('post supprimé', null, 'ended');
+    await make('ancien', 't3', 'ended', 60);
+    await make('à venir', 't4', 'scheduled');
+    expect((await repos.listRecentReports('rr', 10)).map((r) => r.title).sort()).toEqual(['ancien', 'gardé', 'à venir']);
+    expect((await repos.listMeetingsWithThread(30)).filter((x) => x.guildId === 'rr').map((x) => x.title).sort()).toEqual(['gardé', 'à venir']);
+  });
+
   it('transition conditionnelle', async () => {
     const m = await newMeeting();
     expect(await repos.transitionMeeting(m.id, ['scheduled'], 'live')).toMatchObject({ status: 'live' });

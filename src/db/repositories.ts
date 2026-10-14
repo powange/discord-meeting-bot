@@ -148,6 +148,19 @@ export class Repositories {
     return row;
   }
 
+  /** Réunions dont le post est à vérifier au démarrage : ouvertes, ou closes depuis moins de `days` jours. */
+  async listMeetingsWithThread(days: number): Promise<MeetingRow[]> {
+    return this.db
+      .select()
+      .from(meetings)
+      .where(
+        and(
+          isNotNull(meetings.threadId),
+          or(inArray(meetings.status, ['scheduled', 'live', 'polling']), sql`${meetings.endedAt} > now() - make_interval(days => ${days})`),
+        ),
+      );
+  }
+
   async getMeetingByThread(threadId: string): Promise<MeetingRow | undefined> {
     const [row] = await this.db.select().from(meetings).where(eq(meetings.threadId, threadId));
     return row;
@@ -533,7 +546,8 @@ export class Repositories {
       .select({ title: meetings.title, startsAt: meetings.startsAt, output: pipelineSteps.output })
       .from(pipelineSteps)
       .innerJoin(meetings, eq(meetings.id, pipelineSteps.meetingId))
-      .where(and(eq(meetings.guildId, guildId), eq(pipelineSteps.step, 'publish'), eq(pipelineSteps.status, 'done')))
+      // Post supprimé à la main (threadId vidé) : plus de lien vers ce compte rendu.
+      .where(and(eq(meetings.guildId, guildId), isNotNull(meetings.threadId), eq(pipelineSteps.step, 'publish'), eq(pipelineSteps.status, 'done')))
       .orderBy(sql`${meetings.startsAt} desc`)
       .limit(limit);
     return rows.flatMap((r) => (typeof r.output?.url === 'string' && r.output.url ? [{ title: r.title, startsAt: r.startsAt, url: r.output.url }] : []));

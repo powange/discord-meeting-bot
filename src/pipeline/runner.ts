@@ -96,7 +96,9 @@ export class PipelineService {
     if (!covered) await this.refresh(meetingId);
   }
 
-  private hasSpeech(meetingId: string): Promise<boolean> {
+  /** Quelque chose à traiter : de la parole enregistrée, et un post où publier (pas supprimé à la main). */
+  private async hasSpeech(meetingId: string): Promise<boolean> {
+    if (!(await this.deps.repos.getMeeting(meetingId))?.threadId) return false;
     return this.deps.repos.hasSpeech(meetingId);
   }
 

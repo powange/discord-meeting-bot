@@ -130,6 +130,10 @@ async function main(): Promise<void> {
     await step('hubWatchdog', () => hub.startWatchdog());
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
     // des réunions ouvertes, sans notification (simple édition des messages existants).
+    await step('deletedThreads', async () => {
+      const removed = await meetings.checkDeletedThreads();
+      if (removed > 0) log.info({ removed }, 'Posts de réunion supprimés pendant l’arrêt du bot : réunions mises à jour');
+    });
     await step('refreshCards', async () => {
       for (const meeting of await repos.listOpenMeetings()) {
         cards.refresh(meeting.id);

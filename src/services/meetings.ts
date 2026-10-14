@@ -444,10 +444,35 @@ export class MeetingService {
     return true;
   }
 
-  /** Post supprimé à la main : la réunion est annulée sans rien publier. */
+  /**
+   * Post supprimé à la main : le bot l'oublie (plus de lien dans le post épinglé, plus de compte
+   * rendu à y publier), et une réunion encore ouverte est annulée sans rien publier.
+   */
   async onThreadDeleted(threadId: string): Promise<void> {
     const meeting = await this.repos.getMeetingByThread(threadId);
-    if (meeting) await this.cancel(meeting.id, this.client.user?.id ?? 'system', null, { silent: true });
+    if (!meeting) return;
+    // D'abord : l'arrêt d'un enregistrement en cours ne lance alors pas de compte rendu sans post.
+    await this.repos.updateMeeting(meeting.id, { threadId: null, agendaMessageId: null, controlMessageId: null, liveMessageId: null });
+    this.log.info({ meetingId: meeting.id, threadId }, 'Post de réunion supprimé');
+    if (!(await this.cancel(meeting.id, this.client.user?.id ?? 'system', null, { silent: true }))) this.onChange(meeting.guildId);
+  }
+
+  /**
+   * Au démarrage : posts supprimés pendant que le bot était éteint (Discord ne renvoie pas
+   * l'événement). Réunions ouvertes, ou closes depuis moins de 30 jours (liste des comptes rendus).
+   */
+  async checkDeletedThreads(): Promise<number> {
+    let removed = 0;
+    for (const meeting of await this.repos.listMeetingsWithThread(30)) {
+      try {
+        if (await fetchThread(this.client, meeting.threadId)) continue;
+      } catch {
+        continue; // erreur passagère (réseau, droits) : on ne conclut rien
+      }
+      await this.onThreadDeleted(meeting.threadId!);
+      removed++;
+    }
+    return removed;
   }
 
   /** Active ou désactive l'enregistrement automatique d'une réunion. */
