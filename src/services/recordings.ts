@@ -483,7 +483,7 @@ export class RecordingService {
     // Même état : le message est mis à jour sur place (point en cours, notes…).
     if (current && (meeting.controlState === key || meeting.controlState === null) && key !== 'closed') {
       await ensureUnarchived(thread);
-      await current.edit({ ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] } });
+      await current.edit({ content: null, ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] } });
       if (meeting.controlState === null) await this.repos.updateMeeting(meetingId, { controlState: key });
       return;
     }
@@ -492,7 +492,7 @@ export class RecordingService {
       await ensureUnarchived(thread);
       if (meeting.controlState === null) await current.edit({ content: m.control.closed, components: [], allowedMentions: { parse: [] } }).catch(() => undefined); // message d'avant cette version
       else if (meeting.controlState === 'idle') await current.delete().catch((err) => this.warn(meetingId, 'Suppression du contrôle impossible', err));
-      else await current.edit({ ...(await this.controlPayload(meeting.guildId, meetingId, meeting.controlState!, m, true)), allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Contrôle figé impossible', err));
+      else await current.edit({ content: null, ...(await this.controlPayload(meeting.guildId, meetingId, meeting.controlState!, m, true)), allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Contrôle figé impossible', err));
     }
     if (key === 'closed') {
       if (meeting.controlMessageId) await this.repos.updateMeeting(meetingId, { controlMessageId: null, controlState: 'closed' });
@@ -540,7 +540,7 @@ export class RecordingService {
     const current = meeting.liveMessageId ? await thread.messages.fetch(meeting.liveMessageId).catch(() => null) : null;
     await ensureUnarchived(thread);
     if (current) {
-      await current.edit(payload).catch((err) => this.warn(meetingId, 'Suivi de l’ordre du jour non mis à jour', err));
+      await current.edit({ content: null, ...payload }).catch((err) => this.warn(meetingId, 'Suivi de l’ordre du jour non mis à jour', err));
       if (!recording) await this.repos.updateMeeting(meetingId, { liveMessageId: null });
       return;
     }

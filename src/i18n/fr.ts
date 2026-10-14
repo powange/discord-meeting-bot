@@ -194,13 +194,28 @@ export const fr = {
   },
 
   control: {
-    idle: "🎙️ **Enregistrement non démarré** · l'organisateur ou un gestionnaire peut le lancer.",
     recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}.`,
     closed: '🎙️ Réunion close : enregistrement terminé.',
-    recorded: (by: string | null, from: string, to: string | null) => `🎙️ Enregistré de ${from}${to ? ` à ${to}` : ''} · ${by ? `lancé par ${by}` : 'démarrage automatique'}`,
     currentPoint: (position: number, title: string, since: string) => `▶️ Point en cours : **${position}. ${title}** (depuis ${since})`,
     offAgenda: (since: string) => `▶️ Ordre du jour terminé : sujets hors ordre du jour (depuis ${since})`,
-    liveTitle: "📋 **Suivi de l'ordre du jour**",
+    liveTitle: "📋 Suivi de l'ordre du jour",
+    /** Embeds du message à boutons de l'enregistrement. */
+    embed: {
+      idleTitle: '🎙️ Enregistrement non démarré',
+      idle: "L'organisateur ou un gestionnaire peut le lancer : une piste audio par participant, pour rédiger le compte rendu.",
+      recTitle: '⚠️ Cette réunion est enregistrée',
+      rec: (by: string | null, since: string) =>
+        `${by ? `Lancé par **${by}**` : 'Démarrage automatique'} à ${since}.\nUne piste audio par participant, uniquement pour rédiger le compte rendu.`,
+      recFooter: "Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » : votre présence reste notée, pas votre voix.",
+      recordedTitle: '🎙️ Enregistrement terminé',
+      recorded: (by: string | null, from: string, to: string | null) => `De ${from}${to ? ` à ${to}` : ''} · ${by ? `lancé par ${by}` : 'démarrage automatique'}`,
+      stoppedTitle: '⏹️ Enregistrement arrêté',
+      stopped: (by: string | null, reason: string) => (by ? `Par **${by}**.` : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`),
+      interruptedTitle: '⚠️ Enregistrement interrompu',
+      interrupted: (reason: string) => `${reason.charAt(0).toUpperCase()}${reason.slice(1)}. Les prises de parole déjà captées sont conservées.`,
+      resumeHint: "« Reprendre l'enregistrement » ouvre une nouvelle session ; le compte rendu les réunit toutes.",
+      liveFooter: 'Les repères et les notes sont repris dans le compte rendu.',
+    },
     noPointYet: '▶️ Au début du premier point, cliquez sur « Point suivant » : le compte rendu suivra vos repères.',
     noPointSet: '▶️ Aucun repère posé.',
     noAgenda: '📝 Pas d’ordre du jour : notez les décisions et actions au fil de la réunion.',
@@ -227,7 +242,6 @@ export const fr = {
       `⚠️ **Cette réunion est enregistrée** ${by ? `· lancé par ${by}` : '· démarrage automatique'}\n` +
       'Une piste audio par participant, uniquement pour rédiger le compte rendu.\n' +
       "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » : votre présence reste notée, pas votre voix.",
-    interruptedShort: (reason: string) => `⚠️ **Enregistrement interrompu** · ${reason}\n-# Les prises de parole déjà captées sont conservées.`,
     stopped: (by: string | null, reason: string) => `⏹️ **Enregistrement arrêté** · ${by ? `par ${by}` : reason}`,
     arrival: (userId: string) =>
       `⚠️ <@${userId}>, cette réunion est **enregistrée** : une piste audio par participant, pour rédiger le compte rendu.\n` +

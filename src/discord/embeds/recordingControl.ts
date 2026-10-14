@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, type APIEmbed } from 'discord.js';
 import { encode } from '../../domain/customId.js';
 import { currentPoint, nextPoint, type Marker } from '../../domain/markers.js';
 import { discordTimestamp } from '../../domain/time.js';
@@ -6,8 +6,9 @@ import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
 import { consentButton } from './meetingManager.js';
 
+/** Message en embed (comme la carte et l'ordre du jour) ; le texte brut est vidé à l'édition. */
 export interface ControlMessage {
-  content: string;
+  embeds: APIEmbed[];
   components: Array<ReturnType<ActionRowBuilder<ButtonBuilder>['toJSON']> | ReturnType<ActionRowBuilder<StringSelectMenuBuilder>['toJSON']>>;
 }
 
@@ -32,6 +33,14 @@ export const OFF_AGENDA = 'off';
 /** Raisons d'arrêt qui sont des interruptions (une reprise est attendue). */
 export const INTERRUPTIONS: readonly string[] = ['shutdown', 'disconnected', 'crash'];
 
+/** Couleurs : en cours (rouge), suivi (bleu), arrêté (vert), interrompu (orange), passé (gris). */
+const COLORS = { rec: 0xed4245, live: 0x5865f2, stopped: 0x57f287, interrupted: 0xe67e22, past: 0x99aab5 } as const;
+const embed = (title: string, description: string, color: number, footer?: string) => {
+  const e = new EmbedBuilder().setTitle(title).setDescription(description).setColor(color);
+  if (footer) e.setFooter({ text: footer });
+  return e.toJSON();
+};
+
 const recordButton = (meetingId: string, label: string) =>
   new ButtonBuilder().setCustomId(encode({ type: 'rec.start', meetingId })).setLabel(label).setEmoji('🔴').setStyle(ButtonStyle.Primary);
 
@@ -40,24 +49,33 @@ const recordButton = (meetingId: string, label: string) =>
  * récent est affiché plus bas), sans boutons.
  */
 export function renderRecordingControl(meetingId: string, state: ControlState, m: Messages, frozen = false): ControlMessage {
-  const c = m.control;
+  const e = m.control.embed;
   if (state.kind === 'idle') {
-    return { content: c.idle, components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.record)).toJSON()] };
+    return {
+      embeds: [embed(e.idleTitle, e.idle, COLORS.past)],
+      components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.record)).toJSON()],
+    };
   }
 
   if (state.kind === 'stopped') {
-    const content = state.interrupted ? m.recording.interruptedShort(state.reason) : m.recording.stopped(state.stoppedBy, state.reason);
-    return { content, components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.resumeRecording)).toJSON()] };
+    const shown = state.interrupted
+      ? embed(e.interruptedTitle, e.interrupted(state.reason), frozen ? COLORS.past : COLORS.interrupted, frozen ? undefined : e.resumeHint)
+      : embed(e.stoppedTitle, e.stopped(state.stoppedBy, state.reason), frozen ? COLORS.past : COLORS.stopped, frozen ? undefined : e.resumeHint);
+    return { embeds: [shown], components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.resumeRecording)).toJSON()] };
   }
 
   if (frozen) {
-    return { content: c.recorded(state.startedBy, discordTimestamp(state.startedAt, 't'), state.endedAt ? discordTimestamp(state.endedAt, 't') : null), components: [] };
+    const to = state.endedAt ? discordTimestamp(state.endedAt, 't') : null;
+    return { embeds: [embed(e.recordedTitle, e.recorded(state.startedBy, discordTimestamp(state.startedAt, 't'), to), COLORS.past)], components: [] };
   }
 
   // En cours : l'avertissement, avec Arrêter et « Mon choix d'enregistrement ». Le suivi de l'ordre
   // du jour est dans un message à part, juste en dessous (renderLiveControl).
   const stop = new ButtonBuilder().setCustomId(encode({ type: 'rec.stop', meetingId })).setLabel(m.buttons.stopRecording).setEmoji('⏹️').setStyle(ButtonStyle.Danger);
-  return { content: m.recording.announce(state.startedBy), components: [new ActionRowBuilder<ButtonBuilder>().addComponents(stop, consentButton(m)).toJSON()] };
+  return {
+    embeds: [embed(e.recTitle, e.rec(state.startedBy, discordTimestamp(state.startedAt, 't')), COLORS.rec, e.recFooter)],
+    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(stop, consentButton(m)).toJSON()],
+  };
 }
 
 /**
@@ -68,7 +86,7 @@ export function renderRecordingControl(meetingId: string, state: ControlState, m
 export function renderLiveControl(meetingId: string, live: LiveState, m: Messages, frozen = false): ControlMessage {
   const c = m.control;
   const { agenda, markers } = live;
-  const lines = [c.liveTitle];
+  const lines: string[] = [];
   const current = currentPoint(markers);
   if (agenda.length) {
     if (!current) lines.push(frozen ? c.noPointSet : c.noPointYet);
@@ -82,7 +100,8 @@ export function renderLiveControl(meetingId: string, live: LiveState, m: Message
   }
   const notes = markers.filter((mk) => mk.kind !== 'agenda').length;
   if (notes) lines.push(c.notes(notes));
-  if (frozen) return { content: lines.join('\n'), components: [] };
+  const shown = embed(c.liveTitle, lines.join('\n') || c.noPointSet, frozen ? COLORS.past : COLORS.live, frozen ? undefined : c.embed.liveFooter);
+  if (frozen) return { embeds: [shown], components: [] };
 
   const actions = new ActionRowBuilder<ButtonBuilder>();
   if (agenda.length) {
@@ -112,5 +131,5 @@ export function renderLiveControl(meetingId: string, live: LiveState, m: Message
       );
     rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select).toJSON());
   }
-  return { content: lines.join('\n'), components: rows };
+  return { embeds: [shown], components: rows };
 }
