@@ -197,6 +197,7 @@ export const fr = {
     idle: "🎙️ **Enregistrement non démarré** · l'organisateur ou un gestionnaire peut le lancer.",
     recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}.`,
     closed: '🎙️ Réunion close : enregistrement terminé.',
+    recorded: (by: string | null, from: string, to: string | null) => `🎙️ Enregistré de ${from}${to ? ` à ${to}` : ''} · ${by ? `lancé par ${by}` : 'démarrage automatique'}`,
     currentPoint: (position: number, title: string, since: string) => `▶️ Point en cours : **${position}. ${title}** (depuis ${since})`,
     offAgenda: (since: string) => `▶️ Ordre du jour terminé : sujets hors ordre du jour (depuis ${since})`,
     noPointYet: '▶️ Au début du premier point, cliquez sur « Point suivant » : le compte rendu suivra vos repères.',
@@ -222,6 +223,7 @@ export const fr = {
       `⚠️ **Cette réunion est enregistrée** ${by ? `· lancé par ${by}` : '· démarrage automatique'}\n` +
       'Une piste audio par participant, uniquement pour rédiger le compte rendu.\n' +
       "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » : votre présence reste notée, pas votre voix.",
+    interruptedShort: (reason: string) => `⚠️ **Enregistrement interrompu** · ${reason}\n-# Les prises de parole déjà captées sont conservées.`,
     stopped: (by: string | null, reason: string) => `⏹️ **Enregistrement arrêté** · ${by ? `par ${by}` : reason}`,
     arrival: (userId: string) =>
       `⚠️ <@${userId}>, cette réunion est **enregistrée** : une piste audio par participant, pour rédiger le compte rendu.\n` +
@@ -241,6 +243,7 @@ export const fr = {
     retry: 'Réessayer',
     started_reply: 'Enregistrement démarré.',
     stopped_reply: 'Enregistrement arrêté.',
+    alreadyStopped: "L'enregistrement était déjà arrêté (le bot a peut-être redémarré). Le message est à jour : « Reprendre l'enregistrement » relance une session.",
     autoSet: (on: boolean) =>
       on ? 'Enregistrement automatique activé pour cette réunion.' : 'Enregistrement automatique désactivé pour cette réunion.',
   },

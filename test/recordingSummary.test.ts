@@ -1,4 +1,4 @@
-import { ButtonBuilder, ButtonStyle, ComponentType, type APIContainerComponent } from 'discord.js';
+import { ComponentType, type APIContainerComponent } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 import { bar, participantStats, renderRecordingSummary, type SummaryInput } from '../src/discord/embeds/recordingSummary.js';
 import { messages } from '../src/i18n/index.js';
@@ -73,12 +73,11 @@ describe('renderRecordingSummary', () => {
     expect(t.match(/audio possiblement incomplet/g)).toHaveLength(1);
   });
 
-  it('interrompu : couleur orange, message et bouton de reprise', () => {
-    const button = new ButtonBuilder().setCustomId('x').setLabel('Reprendre').setStyle(ButtonStyle.Primary);
-    const c = renderRecordingSummary(input, { meetingTitle: 'Bureau', interrupted: true, resumeButton: button }, m);
+  it('interrompu : couleur orange et message ; pas de bouton (la reprise est sur le message à boutons, en bas)', () => {
+    const c = renderRecordingSummary(input, { meetingTitle: 'Bureau', interrupted: true }, m);
     expect(c.accent_color).toBe(0xe67e22);
     expect(texts(c).join('\n')).toContain('🟠 Interrompu');
-    expect(c.components.some((x) => x.type === ComponentType.ActionRow)).toBe(true);
+    expect(c.components.some((x) => x.type === ComponentType.ActionRow)).toBe(false);
   });
 
   it('beaucoup de participants : texte total sous 4000 caractères', () => {

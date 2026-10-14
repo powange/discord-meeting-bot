@@ -15,7 +15,7 @@ import {
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
-import { renderRecordingControl } from '../discord/embeds/recordingControl.js';
+import { INTERRUPTIONS, renderRecordingControl, type ControlState } from '../discord/embeds/recordingControl.js';
 import { consentButton } from '../discord/embeds/meetingManager.js';
 import { renderRecordingSummary } from '../discord/embeds/recordingSummary.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -198,7 +198,7 @@ export class RecordingService {
     }
 
     this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
-    await this.announceStart(meeting, settings, m, channel, by);
+    await this.announceStart(meeting, m, channel, by);
     this.cards.refresh(meeting.id, ['card']);
     await this.syncControl(meeting.id);
     this.watchDisk();
@@ -271,36 +271,29 @@ export class RecordingService {
     }, DISK_CHECK_MS).unref();
   }
 
-  /** Avertissement RGPD dans le post et dans le chat du salon vocal (lu par ceux qui y sont). */
-  private async announceStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, channel: VoiceBasedChannel, by: string | null) {
+  /**
+   * Avertissement dans le chat du salon vocal (lu par ceux qui y sont). Dans le post, c'est le
+   * message à boutons de l'enregistrement qui le porte.
+   */
+  private async announceStart(meeting: MeetingRow, m: Messages, channel: VoiceBasedChannel, by: string | null) {
     const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
-    const text = m.recording.announce(byName);
     const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()];
-    const thread = await fetchThread(this.client, meeting.threadId);
-    if (thread) {
-      await ensureUnarchived(thread);
-      await thread.send({ content: text, components, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (post) impossible', err));
-    }
     if (channel.isTextBased()) {
-      await channel.send({ content: text, components, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Avertissement (chat vocal) impossible', err));
+      await channel
+        .send({ content: m.recording.announce(byName), components, allowedMentions: { parse: [] } })
+        .catch((err) => this.warn(meeting.id, 'Avertissement (chat vocal) impossible', err));
     }
   }
 
-  /** Fin de l'enregistrement annoncée dans le post et dans le chat du salon vocal. */
+  /** Fin de l'enregistrement annoncée dans le chat du salon vocal (dans le post : message à boutons). */
   private async announceStop(guildId: string, channelId: string, meetingId: string, reason: StopReason, by?: string): Promise<void> {
-    const meeting = await this.repos.getMeeting(meetingId);
-    if (!meeting) return;
     const m = await this.settings.messages(guildId);
     const byName = reason === 'manual' && by ? await displayName(this.client, guildId, by) : null;
-    const text = m.recording.stopped(byName, m.recording.reasons[reason] ?? reason);
-    const thread = await fetchThread(this.client, meeting.threadId);
-    if (thread) {
-      await ensureUnarchived(thread);
-      await thread.send({ content: text, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications }).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (post) impossible', err));
-    }
     const channel = this.client.channels.cache.get(channelId);
     if (channel?.isTextBased() && 'send' in channel) {
-      await channel.send({ content: text, allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (chat vocal) impossible', err));
+      await channel
+        .send({ content: m.recording.stopped(byName, m.recording.reasons[reason] ?? reason), allowedMentions: { parse: [] } })
+        .catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (chat vocal) impossible', err));
     }
   }
 
@@ -323,6 +316,7 @@ export class RecordingService {
       endedAt,
       status: interrupted ? 'interrupted' : 'stopped',
       stopReason: reason,
+      stoppedBy: reason === 'manual' ? (by ?? null) : null,
     });
     this.log.info({ meetingId, recordingId: entry.recordingId, reason }, 'Enregistrement arrêté');
 
@@ -469,34 +463,61 @@ export class RecordingService {
   private async doSyncControl(meetingId: string): Promise<void> {
     const meeting = await this.repos.getMeeting(meetingId);
     if (!meeting?.threadId) return;
-    const recording = await this.repos.getActiveRecording(meetingId);
-    const m = await this.settings.messages(meeting.guildId);
-    // Pendant l'enregistrement : point en cours et notes prises en direct.
-    const live = recording
-      ? { agenda: (await this.repos.listAgenda(meetingId)).map((a) => ({ id: a.id, title: a.title })), markers: await this.repos.listMarkers(meetingId) }
-      : undefined;
-    const payload = renderRecordingControl(meeting, recording?.startedAt ?? null, m, live);
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!thread) return;
+    const m = await this.settings.messages(meeting.guildId);
+    const sessions = await this.repos.listRecordingsForMeeting(meetingId);
+    const active = sessions.find((r) => r.status === 'recording');
+    const last = sessions.at(-1);
+    const key = !isOpen(meeting.status) ? 'closed' : active ? `rec:${active.id}` : last ? `stopped:${last.id}` : 'idle';
 
-    if (meeting.controlMessageId) {
-      const message = await thread.messages.fetch(meeting.controlMessageId).catch(() => null);
-      if (message) {
-        await ensureUnarchived(thread);
-        await message.edit({ ...payload, allowedMentions: { parse: [] } });
+    const current = meeting.controlMessageId ? await thread.messages.fetch(meeting.controlMessageId).catch(() => null) : null;
+    // Même état : le message est mis à jour sur place (point en cours, notes…).
+    if (current && (meeting.controlState === key || meeting.controlState === null) && key !== 'closed') {
+      await ensureUnarchived(thread);
+      await current.edit({ ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] } });
+      if (meeting.controlState === null) await this.repos.updateMeeting(meetingId, { controlState: key });
+      return;
+    }
+    // Nouvel état : l'ancien message perd ses boutons (« non démarré » est supprimé), un nouveau est publié en bas.
+    if (current) {
+      await ensureUnarchived(thread);
+      if (meeting.controlState === null) await current.edit({ content: m.control.closed, components: [], allowedMentions: { parse: [] } }).catch(() => undefined); // message d'avant cette version
+      else if (meeting.controlState === 'idle') await current.delete().catch((err) => this.warn(meetingId, 'Suppression du contrôle impossible', err));
+      else await current.edit({ ...(await this.controlPayload(meeting.guildId, meetingId, meeting.controlState!, m, true)), allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Contrôle figé impossible', err));
+    }
+    if (key === 'closed') {
+      if (meeting.controlMessageId) await this.repos.updateMeeting(meetingId, { controlMessageId: null, controlState: 'closed' });
+      return;
+    }
+    if (key === 'idle') {
+      // « Non démarré » n'apparaît qu'une fois la réunion « En cours » avec quelqu'un dans le vocal.
+      const channel = meeting.voiceChannelId ? this.client.channels.cache.get(meeting.voiceChannelId) : undefined;
+      const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
+      if (meeting.status !== 'live' || humans === 0) {
+        if (current) await this.repos.updateMeeting(meetingId, { controlMessageId: null, controlState: null });
         return;
       }
-      // Supprimé à la main : on le republie si c'est encore utile.
     }
-
-    if (!isOpen(meeting.status) || !meeting.voiceChannelId) return;
-    const channel = this.client.channels.cache.get(meeting.voiceChannelId);
-    const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
-    const wanted = recording !== undefined || (meeting.status === 'live' && humans > 0);
-    if (!wanted) return;
     await ensureUnarchived(thread);
-    const message = await thread.send({ ...payload, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
-    await this.repos.updateMeeting(meetingId, { controlMessageId: message.id });
+    const message = await thread.send({ ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
+    await this.repos.updateMeeting(meetingId, { controlMessageId: message.id, controlState: key });
+  }
+
+  /** Contenu du message à boutons pour un état (« idle », « rec:<session> », « stopped:<session> »). */
+  private async controlPayload(guildId: string, meetingId: string, key: string, m: Messages, frozen = false) {
+    const [kind, recordingId] = key.split(':') as [string, string | undefined];
+    const session = recordingId ? (await this.repos.listRecordingsForMeeting(meetingId)).find((r) => r.id === recordingId) : undefined;
+    const name = (id: string | null) => (id ? displayName(this.client, guildId, id) : Promise.resolve(null));
+    let state: ControlState = { kind: 'idle' };
+    if (kind === 'rec' && session) {
+      const live = frozen ? undefined : { agenda: (await this.repos.listAgenda(meetingId)).map((a) => ({ id: a.id, title: a.title })), markers: await this.repos.listMarkers(meetingId) };
+      state = { kind: 'rec', startedAt: session.startedAt, endedAt: session.endedAt, startedBy: await name(session.startedBy), ...(live ? { live } : {}) };
+    } else if (kind === 'stopped' && session) {
+      const reason = session.stopReason ?? 'manual';
+      state = { kind: 'stopped', stoppedBy: await name(session.stoppedBy), reason: m.recording.reasons[reason] ?? reason, interrupted: INTERRUPTIONS.includes(reason) };
+    }
+    return renderRecordingControl(meetingId, state, m, frozen);
   }
 
   private shouldRecord(guild: Guild, settings: GuildSettingsRow, userId: string): boolean {
@@ -530,14 +551,6 @@ export class RecordingService {
       this.repos.listCaptureStats(recordingId),
     ]);
     if (!recording) return;
-    const resumeButton =
-      interrupted && isOpen(meeting.status)
-        ? new ButtonBuilder()
-            .setCustomId(encode({ type: 'rec.start', meetingId }))
-            .setLabel(m.buttons.resumeRecording)
-            .setEmoji('🔴')
-            .setStyle(ButtonStyle.Primary)
-        : undefined;
     const container = renderRecordingSummary(
       {
         reason: m.recording.reasons[reason] ?? reason,
@@ -548,7 +561,7 @@ export class RecordingService {
         rsvps,
         capture,
       },
-      { meetingTitle: meeting.title, interrupted, ...(resumeButton ? { resumeButton } : {}) },
+      { meetingTitle: meeting.title, interrupted },
       m,
     );
 

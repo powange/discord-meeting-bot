@@ -88,5 +88,14 @@ describe('repères pendant l’enregistrement', () => {
     expect((await s.run('rec.next', 'button')).error).toBe(m.control.notRecording);
     expect((await s.run('rec.note', 'button', { userId: 'member' })).error).toBe(m.control.notRecording);
     expect(s.added).toEqual([]);
+    expect(s.recordings.syncControl).toHaveBeenCalledWith(meetingId); // message resté d'avant un redémarrage : remis à jour
+  });
+
+  it('« Arrêter » alors que rien n’enregistre (bot redémarré) : message remis à jour, pas d’erreur', async () => {
+    const s = setup({ recording: false });
+    const r = await s.run('rec.stop', 'button');
+    expect(r.error).toBeNull();
+    expect(r.text).toBe(m.recording.alreadyStopped);
+    expect(s.recordings.syncControl).toHaveBeenCalledWith(meetingId);
   });
 });

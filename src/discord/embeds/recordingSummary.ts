@@ -1,10 +1,4 @@
-import {
-  ContainerBuilder,
-  SeparatorSpacingSize,
-  type ActionRowBuilder,
-  type APIContainerComponent,
-  type ButtonBuilder,
-} from 'discord.js';
+import { ContainerBuilder, SeparatorSpacingSize, type APIContainerComponent } from 'discord.js';
 import { captureWarning, type CaptureCounts } from '../../domain/capture.js';
 import { attendanceReport, type PresenceInterval } from '../../domain/recording.js';
 import { discordTimestamp } from '../../domain/time.js';
@@ -85,8 +79,6 @@ export function bar(pct: number, rank = 0, length = BAR_LENGTH): string {
 export interface SummaryOptions {
   meetingTitle: string;
   interrupted: boolean;
-  /** Bouton « Reprendre l'enregistrement » (session interrompue, réunion encore ouverte). */
-  resumeButton?: ButtonBuilder;
 }
 
 /**
@@ -136,7 +128,6 @@ export function renderRecordingSummary(input: SummaryInput, options: SummaryOpti
 
   if (options.interrupted) {
     container.addSeparatorComponents((sep) => sep).addTextDisplayComponents((t) => t.setContent(m.recording.interrupted));
-    if (options.resumeButton) container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) => row.addComponents(options.resumeButton!));
   }
   return container.toJSON();
 }

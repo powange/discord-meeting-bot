@@ -4,7 +4,7 @@
 
 | Fonction | Détail |
 |---|---|
-| Démarrer | Message **🎙️ Enregistrement** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). Il devient **⏹️ Arrêter** pendant l'enregistrement. |
+| Démarrer | Message **🎙️ Enregistrement non démarré** publié dans le post quand la réunion est « En cours » et qu'au moins une personne est dans le vocal, avec le bouton **🔴 Enregistrer** (organisateur ou gestionnaire). **Les boutons sont toujours sur le dernier message** : au démarrage, ce message est remplacé par l'avertissement « ⚠️ Cette réunion est enregistrée · lancé par … », qui porte ⏹️ Arrêter, ▶️ Point suivant, 📝 Note et « Mon choix d'enregistrement ». À l'arrêt, il perd ses boutons et « ⏹️ Enregistrement arrêté · par … » est publié sous le bilan, avec **🔴 Reprendre l'enregistrement**. |
 | Automatique | Carte → ⚙️ Gérer → « Enregistrer automatiquement », ou par défaut pour le serveur dans `/config` → Enregistrement. Le bot rejoint le vocal **2 min avant l'heure** (avant l'arrivée des participants, ce qui contourne un bug connu de DAVE), avec un rattrapage à l'heure de début s'il était éteint. |
 | Pendant | Le bot est dans le vocal, micro coupé, et **renommé « 🔴 Enregistrement »** (pseudo restauré à l'arrêt). Avertissement dans le post et dans le chat du vocal au démarrage, puis à **chaque personne qui arrive en cours de route** (une fois par session). La carte affiche « Enregistrement en cours ». |
 | Pistes | Un fichier OGG/Opus 48 kHz par prise de parole et par personne, sans réencodage, horodaté en base. Pas besoin de diarisation. |
@@ -13,7 +13,7 @@
 | Notes en direct | Bouton **📝 Note**, ouvert à tous les participants : une décision, une action (avec son responsable) ou une remarque, saisie pendant la réunion. Elle est horodatée, reprise dans le compte rendu et visible dans la transcription. |
 | Fin | Bouton Arrêter, carte → ⚙️ Gérer → « Terminer maintenant », ou clôture automatique (vocal vide depuis 5 min, jamais avant l'heure de fin prévue). Une fois le compte rendu publié, la carte affiche les liens **Compte rendu** et **Audio**, et le post épinglé liste les 5 derniers comptes rendus. |
 | Bilan | Message silencieux dans le post. Il signale « ⚠️ audio possiblement incomplet » quand une part notable des paquets d'une personne n'a pas pu être déchiffrée (DAVE) ; `recording.debugVoice: true` journalise les détails de la connexion vocale. Il indique aussi : durée, personnes enregistrées, prises de parole, inscrits présents, inscrits absents, venus sans inscription, non enregistrés. |
-| Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le bilan propose **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
+| Coupures | Une coupure réseau ou un redémarrage du bot arrête proprement l'enregistrement. Le dernier message devient « ⚠️ Enregistrement interrompu » avec **🔴 Reprendre l'enregistrement**, qui ouvre une nouvelle session ; les pistes déjà captées sont conservées. |
 
 Contrainte Discord : un bot ne peut être que dans **un vocal par serveur** à la fois, donc un seul enregistrement par serveur.
 

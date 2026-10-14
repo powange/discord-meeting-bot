@@ -242,7 +242,9 @@ export async function handleAction(
       requireManager(scope);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const stopped = await ctx.recordings.stop(meeting.id, 'manual', interaction.user.id);
-      await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.errors.notRecording);
+      // Déjà arrêté (redémarrage du bot, autre clic) : le message à boutons est remis à jour.
+      if (!stopped) await ctx.recordings.syncControl(meeting.id);
+      await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.recording.alreadyStopped);
       return;
     }
 
@@ -253,7 +255,10 @@ export async function handleAction(
       // Passage au point suivant (ou au point choisi) : réservé à l'animateur (organisateur, gestionnaire).
       if (action.type === 'rec.next' ? !interaction.isButton() : !interaction.isStringSelectMenu()) return;
       requireManager(scope);
-      if (!(await ctx.repos.getActiveRecording(meeting.id))) throw new UserError(m.control.notRecording);
+      if (!(await ctx.repos.getActiveRecording(meeting.id))) {
+        await ctx.recordings.syncControl(meeting.id); // message resté d'avant un arrêt (redémarrage)
+        throw new UserError(m.control.notRecording);
+      }
       const agenda = await ctx.repos.listAgenda(meeting.id);
       let target: number | null;
       if (interaction.isStringSelectMenu()) {
@@ -271,7 +276,10 @@ export async function handleAction(
 
     case 'rec.note': {
       if (!interaction.isButton()) return;
-      if (!(await ctx.repos.getActiveRecording(meeting.id))) throw new UserError(m.control.notRecording);
+      if (!(await ctx.repos.getActiveRecording(meeting.id))) {
+        await ctx.recordings.syncControl(meeting.id); // message resté d'avant un arrêt (redémarrage)
+        throw new UserError(m.control.notRecording);
+      }
       const c = m.control;
       const kind = new StringSelectMenuBuilder()
         .setCustomId('kind')

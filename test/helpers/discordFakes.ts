@@ -11,6 +11,7 @@ export interface FakeMessage {
   id: string;
   url: string;
   edit: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
 }
 
 /** Post de forum : messages envoyés, édités et supprimés. */
@@ -33,6 +34,10 @@ export function fakeThread(id = 'thread1') {
         edit: vi.fn(async (p: Record<string, unknown>) => {
           edited.push({ id: msgId, ...p });
           return message;
+        }),
+        delete: vi.fn(async () => {
+          deleted.push(msgId);
+          messages.delete(msgId);
         }),
       };
       messages.set(msgId, message);

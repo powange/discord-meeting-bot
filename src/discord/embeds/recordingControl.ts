@@ -1,11 +1,10 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import { encode } from '../../domain/customId.js';
 import { currentPoint, nextPoint, type Marker } from '../../domain/markers.js';
-import { isOpen } from '../../domain/meeting.js';
 import { discordTimestamp } from '../../domain/time.js';
-import type { MeetingStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
+import { consentButton } from './meetingManager.js';
 
 export interface ControlMessage {
   content: string;
@@ -18,32 +17,49 @@ export interface LiveState {
   markers: readonly Marker[];
 }
 
+/**
+ * État affiché par le message à boutons de l'enregistrement. Les boutons sont toujours sur le
+ * dernier message : à chaque changement d'état, un nouveau message est publié en bas du post.
+ */
+export type ControlState =
+  | { kind: 'idle' }
+  | { kind: 'rec'; startedAt: Date; endedAt?: Date | null; startedBy: string | null; live?: LiveState }
+  | { kind: 'stopped'; stoppedBy: string | null; reason: string; interrupted: boolean };
+
 /** Valeur de l'option « hors ordre du jour » du sélecteur de point. */
 export const OFF_AGENDA = 'off';
 
-/**
- * Message de contrôle de l'enregistrement : état, bouton Enregistrer / Arrêter et, pendant
- * l'enregistrement, le point en cours avec « ▶️ Point suivant », « 📝 Note » et le choix direct d'un point.
- */
-export function renderRecordingControl(meeting: { id: string; status: MeetingStatus }, recordingSince: Date | null, m: Messages, live?: LiveState): ControlMessage {
-  if (!isOpen(meeting.status)) return { content: m.control.closed, components: [] };
-  const button = recordingSince
-    ? new ButtonBuilder()
-        .setCustomId(encode({ type: 'rec.stop', meetingId: meeting.id }))
-        .setLabel(m.buttons.stopRecording)
-        .setEmoji('⏹️')
-        .setStyle(ButtonStyle.Danger)
-    : new ButtonBuilder()
-        .setCustomId(encode({ type: 'rec.start', meetingId: meeting.id }))
-        .setLabel(m.buttons.record)
-        .setEmoji('🔴')
-        .setStyle(ButtonStyle.Primary);
-  if (!recordingSince) return { content: m.control.idle, components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON()] };
+/** Raisons d'arrêt qui sont des interruptions (une reprise est attendue). */
+export const INTERRUPTIONS: readonly string[] = ['shutdown', 'disconnected', 'crash'];
 
+const recordButton = (meetingId: string, label: string) =>
+  new ButtonBuilder().setCustomId(encode({ type: 'rec.start', meetingId })).setLabel(label).setEmoji('🔴').setStyle(ButtonStyle.Primary);
+
+/**
+ * Message à boutons de l'enregistrement. `frozen` : version d'un message dépassé (un état plus
+ * récent est affiché plus bas), sans boutons.
+ */
+export function renderRecordingControl(meetingId: string, state: ControlState, m: Messages, frozen = false): ControlMessage {
   const c = m.control;
-  const agenda = live?.agenda ?? [];
-  const markers = live?.markers ?? [];
-  const lines = [c.recording(discordTimestamp(recordingSince, 't'))];
+  if (state.kind === 'idle') {
+    return { content: c.idle, components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.record)).toJSON()] };
+  }
+
+  if (state.kind === 'stopped') {
+    const content = state.interrupted ? m.recording.interruptedShort(state.reason) : m.recording.stopped(state.stoppedBy, state.reason);
+    return { content, components: frozen ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(recordButton(meetingId, m.buttons.resumeRecording)).toJSON()] };
+  }
+
+  if (frozen) {
+    return { content: c.recorded(state.startedBy, discordTimestamp(state.startedAt, 't'), state.endedAt ? discordTimestamp(state.endedAt, 't') : null), components: [] };
+  }
+
+  // En cours : avertissement, point en cours, notes ; puis Arrêter, Point suivant, Note, choix direct.
+  const agenda = state.live?.agenda ?? [];
+  const markers = state.live?.markers ?? [];
+  const [head, ...rest] = m.recording.announce(state.startedBy).split('\n');
+  const optOut = rest.pop()!;
+  const lines = [head!, ...rest];
   const current = currentPoint(markers);
   if (agenda.length) {
     if (!current) lines.push(c.noPointYet);
@@ -55,7 +71,9 @@ export function renderRecordingControl(meeting: { id: string; status: MeetingSta
   }
   const notes = markers.filter((mk) => mk.kind !== 'agenda').length;
   if (notes) lines.push(c.notes(notes));
+  lines.push(optOut);
 
+  const stop = new ButtonBuilder().setCustomId(encode({ type: 'rec.stop', meetingId })).setLabel(m.buttons.stopRecording).setEmoji('⏹️').setStyle(ButtonStyle.Danger);
   const actions = new ActionRowBuilder<ButtonBuilder>();
   if (agenda.length) {
     const next = nextPoint(agenda, markers);
@@ -65,18 +83,18 @@ export function renderRecordingControl(meeting: { id: string; status: MeetingSta
     const done = next === null && current?.agendaItemId === null;
     actions.addComponents(
       new ButtonBuilder()
-        .setCustomId(encode({ type: 'rec.next', meetingId: meeting.id }))
+        .setCustomId(encode({ type: 'rec.next', meetingId }))
         .setLabel(truncate(c.next(label), 80))
         .setEmoji('▶️')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(done),
     );
   }
-  actions.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'rec.note', meetingId: meeting.id })).setLabel(c.note).setEmoji('📝').setStyle(ButtonStyle.Secondary));
-  const rows: ControlMessage['components'] = [new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON(), actions.toJSON()];
+  actions.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'rec.note', meetingId })).setLabel(c.note).setEmoji('📝').setStyle(ButtonStyle.Secondary));
+  const rows: ControlMessage['components'] = [actions.toJSON()];
   if (agenda.length > 1) {
     const select = new StringSelectMenuBuilder()
-      .setCustomId(encode({ type: 'rec.goto', meetingId: meeting.id }))
+      .setCustomId(encode({ type: 'rec.goto', meetingId }))
       .setPlaceholder(c.goto)
       .addOptions(
         ...agenda.slice(0, 24).map((a, i) => ({ label: truncate(`${i + 1}. ${a.title}`, 100), value: String(a.id) })),
@@ -84,5 +102,6 @@ export function renderRecordingControl(meeting: { id: string; status: MeetingSta
       );
     rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select).toJSON());
   }
+  rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(stop, consentButton(m)).toJSON());
   return { content: lines.join('\n'), components: rows };
 }

@@ -71,6 +71,11 @@ export const meetings = pgTable(
     agendaMessageId: text(),
     /** Message de contrôle de l'enregistrement, publié au début de la réunion (quelqu'un dans le vocal). */
     controlMessageId: text(),
+    /**
+     * État affiché par ce message à boutons : « idle », « rec:<session> » ou « stopped:<session> ».
+     * Quand l'état change, l'ancien message perd ses boutons et un nouveau est publié en bas du post.
+     */
+    controlState: text(),
     /** Message de suivi du compte rendu (progression, puis lien vers le compte rendu publié). */
     reportStatusMessageId: text(),
     scheduledEventId: text(),
@@ -293,6 +298,8 @@ export const recordings = pgTable(
     endedAt: tz(),
     status: recordingStatus().notNull().default('recording'),
     stopReason: text(),
+    /** Arrêt manuel : qui l'a arrêté. */
+    stoppedBy: text(),
     /** Dossier local des pistes de cette session. */
     dataDir: text().notNull(),
     /** Pistes brutes supprimées par la rétention (les métadonnées restent). */
