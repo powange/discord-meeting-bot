@@ -135,6 +135,11 @@ describe('panneau /config', () => {
     expect(texts(auto)).toContain('créé automatiquement 30 min avant · catégorie <#900>');
   });
 
+  it('rôles : explication sur plusieurs lignes, une par rôle, chacune en petit texte', () => {
+    const t = texts(renderConfigSection('roles', c, m));
+    expect(t).toContain('\n-# **Gestionnaires** : gèrent toutes les réunions.\n-# **Relance** :');
+  });
+
   it('rôles : @everyone (absent des sélecteurs Discord) proposé par un bouton pour la relance', () => {
     const everyone = renderConfigSection('roles', { ...c, settings: { ...settings, nudgeRoleId: settings.guildId } }, m);
     expect(texts(everyone)).toContain(`Relance ${m.config.everyone}`);

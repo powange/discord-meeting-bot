@@ -151,7 +151,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
   const container = new ContainerBuilder()
     .setAccentColor(0x5865f2)
     .addTextDisplayComponents((x) =>
-      x.setContent(`## ${meta.emoji} ${meta.label}\n-# ${meta.help}\n\n${t.current} : ${sectionSummary(section, c, m)}${c.notice ? `\n\n${c.notice}` : ''}`),
+      x.setContent(`## ${meta.emoji} ${meta.label}\n${meta.help.split('\n').map((line) => `-# ${line}`).join('\n')}\n\n${t.current} : ${sectionSummary(section, c, m)}${c.notice ? `\n\n${c.notice}` : ''}`),
     )
     .addSeparatorComponents((x) => x.setSpacing(SeparatorSpacingSize.Small));
   if (section === 'recording' && c.refusals?.length) {

@@ -563,7 +563,7 @@ export const fr = {
         hint: 'Au choix, imposé ou créé automatiquement',
         help: "Au choix : l'organisateur choisit. Imposé : toutes les réunions s'y tiennent. Créé automatiquement : un salon au nom de la réunion est créé peu avant le début, puis supprimé une fois la réunion finie et le salon vide.",
       },
-      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "Gestionnaires : gèrent toutes les réunions. Relance : membres mentionnés s'ils n'ont pas répondu. Discord n'affiche qu'une partie des rôles : tapez quelques lettres dans le sélecteur pour trouver les autres. Videz un sélecteur pour retirer un rôle." },
+      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "**Gestionnaires** : gèrent toutes les réunions.\n**Relance** : ses membres qui n'ont pas répondu sont mentionnés au premier rappel (sauf si la réunion a des rôles invités).\nDiscord n'affiche qu'une partie des rôles : tapez quelques lettres dans le sélecteur pour trouver les autres. Videz un sélecteur pour retirer un rôle." },
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
       recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage auto, refus d’enregistrement', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },
