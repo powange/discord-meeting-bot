@@ -2,12 +2,14 @@ import { randomInt } from 'node:crypto';
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 import { finished } from 'node:stream/promises';
-import { OPUS_SILENCE_FRAME, PAGE_BOS, PAGE_EOS, oggPage, opusHead, opusPacketSamples, opusTags, silenceFramesForGap } from './ogg.js';
+import { OPUS_SILENCE_FRAME, PAGE_BOS, PAGE_EOS, oggPage, opusHead, opusPacketSamples, opusTags } from './ogg.js';
 
 /** Paquets par page OGG (≈ 1 s d'audio) : bon compromis taille / perte en cas d'arrêt brutal. */
 const PACKETS_PER_PAGE = 50;
 /** Au-delà, on ne comble plus (pause anormalement longue dans une même prise de parole). */
 const MAX_FILL_FRAMES = 250;
+/** Avance de l'horloge sur le fichier tolérée sans silence (gigue réseau). */
+const TOLERANCE_MS = 40;
 
 export interface WrittenSegment {
   filePath: string;
@@ -20,7 +22,9 @@ export interface WrittenSegment {
 /**
  * Écrit une prise de parole dans un fichier OGG/Opus (48 kHz stéréo, sans réencodage).
  * Les courtes pauses (Discord n'envoie rien quand on se tait) sont comblées par des trames de
- * silence d'après l'heure d'arrivée des paquets : la durée du fichier reste fidèle au temps réel.
+ * silence quand l'heure réelle écoulée depuis le premier paquet dépasse la durée déjà écrite :
+ * la durée du fichier reste fidèle au temps réel, et des paquets retardés qui arrivent en
+ * rafale (gigue, boucle d'événements bloquée) ne l'allongent pas.
  */
 export class SegmentWriter {
   private readonly serial = randomInt(1, 0xffffffff);
@@ -29,6 +33,8 @@ export class SegmentWriter {
   private pending: Buffer[] = [];
   private packets = 0;
   private firstPacketAt = 0;
+  /** Origine de l'horloge (décalée quand une pause dépasse le plafond de comblement). */
+  private originAt = 0;
   private lastPacketAt = 0;
   /** Erreur d'écriture (disque plein, I/O) : la prise de parole est perdue, pas le processus. */
   private failure: Error | null = null;
@@ -56,8 +62,14 @@ export class SegmentWriter {
     if (this.failure) return;
     if (this.packets === 0) {
       this.firstPacketAt = at;
+      this.originAt = at;
     } else {
-      const fill = Math.min(MAX_FILL_FRAMES, silenceFramesForGap(at - this.lastPacketAt));
+      const ahead = at - this.originAt - this.writtenMs;
+      let fill = ahead > TOLERANCE_MS ? Math.round(ahead / 20) : 0;
+      if (fill > MAX_FILL_FRAMES) {
+        this.originAt += (fill - MAX_FILL_FRAMES) * 20; // pause trop longue : on recale l'horloge
+        fill = MAX_FILL_FRAMES;
+      }
       for (let i = 0; i < fill; i++) this.push(OPUS_SILENCE_FRAME);
     }
     this.lastPacketAt = at;
@@ -72,6 +84,11 @@ export class SegmentWriter {
 
   get packetCount(): number {
     return this.packets;
+  }
+
+  /** Durée d'audio écrite (silences compris), en ms. */
+  get writtenMs(): number {
+    return Number(this.granule) / 48;
   }
 
   /** Termine le fichier (page de fin) et attend son écriture complète. */

@@ -313,7 +313,10 @@ export class PipelineService {
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
     if ((await repos.getMeeting(meetingId))?.status === 'ended') {
       const master = await repos.dropMixMaster(meetingId);
-      if (master) await rm(master, { force: true }).catch((err) => plog.warn({ err: errorMessage(err) }, 'Suppression du mix sans perte impossible'));
+      if (master) {
+        await rm(master, { force: true }).catch((err) => plog.warn({ err: errorMessage(err) }, 'Suppression du mix sans perte impossible'));
+        await rm(`${master}.json`, { force: true }).catch(() => undefined); // son manifeste
+      }
     }
   }
 

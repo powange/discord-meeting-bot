@@ -68,7 +68,10 @@ export class RetentionService {
     const outputs = await this.repos.listMixOutputs();
     for (const x of outputs.filter((o) => o.meetingStatus !== 'scheduled' && o.meetingStatus !== 'live' && typeof o.output?.master === 'string')) {
       const master = await this.repos.dropMixMaster(x.meetingId);
-      if (master && this.insideDataDir(master)) await rm(master, { force: true }).catch(() => undefined);
+      if (master && this.insideDataDir(master)) {
+        await rm(master, { force: true }).catch(() => undefined);
+        await rm(`${master}.json`, { force: true }).catch(() => undefined); // manifeste du mix
+      }
     }
 
     const mixes = (await this.repos.listMixOutputs()).map((x) => ({
@@ -85,7 +88,7 @@ export class RetentionService {
         const parts = Array.isArray(full.output.parts) ? (full.output.parts as string[]) : [];
         // Le mix sans perte (base des mises à jour) part avec l'audio complet.
         const master = typeof full.output.master === 'string' ? [full.output.master] : [];
-        for (const file of [mix.file!, ...parts, ...master]) {
+        for (const file of [mix.file!, ...parts, ...master, ...master.map((f) => `${f}.json`)]) {
           if (!this.insideDataDir(file)) throw new Error(`chemin hors du dossier de données : ${file}`);
           await rm(file, { force: true });
         }

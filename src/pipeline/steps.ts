@@ -1,5 +1,5 @@
 import { existsSync, openAsBlob } from 'node:fs';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
@@ -49,7 +49,8 @@ export function createSteps(deps: PipelineDeps): Record<PipelineStep, StepFn> {
 async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, config, client } = deps;
   const { meeting, settings, m, signal } = ctx;
-  const recordings = await repos.listRecordingsForMeeting(meeting.id);
+  // Sessions terminées seulement : une session en cours sera prise à son arrêt (nouveau traitement).
+  const recordings = (await repos.listRecordingsForMeeting(meeting.id)).filter((r) => r.endedAt);
   const origin = recordings[0]?.startedAt.getTime();
   const placed = new Map<string, PlacedInput[]>(); // par session
   let endMs = 0;
@@ -93,9 +94,11 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
 
   // Incrémental si le mix précédent couvre exactement les sessions déjà mixées (mêmes prises
   // de parole) et que seules de nouvelles sessions sont arrivées ; sinon (retranscription,
-  // session modifiée, fichier absent), mix complet.
+  // session modifiée, fichier absent), mix complet. Le contenu du FLAC est décrit par un
+  // manifeste écrit juste après lui : un échec plus loin (envoi sur Discord, arrêt du bot) ne
+  // fait pas croire que la nouvelle session manque encore (elle serait mixée deux fois).
   const prevMaster = typeof previous?.master === 'string' ? previous.master : null;
-  const prevCounts = (previous?.segmentCounts ?? null) as Record<string, number> | null;
+  const prevCounts = prevMaster ? await readManifest(prevMaster) : null;
   const added = recordings.filter((r) => !prevCounts || !(r.id in prevCounts));
   const incremental =
     prevMaster !== null &&
@@ -112,7 +115,11 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   try {
     const nextMaster = join(tmp, 'master.flac');
     await mixPlaced(ffmpeg, inputs, nextMaster, ['-threads', '1', '-ac', '1', '-ar', '48000', '-c:a', 'flac'], tmp, signal);
+    // Manifeste retiré avant le remplacement : un arrêt entre les deux donne un mix complet, sûr.
+    await rm(manifestPath(master), { force: true });
+    if (prevMaster && prevMaster !== master) await rm(manifestPath(prevMaster), { force: true });
     await rename(nextMaster, master);
+    await writeFile(manifestPath(master), JSON.stringify(segmentCounts));
     await runFfmpeg(ffmpeg, ['-threads', '1', '-i', master, '-ac', '1', '-c:a', 'libopus', '-b:a', `${kbps}k`, '-application', 'voip', file], signal);
     if (plan && plan.parts > 1) parts = await splitAudio(ffmpeg, file, plan.partMs, plan.parts, (i) => join(dir, `${base}-partie${i + 1}.ogg`), signal);
   } finally {
@@ -120,7 +127,10 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
   }
   const size = (await stat(file)).size;
   const output: Record<string, unknown> = { file, master, parts, sizeBytes: size, durationMs: endMs, bitrateKbps: kbps, segmentCounts, incremental };
-  if (!thread) return output;
+  if (!thread) {
+    await removeStaleAudio(previous, output, dir);
+    return output;
+  }
   await ensureUnarchived(thread);
 
   const sent: string[] = [];
@@ -162,7 +172,34 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
     throw err;
   }
   await deleteMessages(thread, previousIds);
+  await removeStaleAudio(previous, output, dir);
   return { ...output, ...posted, messageIds: sent };
+}
+
+/**
+ * Fichiers de l'ancien mix qui ne servent plus (moins de parties, autre nom après un changement
+ * de date ou de fuseau) : la rétention ne connaît que le mix actuel, ils resteraient sur le disque.
+ */
+async function removeStaleAudio(previous: Record<string, unknown> | null | undefined, current: Record<string, unknown>, dir: string): Promise<void> {
+  const paths = (o: Record<string, unknown> | null | undefined) => [o?.file, o?.master, ...(Array.isArray(o?.parts) ? o.parts : [])].filter((f): f is string => typeof f === 'string');
+  const keep = new Set(paths(current));
+  for (const file of paths(previous)) {
+    if (keep.has(file) || !file.startsWith(dir)) continue;
+    await rm(file, { force: true }).catch(() => undefined);
+    if (file.endsWith('.flac')) await rm(manifestPath(file), { force: true }).catch(() => undefined);
+  }
+}
+
+const manifestPath = (master: string) => `${master}.json`;
+
+/** Sessions contenues dans un mix sans perte (id → nombre de prises de parole) ; null si inconnu. */
+async function readManifest(master: string): Promise<Record<string, number> | null> {
+  try {
+    const value: unknown = JSON.parse(await readFile(manifestPath(master), 'utf8'));
+    return value && typeof value === 'object' ? (value as Record<string, number>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Suppression de messages du bot, sans échouer sur ceux déjà supprimés à la main. */
@@ -182,7 +219,9 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   const { meeting, signal } = ctx;
   const cfg = config.guild(meeting.guildId).transcription;
 
-  const recordings = await repos.listRecordingsForMeeting(meeting.id);
+  // Sessions terminées et non purgées : les blocs d'une session en cours seraient incomplets, ceux
+  // d'une session purgée (audio supprimé) sont gardés tels quels.
+  const recordings = (await repos.listRecordingsForMeeting(meeting.id)).filter((r) => r.endedAt && !r.purgedAt);
   const byId = new Map(recordings.map((r) => [r.id, r]));
   const rows = [];
   for (const rec of recordings) {
@@ -191,7 +230,7 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
       rows.push({ recordingId: rec.id, userId: block.userId, startMs: block.startMs, endMs: block.endMs, segmentIds: block.segments.map((s) => s.id) });
     }
   }
-  const blocks = await repos.upsertBlocks(meeting.id, rows);
+  const blocks = (await repos.syncBlocks(meeting.id, recordings.map((r) => r.id), rows)).filter((b) => byId.has(b.recordingId));
   const pending = blocks.filter((b) => !b.done);
   let done = blocks.length - pending.length;
   ctx.progress(ctx.m.pipeline.progressTranscribe(done, blocks.length));
@@ -293,7 +332,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
   const llmSettings = await effectiveLlms(repos, settings, config);
   const cfg = config.guild(meeting.guildId).llm;
   const { lines, names } = await loadTranscript(deps, meeting);
-  const backends = [...new Set((await repos.upsertBlocks(meeting.id, [])).filter((b) => b.backend).map((b) => `${b.backend} (${b.model})`))];
+  const backends = [...new Set((await repos.listBlocks(meeting.id)).filter((b) => b.backend).map((b) => `${b.backend} (${b.model})`))];
 
   if (lines.length === 0) {
     await repos.saveSummary({ meetingId: meeting.id, content: { overview: '', topics: [] }, llmModel: '-', llmDeployments: [], transcriptionBackends: backends, passes: 0 });

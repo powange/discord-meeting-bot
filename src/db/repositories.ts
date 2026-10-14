@@ -582,13 +582,45 @@ export class Repositories {
   // ---------------------------------------------------------------- transcription
 
   /** Enregistre les blocs (idempotent : un bloc existant n'est pas recréé) et renvoie tous ceux de la réunion. */
-  async upsertBlocks(meetingId: string, blocks: ReadonlyArray<Omit<typeof transcriptionBlocks.$inferInsert, 'meetingId'>>): Promise<TranscriptionBlockRow[]> {
-    if (blocks.length > 0) {
-      await this.db
-        .insert(transcriptionBlocks)
-        .values(blocks.map((b) => ({ ...b, meetingId })))
-        .onConflictDoNothing();
-    }
+  /**
+   * Aligne les blocs des sessions `recordingIds` sur ceux calculés : un bloc dont les prises de
+   * parole ont changé (session encore en cours lors d'un traitement précédent, réglage de
+   * regroupement modifié) est remis à transcrire, un bloc disparu est supprimé avec son texte.
+   * Les blocs des autres sessions (purgées, par exemple) ne sont pas touchés.
+   */
+  async syncBlocks(
+    meetingId: string,
+    recordingIds: readonly string[],
+    blocks: ReadonlyArray<Omit<typeof transcriptionBlocks.$inferInsert, 'meetingId'>>,
+  ): Promise<TranscriptionBlockRow[]> {
+    await this.db.transaction(async (tx) => {
+      const existing = recordingIds.length
+        ? await tx
+            .select()
+            .from(transcriptionBlocks)
+            .where(and(eq(transcriptionBlocks.meetingId, meetingId), inArray(transcriptionBlocks.recordingId, [...recordingIds])))
+        : [];
+      const key = (b: { recordingId: string; userId: string; startMs: number }) => `${b.recordingId}|${b.userId}|${b.startMs}`;
+      const byKey = new Map(existing.map((b) => [key(b), b]));
+      const sameIds = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((id, i) => id === b[i]);
+      const fresh = [];
+      for (const b of blocks) {
+        const old = byKey.get(key(b));
+        byKey.delete(key(b));
+        if (!old) fresh.push({ ...b, meetingId });
+        else if (old.endMs !== b.endMs || !sameIds(old.segmentIds, b.segmentIds)) {
+          await tx.delete(transcriptSegments).where(eq(transcriptSegments.blockId, old.id));
+          await tx.update(transcriptionBlocks).set({ endMs: b.endMs, segmentIds: b.segmentIds, done: false, backend: null, model: null }).where(eq(transcriptionBlocks.id, old.id));
+        }
+      }
+      const gone = [...byKey.values()].map((b) => b.id);
+      if (gone.length) await tx.delete(transcriptionBlocks).where(inArray(transcriptionBlocks.id, gone)); // texte supprimé en cascade
+      if (fresh.length) await tx.insert(transcriptionBlocks).values(fresh);
+    });
+    return this.listBlocks(meetingId);
+  }
+
+  async listBlocks(meetingId: string): Promise<TranscriptionBlockRow[]> {
     return this.db.select().from(transcriptionBlocks).where(eq(transcriptionBlocks.meetingId, meetingId)).orderBy(asc(transcriptionBlocks.startMs));
   }
 

@@ -94,6 +94,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const meeting = await repos.insertMeeting({ guildId: 'g', organizerId: 'o', title: 'Bureau', startsAt: new Date('2026-10-15T16:00:00Z'), durationMin: 60, voiceChannelId: 'v' });
     const startedAt = new Date('2026-10-15T16:00:00Z');
     const rec = await repos.insertRecording({ meetingId: meeting.id, guildId: 'g', voiceChannelId: 'v', startedAt, dataDir });
+    await repos.updateRecording(rec.id, { endedAt: new Date('2026-10-15T16:01:00Z') }); // session terminée
     await repos.insertPresence({ recordingId: rec.id, userId: 'alice', displayName: 'Alice', joinedAt: startedAt });
     await repos.insertPresence({ recordingId: rec.id, userId: 'bob', displayName: 'Bob', joinedAt: startedAt });
     // alice : deux prises de parole proches (un seul bloc) ; bob : une prise de parole
@@ -136,7 +137,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
 
     await steps.transcribe(ctx);
-    const blocks = await repos.upsertBlocks(meeting.id, []);
+    const blocks = await repos.listBlocks(meeting.id);
     expect(blocks.map((b) => [b.userId, b.segmentIds.length, b.done, b.backend])).toEqual([
       ['alice', 2, true, 'speaches'],
       ['bob', 1, true, 'speaches'],
@@ -186,8 +187,9 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const steps = createSteps({ ...d, config: noLlm });
     const settings = await d.settings.get('g');
     const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: () => undefined };
-    await repos.upsertBlocks(meeting.id, []); // pas de transcription nécessaire pour ce cas : on force une ligne
-    const block = (await repos.upsertBlocks(meeting.id, [{ recordingId: (await repos.listRecordingsForMeeting(meeting.id))[0]!.id, userId: 'alice', startMs: 0, endMs: 1000, segmentIds: [] }]))[0]!;
+    // Pas de transcription nécessaire pour ce cas : on force une ligne.
+    const recId = (await repos.listRecordingsForMeeting(meeting.id))[0]!.id;
+    const block = (await repos.syncBlocks(meeting.id, [recId], [{ recordingId: recId, userId: 'alice', startMs: 0, endMs: 1000, segmentIds: [] }]))[0]!;
     await repos.completeBlock(block.id, meeting.id, [{ userId: 'alice', startAt: new Date(), endAt: new Date(), text: 'Bonjour.' }], 'vibe-pc', 'm');
     expect(await steps.summarize(ctx)).toEqual({ skipped: true });
   }, 30_000);
@@ -321,6 +323,9 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     // Seconde session, 60 s après le début de la première (reprise après une coupure).
     const startedAt = new Date('2026-10-15T16:01:00Z');
     const rec = await repos.insertRecording({ meetingId: meeting.id, guildId: 'g', voiceChannelId: 'v', startedAt, dataDir });
+    // Session encore en cours : ignorée par le mix (elle sera prise à son arrêt).
+    expect(await steps.mix(ctx)).toMatchObject({ incremental: false, durationMs: 11_500 });
+    await repos.updateRecording(rec.id, { endedAt: new Date('2026-10-15T16:01:05Z') });
     const w = SegmentWriter.open(join(dataDir, rec.id, 'alice', '0.ogg'));
     for (let i = 0; i < 100; i++) w.write(Buffer.from([0xf8, 0xff, 0xfe]), i * 20);
     const seg = await w.close();
@@ -342,6 +347,11 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     // Le nouveau mix contient l'ancien (0 à 11,5 s), le silence, puis la seconde session (60 à 62 s).
     expect(await seconds(second.master as string)).toBeCloseTo(62, 0);
     expect(await seconds(second.file as string)).toBeCloseTo(62, 0);
+
+    // Échec après le mix (envoi sur Discord, arrêt du bot) : la sortie enregistrée est encore
+    // celle d'avant, mais le manifeste du FLAC dit qu'il contient déjà la seconde session : mix
+    // complet, la session n'est pas mixée deux fois.
+    expect(await steps.mix(ctx)).toMatchObject({ incremental: false, durationMs: 62_000 });
 
     // Rien de nouveau : mix complet (pas d'incrémental sans session ajoutée).
     await repos.updateStep(meeting.id, 'mix', { status: 'done', output: second });
@@ -709,6 +719,24 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await waitIdle(engine, meeting.id);
     expect(calls).toEqual(['summarize', 'publish', 'export']);
   }, 30_000);
+
+  it('blocs : un bloc dont les prises de parole ont changé est retranscrit, un bloc disparu supprimé', async () => {
+    const meeting = await seedMeeting();
+    const recId = (await repos.listRecordingsForMeeting(meeting.id))[0]!.id;
+    const block = (seg: number[], startMs = 0) => ({ recordingId: recId, userId: 'alice', startMs, endMs: 1000 * seg.length, segmentIds: seg });
+    const [first] = await repos.syncBlocks(meeting.id, [recId], [block([1])]);
+    await repos.completeBlock(first!.id, meeting.id, [{ userId: 'alice', startAt: new Date(), endAt: new Date(), text: 'Début.' }], 'vibe', 'm');
+
+    // Même bloc : rien ne change. Bloc prolongé (session encore en cours au premier passage) : à refaire.
+    expect((await repos.syncBlocks(meeting.id, [recId], [block([1])]))[0]).toMatchObject({ done: true });
+    expect((await repos.syncBlocks(meeting.id, [recId], [block([1, 2])]))[0]).toMatchObject({ id: first!.id, done: false, segmentIds: [1, 2] });
+    expect(await repos.listTranscript(meeting.id)).toEqual([]);
+
+    // Regroupement différent : l'ancien bloc disparaît, le nouveau est créé ; une autre session n'est pas touchée.
+    const after = await repos.syncBlocks(meeting.id, [recId], [block([1], 0), block([2], 5000)]);
+    expect(after.map((b) => b.startMs)).toEqual([0, 5000]);
+    expect(await repos.syncBlocks(meeting.id, [], [])).toHaveLength(2);
+  });
 
   it('moteur : « Réessayer maintenant » relance sans attendre le délai automatique', async () => {
     const meeting = await seedMeeting();
