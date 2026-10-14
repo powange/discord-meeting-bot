@@ -216,11 +216,25 @@ function rsvpButton(meetingId: string, status: 'yes' | 'maybe' | 'no', label: st
     .setDisabled(!enabled);
 }
 
+/** Lignes du détail affichées au plus dans l'aperçu (la suite est dans « Gérer l'ordre du jour »). */
+const AGENDA_DETAIL_LINES = 6;
+
+/** Détail d'un point en citation, retours à la ligne conservés (lignes vides retirées), aperçu borné. */
+function quoteDetail(detail: string): string {
+  const lines = truncate(detail.trim(), AGENDA_DETAIL_PREVIEW)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const shown = lines.slice(0, AGENDA_DETAIL_LINES);
+  if (lines.length > AGENDA_DETAIL_LINES) shown[AGENDA_DETAIL_LINES - 1] += ' …';
+  return shown.map((line) => `> ${line}`).join('\n');
+}
+
 export function renderAgenda(agenda: readonly AgendaItem[], m: Messages): string {
   if (agenda.length === 0) return m.card.agendaEmpty;
   const lines = agenda.map((item, i) => {
     const head = `**${i + 1}. ${truncate(item.title, 100)}** — ${m.card.agendaBy(item.authorId)}`;
-    return item.detail ? `${head}\n> ${truncate(item.detail.replace(/\s*\n\s*/g, ' '), AGENDA_DETAIL_PREVIEW)}` : head;
+    return item.detail.trim() ? `${head}\n${quoteDetail(item.detail)}` : head;
   });
   return joinLinesWithin(lines, AGENDA_BUDGET, m.card.more, '\n\n');
 }
@@ -248,7 +262,7 @@ export function renderAgendaManager(
         agenda.map((item, i) => ({
           label: truncate(`${i + 1}. ${item.title}`, 100),
           value: String(item.id),
-          ...(item.detail ? { description: truncate(item.detail, 100) } : {}),
+          ...(item.detail.trim() ? { description: truncate(item.detail.trim().replace(/\s*\n\s*/g, ' · '), 100) } : {}),
           default: item.id === selected?.id,
         })),
       );

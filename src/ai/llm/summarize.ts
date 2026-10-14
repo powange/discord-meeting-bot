@@ -55,7 +55,7 @@ export function correctionsBlock(corrections: readonly string[] | undefined): st
 
 function contextBlock(ctx: SummaryContext): string {
   const agenda = ctx.agenda.length
-    ? ctx.agenda.map((a, i) => `${i + 1}. ${a.title}${a.detail ? ` — ${a.detail}` : ''}`).join('\n')
+    ? ctx.agenda.map((a, i) => `${i + 1}. ${a.title}${a.detail.trim() ? ` — ${a.detail.trim().replace(/\s*\n\s*/g, ' / ')}` : ''}`).join('\n')
     : '(aucun ordre du jour)';
   return `Réunion : ${ctx.title}${ctx.description ? `\nDescription : ${ctx.description}` : ''}
 Date : ${ctx.date}

@@ -84,11 +84,18 @@ describe('renderAgendaMessage', () => {
     const embed = out.embeds[0]!;
     expect(embed.title).toBe(`📋 ${m.card.agenda}`);
     expect(embed.description).toContain('**1. Point 1**');
-    expect(embed.description).toContain('> ligne 1 ligne 2');
+    expect(embed.description).toContain('> ligne 1\n> ligne 2');
     expect(buttons(out).map((b) => [b.label, b.disabled ?? false])).toEqual([
       ['Ajouter un point', false],
       ["Gérer l'ordre du jour", false],
     ]);
+  });
+
+  it('détail : retours à la ligne gardés, lignes vides retirées, au plus 6 lignes', () => {
+    const detail = 'Bilan des comptes\n\n  Coût de la restauration  \nBar\n4\n5\n6\n7\n8';
+    const description = renderAgendaMessage(meeting, [item(1, detail)], m).embeds[0]!.description!;
+    expect(description).toContain('> Bilan des comptes\n> Coût de la restauration\n> Bar\n> 4\n> 5\n> 6 …');
+    expect(description).not.toContain('> 7');
   });
 
   it('vide', () => {
