@@ -54,6 +54,8 @@ export interface ConfigContext {
     pending?: { provider: StorageProvider; url: string; code?: string } | undefined;
     confirmDisconnect?: boolean;
   };
+  /** Forum choisi : la création de posts est-elle réservée au bot ? (undefined : forum introuvable). */
+  forumPostsReserved?: boolean | undefined;
   notice?: string | undefined;
 }
 
@@ -181,6 +183,14 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
   switch (section) {
     case 'forum':
       rows.push(...channelRows('forum', s.forumChannelId, t.pickForum, '#'));
+      if (s.forumChannelId && c.forumPostsReserved !== undefined) {
+        container.addTextDisplayComponents((x) => x.setContent(c.forumPostsReserved ? t.postsReserved : t.postsOpen));
+        rows.push(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            c.forumPostsReserved ? btn('forumPosts', t.postsOpenButton, '🔓') : btn('forumPosts', t.postsReserveButton, '🔒', ButtonStyle.Primary),
+          ),
+        );
+      }
       break;
     case 'voice': {
       const mode = c.voiceMode ?? voiceModeOf(s);

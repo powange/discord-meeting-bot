@@ -33,6 +33,31 @@ export function missingForumPermissions(forum: ForumChannel): string[] {
     .map(([name]) => name);
 }
 
+/** Création de posts réservée au bot : @everyone n'a plus « Envoyer des messages » sur le forum. */
+export function postsReserved(forum: ForumChannel): boolean {
+  return forum.permissionOverwrites.cache.get(forum.guild.id)?.deny.has(PermissionFlagsBits.SendMessages) ?? false;
+}
+
+/**
+ * Réserve (ou rouvre) la création de posts dans le forum. Sur un forum, « Envoyer des messages »
+ * permet de créer un post ; répondre dans les posts relève d'« Envoyer des messages dans les
+ * fils », qui n'est pas touché. Le bot s'autorise lui-même d'abord (un refus sur @everyone
+ * l'emporterait sur les permissions de son rôle), avec seulement les permissions qu'il a déjà.
+ * Faux si le bot n'a pas « Gérer les permissions » sur le forum.
+ */
+export async function setPostsReserved(forum: ForumChannel, reserved: boolean, reason: string): Promise<boolean> {
+  const me = forum.guild.members.me;
+  if (!me || !forum.permissionsFor(me).has(PermissionFlagsBits.ManageRoles)) return false;
+  if (reserved) {
+    const own = Object.fromEntries(Object.entries(FORUM_PERMISSIONS).filter(([, flag]) => me.permissions.has(flag) && flag !== PermissionFlagsBits.ManageChannels).map(([name]) => [name, true]));
+    await forum.permissionOverwrites.edit(me.id, own, { reason, type: 1 });
+    await forum.permissionOverwrites.edit(forum.guild.id, { SendMessages: false }, { reason, type: 0 });
+  } else {
+    await forum.permissionOverwrites.edit(forum.guild.id, { SendMessages: null }, { reason, type: 0 });
+  }
+  return true;
+}
+
 /**
  * Crée (ou retrouve par leur nom) les tags de statut du forum et renvoie leurs ids.
  * Les tags existants sont conservés : on se contente d'ajouter ceux qui manquent.

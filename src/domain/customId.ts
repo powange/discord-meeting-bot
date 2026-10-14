@@ -58,6 +58,7 @@ export const CFG_ACTIONS = [
   'home',
   'section',
   'forum',
+  'forumPosts',
   'voice',
   'voiceClear',
   'voiceMode',

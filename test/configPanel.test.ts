@@ -86,6 +86,13 @@ describe('panneau /config', () => {
     expect(flatten(view).length).toBeLessThanOrEqual(40);
   });
 
+  it('forum : création de posts ouverte → bouton pour la réserver au bot ; réservée → bouton pour la rouvrir', () => {
+    const open = renderConfigSection('forum', { ...withChannels(3), forumPostsReserved: false }, m);
+    expect(texts(open)).toContain(m.config.postsOpen);
+    expect(ids(open)).toEqual(['forum', 'forumPosts', 'home']);
+    expect(texts(renderConfigSection('forum', { ...withChannels(3), forumPostsReserved: true }, m))).toContain(m.config.postsReserved);
+  });
+
   it('salons homonymes : précédés de leur catégorie ; valeur actuelle présélectionnée', () => {
     const view = renderConfigSection('alerts', { ...withChannels(3), settings: { ...settings, alertChannelId: '101' } }, m);
     const select = flatten(view).find((x) => x.type === ComponentType.StringSelect)!;

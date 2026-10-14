@@ -25,7 +25,7 @@ import { effectiveLlms, listModels, llmRowToConfig, testLlm, type LlmTest } from
 import { effectiveBackends } from '../../services/transcriptionBackends.js';
 import { assertUrlAllowed, hostOf } from '../../lib/hosts.js';
 import { CONFIG_SECTIONS, renderConfigHome, renderConfigSection, VOICE_LEADS_MIN, type ConfigContext, type ConfigSection, type VoiceMode } from '../embeds/configPanel.js';
-import { ensureStatusTags, missingForumPermissions } from '../forum.js';
+import { ensureStatusTags, missingForumPermissions, postsReserved, setPostsReserved } from '../forum.js';
 import { openBackendPanelInPlace } from './backendPanel.js';
 import { encryptSecret } from '../../lib/secrets.js';
 
@@ -82,7 +82,13 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
     refusals: await ctx.optouts.list(guildId),
     storage: await storageView(ctx, guildId),
+    forumPostsReserved: forumPostsState(ctx, guildId, settings.forumChannelId),
   };
+}
+
+function forumPostsState(ctx: AppContext, guildId: string, forumId: string | null): boolean | undefined {
+  const forum = forumId ? ctx.client.guilds.cache.get(guildId)?.channels.cache.get(forumId) : undefined;
+  return forum?.type === ChannelType.GuildForum ? postsReserved(forum as ForumChannel) : undefined;
 }
 
 async function storageView(ctx: AppContext, guildId: string): Promise<ConfigContext['storage']> {
@@ -171,6 +177,16 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const hubId = await ctx.hub.ensure(forum as ForumChannel, m);
       await ctx.hub.refreshNow(guildId);
       return show('forum', t.forumReady(forum.id, hubId));
+    }
+
+    case 'forumPosts': {
+      if (!interaction.isButton()) return;
+      const forumId = (await ctx.settings.get(guildId)).forumChannelId;
+      const forum = forumId ? interaction.guild.channels.cache.get(forumId) : undefined;
+      if (!forum || forum.type !== ChannelType.GuildForum) return show('forum');
+      const reserve = !postsReserved(forum as ForumChannel);
+      const ok = await setPostsReserved(forum as ForumChannel, reserve, `/config par ${interaction.user.tag}`);
+      return show('forum', ok ? (reserve ? t.postsReservedDone : t.postsOpenDone) : `❌ ${t.postsNeedPermission}`);
     }
 
     case 'voice': {
