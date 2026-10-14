@@ -190,6 +190,13 @@
       "when": 1791954071847,
       "tag": "0026_control_state",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791954420077,
+      "tag": "0027_live_message",
+      "breakpoints": true
     }
   ]
 }

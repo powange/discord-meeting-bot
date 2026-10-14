@@ -23,7 +23,7 @@ export interface LiveState {
  */
 export type ControlState =
   | { kind: 'idle' }
-  | { kind: 'rec'; startedAt: Date; endedAt?: Date | null; startedBy: string | null; live?: LiveState }
+  | { kind: 'rec'; startedAt: Date; endedAt?: Date | null; startedBy: string | null }
   | { kind: 'stopped'; stoppedBy: string | null; reason: string; interrupted: boolean };
 
 /** Valeur de l'option « hors ordre du jour » du sélecteur de point. */
@@ -54,26 +54,36 @@ export function renderRecordingControl(meetingId: string, state: ControlState, m
     return { content: c.recorded(state.startedBy, discordTimestamp(state.startedAt, 't'), state.endedAt ? discordTimestamp(state.endedAt, 't') : null), components: [] };
   }
 
-  // En cours : avertissement, point en cours, notes ; puis Arrêter, Point suivant, Note, choix direct.
-  const agenda = state.live?.agenda ?? [];
-  const markers = state.live?.markers ?? [];
-  const [head, ...rest] = m.recording.announce(state.startedBy).split('\n');
-  const optOut = rest.pop()!;
-  const lines = [head!, ...rest];
+  // En cours : l'avertissement, avec Arrêter et « Mon choix d'enregistrement ». Le suivi de l'ordre
+  // du jour est dans un message à part, juste en dessous (renderLiveControl).
+  const stop = new ButtonBuilder().setCustomId(encode({ type: 'rec.stop', meetingId })).setLabel(m.buttons.stopRecording).setEmoji('⏹️').setStyle(ButtonStyle.Danger);
+  return { content: m.recording.announce(state.startedBy), components: [new ActionRowBuilder<ButtonBuilder>().addComponents(stop, consentButton(m)).toJSON()] };
+}
+
+/**
+ * Suivi de l'ordre du jour pendant l'enregistrement (message sous l'avertissement) : point en
+ * cours et notes, avec ▶️ Point suivant, 📝 Note et le choix direct d'un point. `frozen` : après
+ * l'arrêt, sans boutons.
+ */
+export function renderLiveControl(meetingId: string, live: LiveState, m: Messages, frozen = false): ControlMessage {
+  const c = m.control;
+  const { agenda, markers } = live;
+  const lines = [c.liveTitle];
   const current = currentPoint(markers);
   if (agenda.length) {
-    if (!current) lines.push(c.noPointYet);
+    if (!current) lines.push(frozen ? c.noPointSet : c.noPointYet);
     else if (current.agendaItemId === null) lines.push(c.offAgenda(discordTimestamp(current.since, 't')));
     else {
       const index = agenda.findIndex((a) => a.id === current.agendaItemId);
-      if (index >= 0) lines.push(c.currentPoint(index + 1, truncate(agenda[index]!.title, 120), discordTimestamp(current.since, 't')));
+      if (index >= 0) lines.push((frozen ? c.lastPoint : c.currentPoint)(index + 1, truncate(agenda[index]!.title, 120), discordTimestamp(current.since, 't')));
     }
+  } else if (!frozen) {
+    lines.push(c.noAgenda);
   }
   const notes = markers.filter((mk) => mk.kind !== 'agenda').length;
   if (notes) lines.push(c.notes(notes));
-  lines.push(optOut);
+  if (frozen) return { content: lines.join('\n'), components: [] };
 
-  const stop = new ButtonBuilder().setCustomId(encode({ type: 'rec.stop', meetingId })).setLabel(m.buttons.stopRecording).setEmoji('⏹️').setStyle(ButtonStyle.Danger);
   const actions = new ActionRowBuilder<ButtonBuilder>();
   if (agenda.length) {
     const next = nextPoint(agenda, markers);
@@ -102,6 +112,5 @@ export function renderRecordingControl(meetingId: string, state: ControlState, m
       );
     rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select).toJSON());
   }
-  rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(stop, consentButton(m)).toJSON());
   return { content: lines.join('\n'), components: rows };
 }

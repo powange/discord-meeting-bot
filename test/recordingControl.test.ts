@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderRecordingControl, type ControlState } from '../src/discord/embeds/recordingControl.js';
+import { renderLiveControl, renderRecordingControl, type ControlState } from '../src/discord/embeds/recordingControl.js';
 import { decode } from '../src/domain/customId.js';
 import { messages } from '../src/i18n/index.js';
 
@@ -23,28 +23,37 @@ describe('message à boutons de l’enregistrement', () => {
     expect(ids(c)).toEqual(['rec.start']);
   });
 
-  it('en cours : avertissement ⚠️ (qui l’a lancé), Point suivant, Note, choix direct, puis Arrêter et Mon choix', () => {
-    const c = renderRecordingControl(id, rec({ live: { agenda, markers: [] } }), m);
-    expect(c.content.startsWith('⚠️ **Cette réunion est enregistrée** · lancé par Pierre Comble')).toBe(true);
-    expect(c.content).toContain(m.control.noPointYet);
-    expect(c.content.split('\n').at(-1)).toMatch(/^-# Vous ne voulez pas être enregistré/);
-    expect(ids(c)).toEqual(['rec.next', 'rec.note', 'rec.goto', 'rec.stop', 'consent.open']);
+  it('en cours : l’avertissement ⚠️ (qui l’a lancé), avec seulement Arrêter et Mon choix', () => {
+    const c = renderRecordingControl(id, rec(), m);
+    expect(c.content).toBe(m.recording.announce('Pierre Comble'));
+    expect(ids(c)).toEqual(['rec.stop', 'consent.open']);
+  });
+
+  it('suivi de l’ordre du jour (message à part) : invitation, Point suivant, Note, choix direct', () => {
+    const c = renderLiveControl(id, { agenda, markers: [] }, m);
+    expect(c.content).toBe(`${m.control.liveTitle}\n${m.control.noPointYet}`);
+    expect(ids(c)).toEqual(['rec.next', 'rec.note', 'rec.goto']);
     expect(labels(c)).toContain('Point suivant : 1. Budget');
   });
 
-  it('point en cours affiché, notes comptées ; au dernier point, le suivant est la fin de l’ordre du jour', () => {
+  it('suivi : point en cours, notes comptées ; au dernier point, le suivant est la fin de l’ordre du jour ; figé : sans boutons', () => {
     const markers = [
       { kind: 'agenda' as const, at: since, agendaItemId: 11, text: '', who: null },
       { kind: 'decision' as const, at: since, agendaItemId: null, text: 'ok', who: null },
     ];
-    const c = renderRecordingControl(id, rec({ live: { agenda, markers } }), m);
+    const c = renderLiveControl(id, { agenda, markers }, m);
     expect(c.content).toContain('▶️ Point en cours : **2. Fête**');
     expect(c.content).toContain('📝 1 note prise en direct');
     expect(labels(c)).toContain('Point suivant : fin de l’ordre du jour');
+    const frozen = renderLiveControl(id, { agenda, markers }, m, true);
+    expect(frozen.components).toEqual([]);
+    expect(frozen.content).toContain('▶️ Dernier point : **2. Fête**');
   });
 
-  it('sans ordre du jour : Note, Arrêter, Mon choix', () => {
-    expect(ids(renderRecordingControl(id, rec({ live: { agenda: [], markers: [] } }), m))).toEqual(['rec.note', 'rec.stop', 'consent.open']);
+  it('suivi sans ordre du jour : seulement la note', () => {
+    const c = renderLiveControl(id, { agenda: [], markers: [] }, m);
+    expect(ids(c)).toEqual(['rec.note']);
+    expect(c.content).toContain(m.control.noAgenda);
   });
 
   it('arrêté : qui l’a arrêté et « Reprendre l’enregistrement » ; interrompu : avertissement', () => {

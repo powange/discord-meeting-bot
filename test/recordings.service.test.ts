@@ -90,7 +90,7 @@ describe('message à boutons : toujours le dernier message de l’enregistrement
         getMeeting: async () => current,
         updateMeeting: async (_id: string, patch: Partial<MeetingRow>) => void (current = { ...current, ...patch }),
         listRecordingsForMeeting: async () => sessions,
-        listAgenda: async () => [],
+        listAgenda: async () => [{ id: 10, title: 'Budget' }],
         listMarkers: async () => [],
       } as never,
       { get: async () => settings, messages: async () => m } as never,
@@ -113,35 +113,40 @@ describe('message à boutons : toujours le dernier message de l’enregistrement
     expect(s.contentOf(0)).toBe(m.control.idle);
     expect(s.meeting().controlState).toBe('idle');
 
-    // Démarrage : « non démarré » supprimé, l'avertissement porte Arrêter.
+    // Démarrage : « non démarré » supprimé, l'avertissement porte Arrêter, le suivi de l'ODJ en dessous.
     s.sessions.push({ id: 'r1', status: 'recording', startedAt: new Date(), endedAt: null, startedBy: 'u1', stoppedBy: null, stopReason: null });
     await s.svc.syncControl('m1');
     expect(s.t.deleted).toEqual(['msg1']);
     expect(s.contentOf(1)).toMatch(/^⚠️ \*\*Cette réunion est enregistrée\*\* · lancé par Pierre Comble/);
     expect(JSON.stringify(s.t.sent[1]!.components)).toContain('rec:stop');
+    expect(s.contentOf(2)).toContain(m.control.liveTitle);
+    expect(JSON.stringify(s.t.sent[2]!.components)).toContain('rec:next');
 
-    // Mise à jour pendant l'enregistrement : même message, édité.
+    // Mise à jour pendant l'enregistrement (point suivant…) : mêmes messages, édités.
     await s.svc.syncControl('m1');
-    expect(s.t.sent).toHaveLength(2);
+    expect(s.t.sent).toHaveLength(3);
 
-    // Arrêt manuel : l'avertissement perd ses boutons, « arrêté par » porte Reprendre.
+    // Arrêt manuel : avertissement et suivi perdent leurs boutons, « arrêté par » porte Reprendre.
     Object.assign(s.sessions[0]!, { status: 'stopped', endedAt: new Date(), stoppedBy: 'u1', stopReason: 'manual' });
     await s.svc.syncControl('m1');
     expect(s.hasButtons('msg2')).toBe(false);
-    expect(s.contentOf(2)).toBe('⏹️ **Enregistrement arrêté** · par Pierre Comble');
-    expect(JSON.stringify(s.t.sent[2]!.components)).toContain('rec:start');
+    expect(s.hasButtons('msg3')).toBe(false);
+    expect(s.contentOf(3)).toBe('⏹️ **Enregistrement arrêté** · par Pierre Comble');
+    expect(JSON.stringify(s.t.sent[3]!.components)).toContain('rec:start');
 
-    // Reprise : nouvelle session, nouveau message en bas ; « arrêté » perd son bouton.
+    // Reprise : nouvelle session, nouveaux messages en bas ; « arrêté » perd son bouton.
     s.sessions.push({ id: 'r2', status: 'recording', startedAt: new Date(), endedAt: null, startedBy: null, stoppedBy: null, stopReason: null });
     await s.svc.syncControl('m1');
-    expect(s.hasButtons('msg3')).toBe(false);
-    expect(s.contentOf(3)).toContain('· démarrage automatique');
+    expect(s.hasButtons('msg4')).toBe(false);
+    expect(s.contentOf(4)).toContain('· démarrage automatique');
+    expect(s.contentOf(5)).toContain(m.control.liveTitle);
 
     // Réunion close : plus aucun bouton, plus de nouveau message.
     Object.assign(s.sessions[1]!, { status: 'stopped', endedAt: new Date(), stopReason: 'meeting_end' });
     s.setMeeting({ status: 'ended' });
     await s.svc.syncControl('m1');
-    expect(s.hasButtons('msg4')).toBe(false);
-    expect(s.t.sent).toHaveLength(4);
+    expect(s.hasButtons('msg5')).toBe(false);
+    expect(s.hasButtons('msg6')).toBe(false);
+    expect(s.t.sent).toHaveLength(6);
   });
 });

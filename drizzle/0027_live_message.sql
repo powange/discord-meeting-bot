@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "live_message_id" text;

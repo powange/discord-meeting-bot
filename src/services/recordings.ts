@@ -11,11 +11,12 @@ import {
   type Guild,
   type VoiceBasedChannel,
   type VoiceState,
+  type ThreadChannel,
 } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
-import { INTERRUPTIONS, renderRecordingControl, type ControlState } from '../discord/embeds/recordingControl.js';
+import { INTERRUPTIONS, renderLiveControl, renderRecordingControl, type ControlState } from '../discord/embeds/recordingControl.js';
 import { consentButton } from '../discord/embeds/meetingManager.js';
 import { renderRecordingSummary } from '../discord/embeds/recordingSummary.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -470,6 +471,13 @@ export class RecordingService {
     const active = sessions.find((r) => r.status === 'recording');
     const last = sessions.at(-1);
     const key = !isOpen(meeting.status) ? 'closed' : active ? `rec:${active.id}` : last ? `stopped:${last.id}` : 'idle';
+    await this.syncMainControl(meeting, thread, key, m);
+    await this.syncLiveControl(meetingId, thread, key, m);
+  }
+
+  /** Message à boutons de l'état de l'enregistrement (voir controlState). */
+  private async syncMainControl(meeting: MeetingRow, thread: ThreadChannel, key: string, m: Messages): Promise<void> {
+    const meetingId = meeting.id;
 
     const current = meeting.controlMessageId ? await thread.messages.fetch(meeting.controlMessageId).catch(() => null) : null;
     // Même état : le message est mis à jour sur place (point en cours, notes…).
@@ -511,13 +519,37 @@ export class RecordingService {
     const name = (id: string | null) => (id ? displayName(this.client, guildId, id) : Promise.resolve(null));
     let state: ControlState = { kind: 'idle' };
     if (kind === 'rec' && session) {
-      const live = frozen ? undefined : { agenda: (await this.repos.listAgenda(meetingId)).map((a) => ({ id: a.id, title: a.title })), markers: await this.repos.listMarkers(meetingId) };
-      state = { kind: 'rec', startedAt: session.startedAt, endedAt: session.endedAt, startedBy: await name(session.startedBy), ...(live ? { live } : {}) };
+      state = { kind: 'rec', startedAt: session.startedAt, endedAt: session.endedAt, startedBy: await name(session.startedBy) };
     } else if (kind === 'stopped' && session) {
       const reason = session.stopReason ?? 'manual';
       state = { kind: 'stopped', stoppedBy: await name(session.stoppedBy), reason: m.recording.reasons[reason] ?? reason, interrupted: INTERRUPTIONS.includes(reason) };
     }
     return renderRecordingControl(meetingId, state, m, frozen);
+  }
+
+  /**
+   * Suivi de l'ordre du jour, sous l'avertissement, pendant l'enregistrement : mis à jour sur
+   * place ; à l'arrêt, il perd ses boutons (le dernier point et les notes restent lisibles).
+   */
+  private async syncLiveControl(meetingId: string, thread: ThreadChannel, key: string, m: Messages): Promise<void> {
+    const meeting = (await this.repos.getMeeting(meetingId))!;
+    const recording = key.startsWith('rec:');
+    if (!recording && !meeting.liveMessageId) return;
+    const live = { agenda: (await this.repos.listAgenda(meetingId)).map((a) => ({ id: a.id, title: a.title })), markers: await this.repos.listMarkers(meetingId) };
+    const payload = { ...renderLiveControl(meetingId, live, m, !recording), allowedMentions: { parse: [] as [] } };
+    const current = meeting.liveMessageId ? await thread.messages.fetch(meeting.liveMessageId).catch(() => null) : null;
+    await ensureUnarchived(thread);
+    if (current) {
+      await current.edit(payload).catch((err) => this.warn(meetingId, 'Suivi de l’ordre du jour non mis à jour', err));
+      if (!recording) await this.repos.updateMeeting(meetingId, { liveMessageId: null });
+      return;
+    }
+    if (!recording) {
+      await this.repos.updateMeeting(meetingId, { liveMessageId: null });
+      return;
+    }
+    const message = await thread.send({ ...payload, flags: MessageFlags.SuppressNotifications });
+    await this.repos.updateMeeting(meetingId, { liveMessageId: message.id });
   }
 
   private shouldRecord(guild: Guild, settings: GuildSettingsRow, userId: string): boolean {

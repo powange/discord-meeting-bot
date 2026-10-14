@@ -76,6 +76,8 @@ export const meetings = pgTable(
      * Quand l'état change, l'ancien message perd ses boutons et un nouveau est publié en bas du post.
      */
     controlState: text(),
+    /** Suivi de l'ordre du jour pendant l'enregistrement (message sous l'avertissement). */
+    liveMessageId: text(),
     /** Message de suivi du compte rendu (progression, puis lien vers le compte rendu publié). */
     reportStatusMessageId: text(),
     scheduledEventId: text(),
