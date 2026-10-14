@@ -194,7 +194,7 @@ export const fr = {
   },
 
   control: {
-    idle: "🎙️ **Enregistrement** — non démarré. L'organisateur ou un gestionnaire peut l'enregistrer (une piste par participant).",
+    idle: "🎙️ **Enregistrement non démarré** · l'organisateur ou un gestionnaire peut le lancer.",
     recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}.`,
     closed: '🎙️ Réunion close : enregistrement terminé.',
     currentPoint: (position: number, title: string, since: string) => `▶️ Point en cours : **${position}. ${title}** (depuis ${since})`,
@@ -217,12 +217,15 @@ export const fr = {
   },
 
   recording: {
-    warning:
-      '🔴 Cette réunion est enregistrée (une piste audio par participant) pour en produire le compte rendu.\n' +
-      "Pour ne pas être enregistré : bouton « Mon choix d'enregistrement » ci-dessous. Votre présence reste notée, pas votre voix.",
-    started: (by: string | null) => (by ? `🔴 Enregistrement démarré par ${by}.` : '🔴 Enregistrement démarré automatiquement.'),
+    /** Avertissement au démarrage (post et chat du vocal). */
+    announce: (by: string | null) =>
+      `⚠️ **Cette réunion est enregistrée** ${by ? `· lancé par ${by}` : '· démarrage automatique'}\n` +
+      'Une piste audio par participant, uniquement pour rédiger le compte rendu.\n' +
+      "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » : votre présence reste notée, pas votre voix.",
+    stopped: (by: string | null, reason: string) => `⏹️ **Enregistrement arrêté** · ${by ? `par ${by}` : reason}`,
     arrival: (userId: string) =>
-      `🔴 <@${userId}>, cette réunion est **enregistrée** (une piste audio par participant, pour le compte rendu). Pour ne pas l'être : bouton ci-dessous.`,
+      `⚠️ <@${userId}>, cette réunion est **enregistrée** : une piste audio par participant, pour rédiger le compte rendu.\n` +
+      "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » ci-dessous.",
     reasons: {
       manual: 'arrêt manuel',
       empty: 'vocal vide',

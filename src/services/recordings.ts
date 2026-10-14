@@ -274,7 +274,7 @@ export class RecordingService {
   /** Avertissement RGPD dans le post et dans le chat du salon vocal (lu par ceux qui y sont). */
   private async announceStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, channel: VoiceBasedChannel, by: string | null) {
     const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
-    const text = `${m.recording.started(byName)}\n${m.recording.warning}`;
+    const text = m.recording.announce(byName);
     const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()];
     const thread = await fetchThread(this.client, meeting.threadId);
     if (thread) {
@@ -286,10 +286,28 @@ export class RecordingService {
     }
   }
 
+  /** Fin de l'enregistrement annoncée dans le post et dans le chat du salon vocal. */
+  private async announceStop(guildId: string, channelId: string, meetingId: string, reason: StopReason, by?: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting) return;
+    const m = await this.settings.messages(guildId);
+    const byName = reason === 'manual' && by ? await displayName(this.client, guildId, by) : null;
+    const text = m.recording.stopped(byName, m.recording.reasons[reason] ?? reason);
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (thread) {
+      await ensureUnarchived(thread);
+      await thread.send({ content: text, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications }).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (post) impossible', err));
+    }
+    const channel = this.client.channels.cache.get(channelId);
+    if (channel?.isTextBased() && 'send' in channel) {
+      await channel.send({ content: text, allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (chat vocal) impossible', err));
+    }
+  }
+
   // ---------------------------------------------------------------- arrêt
 
-  /** Arrête l'enregistrement d'une réunion ; renvoie faux s'il n'y en avait pas. */
-  async stop(meetingId: string, reason: StopReason): Promise<boolean> {
+  /** Arrête l'enregistrement d'une réunion ; renvoie faux s'il n'y en avait pas. `by` : qui l'a arrêté (arrêt manuel). */
+  async stop(meetingId: string, reason: StopReason, by?: string): Promise<boolean> {
     const entry = [...this.active.values()].find((a) => a?.meetingId === meetingId);
     if (!entry) return false;
     this.active.delete(entry.guildId); // avant toute attente : un seul arrêt
@@ -307,6 +325,9 @@ export class RecordingService {
       stopReason: reason,
     });
     this.log.info({ meetingId, recordingId: entry.recordingId, reason }, 'Enregistrement arrêté');
+
+    // Annonce de l'arrêt, comme celle du démarrage (une interruption a son propre avertissement).
+    if (!interrupted) await this.announceStop(entry.guildId, entry.channelId, meetingId, reason, by).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt impossible', err));
 
     await this.postSummary(entry.recordingId, meetingId, reason, interrupted).catch((err) => this.warn(meetingId, 'Bilan impossible', err));
     if (reason !== 'shutdown') {

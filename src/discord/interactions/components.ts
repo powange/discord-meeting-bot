@@ -241,7 +241,7 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const stopped = await ctx.recordings.stop(meeting.id, 'manual');
+      const stopped = await ctx.recordings.stop(meeting.id, 'manual', interaction.user.id);
       await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.errors.notRecording);
       return;
     }
