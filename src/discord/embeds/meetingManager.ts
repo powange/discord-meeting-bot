@@ -48,16 +48,7 @@ export function renderMeetingManager(
       new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.edit', g.edit, '✏️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
     );
     for (const row of rows) container.addActionRowComponents(row);
-    // Rôles invités à répondre : mentionnés à l'ajout, relancés la veille de la fin des réponses.
-    // @everyone (identifiant du serveur) n'est jamais proposé par le sélecteur : bouton à part.
-    const everyone = meeting.guildId !== undefined && (meeting.targetRoleIds ?? []).includes(meeting.guildId);
-    const roles = (meeting.targetRoleIds ?? []).filter((id) => id !== meeting.guildId);
-    const invite = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId: meeting.id })).setPlaceholder(p.inviteRoles).setMinValues(0).setMaxValues(5);
-    if (roles.length) invite.setDefaultRoles(...roles);
-    container.addActionRowComponents((row: ActionRowBuilder<RoleSelectMenuBuilder>) => row.addComponents(invite));
-    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
-      row.addComponents(button('poll.everyone', everyone ? p.everyoneOff : p.everyoneOn, '📣', everyone ? ButtonStyle.Secondary : ButtonStyle.Primary)),
-    );
+    for (const row of inviteRows(meeting.id, meeting.guildId ?? '', meeting.targetRoleIds ?? [], m)) container.addActionRowComponents(row);
     return container.toJSON();
   }
   const main = new ActionRowBuilder<ButtonBuilder>();
@@ -95,6 +86,8 @@ export function renderMeetingManager(
     );
   }
   for (const row of rows) container.addActionRowComponents(row);
+  // Réunion à venir : rôles invités (mentionnés à l'ajout, relancés au premier rappel).
+  if (meeting.status === 'scheduled') for (const row of inviteRows(meeting.id, meeting.guildId ?? '', meeting.targetRoleIds ?? [], m)) container.addActionRowComponents(row);
   return container.toJSON();
 }
 
@@ -127,4 +120,22 @@ export function renderConsent(state: { refused: boolean; notice?: string | undef
 /** Bouton d'accès au choix d'enregistrement (post épinglé, avertissements). */
 export function consentButton(m: Messages): ButtonBuilder {
   return new ButtonBuilder().setCustomId(encode({ type: 'consent.open' })).setLabel(m.consent.open).setEmoji('🎙️').setStyle(ButtonStyle.Secondary);
+}
+
+/**
+ * Rôles invités à une réunion ou à un sondage : sélecteur (jusqu'à 5) et bouton @everyone, que
+ * les sélecteurs de Discord ne proposent jamais. Ils sont mentionnés à l'invitation, puis
+ * relancés à la place du rôle de relance du serveur.
+ */
+export function inviteRows(meetingId: string, guildId: string, current: readonly string[], m: Messages) {
+  const roles = current.filter((id) => id !== guildId);
+  const select = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'meeting.roles', meetingId })).setPlaceholder(m.invite.roles).setMinValues(0).setMaxValues(5);
+  if (roles.length) select.setDefaultRoles(...roles);
+  const everyone = current.includes(guildId);
+  const button = new ButtonBuilder()
+    .setCustomId(encode({ type: 'meeting.everyone', meetingId }))
+    .setLabel(everyone ? m.invite.everyoneOff : m.invite.everyoneOn)
+    .setEmoji('📣')
+    .setStyle(everyone ? ButtonStyle.Secondary : ButtonStyle.Primary);
+  return [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON(), new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON()];
 }

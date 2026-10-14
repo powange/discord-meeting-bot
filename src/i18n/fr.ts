@@ -86,13 +86,23 @@ export const fr = {
     `3. Pour les comptes rendus : **Transcription** (serveur Vibe/Whisper) et **Résumé** (LM Studio, Ollama…).\n` +
     `Ensuite, le bouton « Nouvelle réunion » apparaît dans le post épinglé du forum.`,
 
+  /** Rôles invités à une réunion ou à un sondage. */
+  invite: {
+    roles: 'Inviter des rôles (facultatif)',
+    everyoneOn: 'Inviter tout le monde (@everyone)',
+    everyoneOff: 'Ne plus inviter tout le monde',
+    meeting: (roles: string) => `📣 ${roles} : vous êtes invités à cette réunion. Indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte ci-dessus).`,
+    afterCreate: "📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.",
+    meetingCreated: (threadId: string) =>
+      `Réunion créée : <#${threadId}>\n📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.`,
+    invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés au premier rappel.`,
+    noInvited: 'Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).',
+  },
+
   datePoll: {
     created: (threadId: string) =>
       `Sondage créé : <#${threadId}>\n📣 Vous pouvez inviter des rôles à répondre : ils seront mentionnés dans le sondage, puis relancés la veille de la fin des réponses s'ils n'ont pas répondu.`,
-    inviteRoles: 'Inviter des rôles à répondre (facultatif)',
     invitedMembers: 'Invités :',
-    everyoneOn: 'Inviter tout le monde (@everyone)',
-    everyoneOff: 'Ne plus inviter tout le monde',
     invite: (roles: string) => `📣 ${roles} : vous êtes invités à indiquer vos disponibilités (bouton « Indiquer mes disponibilités » sur la carte ci-dessus).`,
     invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés la veille de la fin des réponses.`,
     noInvited: "Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).",

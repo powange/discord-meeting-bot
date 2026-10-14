@@ -25,9 +25,10 @@ import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
 import { OFF_AGENDA } from '../embeds/recordingControl.js';
+import { roleMention } from '../notify.js';
 import { fetchForum } from '../threads.js';
 import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingDraft, readMeetingModal, type MeetingDraft } from '../modals.js';
-import { renderMeetingManager } from '../embeds/meetingManager.js';
+import { inviteRows, renderMeetingManager } from '../embeds/meetingManager.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
@@ -330,6 +331,33 @@ export async function handleAction(
       return;
     }
 
+    case 'meeting.roles':
+    case 'meeting.everyone': {
+      requireManager(scope);
+      if (meeting.status !== 'scheduled' && meeting.status !== 'polling') throw new UserError(m.errors.meetingClosed);
+      const guildId = interaction.guildId;
+      const everyone = meeting.targetRoleIds.includes(guildId);
+      let roleIds: string[];
+      if (action.type === 'meeting.roles') {
+        if (!interaction.isRoleSelectMenu()) return;
+        // Le sélecteur ne connaît pas @everyone : il est conservé s'il était invité.
+        roleIds = [...[...interaction.roles.keys()].filter((id) => id !== guildId).slice(0, 5), ...(everyone ? [guildId] : [])];
+      } else {
+        if (!interaction.isButton()) return;
+        roleIds = everyone ? meeting.targetRoleIds.filter((id) => id !== guildId) : [...meeting.targetRoleIds, guildId];
+      }
+      await interaction.deferUpdate();
+      await ctx.meetings.inviteRoles(interaction.guild, meeting.id, roleIds);
+      const polling = meeting.status === 'polling';
+      const names = roleIds.map((id) => roleMention(id, guildId)).join(' ');
+      const text = roleIds.length ? (polling ? m.datePoll.invitedReply(names) : m.invite.invitedReply(names)) : polling ? m.datePoll.noInvited : m.invite.noInvited;
+      const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;
+      // Depuis ⚙️ Gérer (Components V2) : le panneau, avec le résultat en tête ; depuis la confirmation de création : texte.
+      if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: text })], allowedMentions: { parse: [] } });
+      else await interaction.editReply({ content: text, components: inviteRows(meeting.id, guildId, roleIds, m), allowedMentions: { parse: [] } });
+      return;
+    }
+
     case 'meeting.autoRecord': {
       if (!interaction.isButton()) return;
       requireManager(scope);
@@ -410,7 +438,7 @@ export async function handleAction(
         { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
         input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
       );
-      await replyEphemeral(interaction, m.replies.duplicated(copy.threadId!));
+      await interaction.editReply({ content: `${m.replies.duplicated(copy.threadId!)}\n${m.invite.afterCreate}`, components: inviteRows(copy.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
       return;
     }
 
@@ -534,7 +562,8 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
       autoVoice: settings.autoVoice,
     });
     const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
-    await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
+    // Rôles à inviter : choisis juste après (le formulaire de création est plein).
+    await interaction.editReply({ content: m.invite.meetingCreated(meeting.threadId!), components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
   });
 }
 

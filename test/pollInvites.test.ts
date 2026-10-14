@@ -24,15 +24,15 @@ describe('rôles invités à répondre à un sondage', () => {
     const panel = renderMeetingManager({ id: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', guildId: 'g', title: 'AG', status: 'polling', autoRecord: false, targetRoleIds: ['111', 'g'] }, { hasRecording: false }, m);
     const rows = panel.components.filter((c) => c.type === 1) as Array<{ components: Array<{ type: number; custom_id: string; default_values?: Array<{ id: string }> }> }>;
     const select = rows.flatMap((r) => r.components).find((c) => c.type === 6)!;
-    expect(decode(select.custom_id)?.type).toBe('poll.roles');
+    expect(decode(select.custom_id)?.type).toBe('meeting.roles');
     expect(select.default_values).toEqual([{ id: '111', type: 'role' }]);
-    const everyone = rows.flatMap((r) => r.components).find((c) => c.type === 2 && decode(c.custom_id)?.type === 'poll.everyone') as unknown as { label: string };
-    expect(everyone.label).toBe(m.datePoll.everyoneOff);
+    const everyone = rows.flatMap((r) => r.components).find((c) => c.type === 2 && decode(c.custom_id)?.type === 'meeting.everyone') as unknown as { label: string };
+    expect(everyone.label).toBe(m.invite.everyoneOff);
   });
 
-  function setup(opts: { mentionable: boolean; canMentionAll?: boolean; current?: string[] }) {
+  function setup(opts: { mentionable: boolean; canMentionAll?: boolean; current?: string[]; status?: string }) {
     const t = fakeThread('post');
-    let meeting = { id: 'm1', guildId: 'g', threadId: 'post', status: 'polling', title: 'AG', targetRoleIds: opts.current ?? [] } as unknown as MeetingRow;
+    let meeting = { id: 'm1', guildId: 'g', threadId: 'post', status: opts.status ?? 'polling', title: 'AG', targetRoleIds: opts.current ?? [] } as unknown as MeetingRow;
     const members = new Map([
       ['111111111111111111', { id: '111111111111111111', user: { bot: false } }],
       ['b1', { id: 'b1', user: { bot: true } }],
@@ -88,5 +88,13 @@ describe('rôles invités à répondre à un sondage', () => {
     await s.service.inviteRoles(s.guild as never, 'm1', ['g']);
     expect(s.t.sent).toHaveLength(1);
     expect(s.t.sent[0]).toMatchObject({ content: `${m.datePoll.invite('@everyone')}\n${m.datePoll.invitedMembers} <@111111111111111111>`, allowedMentions: { users: ['111111111111111111'] } });
+  });
+
+  it('réunion (pas un sondage) : même invitation, texte de réunion ; réunion close : refusé', async () => {
+    const s = setup({ mentionable: true, status: 'scheduled' });
+    await s.service.inviteRoles(s.guild as never, 'm1', ['r1']);
+    expect(s.t.sent).toEqual([{ content: m.invite.meeting('<@&r1>'), allowedMentions: { roles: ['r1'] } }]);
+    const closed = setup({ mentionable: true, status: 'ended' });
+    await expect(closed.service.inviteRoles(closed.guild as never, 'm1', ['r1'])).rejects.toThrow(m.errors.meetingClosed);
   });
 });

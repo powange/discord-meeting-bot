@@ -179,13 +179,16 @@ export class MeetingService {
   }
 
   /**
-   * Rôles invités à répondre au sondage : enregistrés (ils remplacent le rôle de relance du
+   * Rôles invités à une réunion ou à un sondage : enregistrés (ils remplacent le rôle de relance du
    * serveur pour la relance), et les nouveaux mentionnés dans le post. Un rôle que le bot ne peut
    * pas mentionner (non mentionnable, sans la permission « Mentionner @everyone ») : ses membres
    * sont mentionnés un par un.
    */
   async inviteRoles(guild: Guild, meetingId: string, roleIds: readonly string[]): Promise<void> {
-    const meeting = await this.requirePolling(meetingId);
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || (meeting.status !== 'scheduled' && meeting.status !== 'polling')) {
+      throw new UserError((await this.settings.messages(guild.id)).errors.meetingClosed);
+    }
     const added = roleIds.filter((id) => !meeting.targetRoleIds.includes(id));
     await this.repos.updateMeeting(meetingId, { targetRoleIds: [...roleIds] });
     if (added.length === 0) return;
@@ -203,15 +206,16 @@ export class MeetingService {
     }
     await ensureUnarchived(thread);
     const roles = (ids: readonly string[]) => ids.map((id) => roleMention(id, guild.id)).join(' ');
+    const invite = meeting.status === 'polling' ? m.datePoll.invite : m.invite.meeting;
     if (pingable.length) {
       const everyone = pingable.includes(guild.id);
       await thread.send({
-        content: m.datePoll.invite(roles(pingable)),
+        content: invite(roles(pingable)),
         allowedMentions: { roles: pingable.filter((id) => id !== guild.id), ...(everyone ? { parse: ['everyone' as const] } : {}) },
       });
     }
     // Rôles non mentionnables : le message les nomme, et leurs membres sont mentionnés un par un.
-    if (others.length) await sendWithMentions(thread, m.datePoll.invite(roles(others)), m.datePoll.invitedMembers, members);
+    if (others.length) await sendWithMentions(thread, invite(roles(others)), m.datePoll.invitedMembers, members);
   }
 
   /** Créneau ajouté à un sondage en cours. */

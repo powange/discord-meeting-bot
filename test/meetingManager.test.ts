@@ -31,6 +31,7 @@ describe('panneau « Gérer »', () => {
       'rec.start',
       'meeting.end',
       'meeting.cancel',
+      'meeting.everyone', // + sélecteur des rôles invités
     ]);
   });
   it('enregistrement : Enregistrer maintenant, ou Arrêter s’il tourne', () => {

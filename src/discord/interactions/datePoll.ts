@@ -24,7 +24,7 @@ import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderPollPanel, renderSlotChoice } from '../embeds/datePoll.js';
-import { roleMention } from '../notify.js';
+import { inviteRows } from '../embeds/meetingManager.js';
 import { fetchForum } from '../threads.js';
 import { meetingScope, replyEphemeral, requireManager } from './common.js';
 import type { ComponentInteraction } from './components.js';
@@ -57,27 +57,6 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
   if (meeting.status !== 'polling') throw new UserError(p.notPolling);
 
   switch (action.type) {
-    case 'poll.roles':
-    case 'poll.everyone': {
-      requireManager(scope);
-      const everyone = meeting.targetRoleIds.includes(interaction.guildId);
-      let roleIds: string[];
-      if (action.type === 'poll.roles') {
-        if (!interaction.isRoleSelectMenu()) return;
-        // Le sélecteur ne connaît pas @everyone : il est conservé s'il était invité.
-        roleIds = [...[...interaction.roles.keys()].filter((id) => id !== interaction.guildId).slice(0, 5), ...(everyone ? [interaction.guildId] : [])];
-      } else {
-        if (!interaction.isButton()) return;
-        roleIds = everyone ? meeting.targetRoleIds.filter((id) => id !== interaction.guildId) : [...meeting.targetRoleIds, interaction.guildId];
-      }
-      await interaction.deferUpdate();
-      await ctx.meetings.inviteRoles(interaction.guild, meeting.id, roleIds);
-      const text = roleIds.length ? p.invitedReply(roleIds.map((id) => roleMention(id, interaction.guildId)).join(' ')) : p.noInvited;
-      // Depuis ⚙️ Gérer (panneau Components V2) : réponse dans le même format ; depuis la confirmation de création : texte.
-      if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) await interaction.editReply({ components: [notice(text)], allowedMentions: { parse: [] } });
-      else await interaction.editReply({ content: text, components: inviteRows(meeting.id, interaction.guildId, roleIds, m), allowedMentions: { parse: [] } });
-      return;
-    }
     case 'poll.answer': {
       if (!interaction.isButton()) return;
       await interaction.reply({ components: [await panel(ctx, meeting, interaction.user.id, m)], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
@@ -160,23 +139,6 @@ async function panel(ctx: AppContext, meeting: { id: string; title: string; guil
 /** Classement (meilleur en tête) appliqué aux choix affichés. */
 function rankById<T extends { id: number; yes: number; maybe: number }>(choices: readonly T[]): T[] {
   return [...choices].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
-}
-
-/**
- * Rôles invités à répondre : sélecteur (jusqu'à 5) et bouton @everyone, que les sélecteurs de
- * Discord ne proposent jamais.
- */
-export function inviteRows(meetingId: string, guildId: string, current: readonly string[], m: Messages) {
-  const roles = current.filter((id) => id !== guildId);
-  const select = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId })).setPlaceholder(m.datePoll.inviteRoles).setMinValues(0).setMaxValues(5);
-  if (roles.length) select.setDefaultRoles(...roles);
-  const everyone = current.includes(guildId);
-  const button = new ButtonBuilder()
-    .setCustomId(encode({ type: 'poll.everyone', meetingId }))
-    .setLabel(everyone ? m.datePoll.everyoneOff : m.datePoll.everyoneOn)
-    .setEmoji('📣')
-    .setStyle(everyone ? ButtonStyle.Secondary : ButtonStyle.Primary);
-  return [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON(), new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON()];
 }
 
 function notice(text: string) {
