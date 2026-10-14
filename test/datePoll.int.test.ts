@@ -67,7 +67,7 @@ describe.skipIf(!url)('Sondage de date : du sondage à la réunion planifiée', 
     expect(guild.scheduledEvents.create).not.toHaveBeenCalled();
   });
 
-  it('clôture : meilleur créneau retenu, réponses reprises en inscriptions, réunion planifiée et annoncée', async () => {
+  it('clôture : résultats publiés, meilleur créneau suggéré, rien de fixé ; l’organisateur fixe → réponses en inscriptions, réunion planifiée et annoncée', async () => {
     const [meeting] = await repos.listMeetings('g', ['polling']);
     const [s1, s2] = await repos.listSlots(meeting!.id);
     await repos.setVote(s1!.id, '101', 'yes');
@@ -76,6 +76,16 @@ describe.skipIf(!url)('Sondage de date : du sondage à la réunion planifiée', 
     await repos.setVote(s2!.id, '101', 'no');
 
     await service.closePoll(meeting!.id);
+    // La date n'est pas fixée toute seule : résultats (⭐ suggestion), organisateur mentionné, bouton « Fixer la date ».
+    expect((await repos.getMeeting(meeting!.id))?.status).toBe('polling');
+    const closed = threads[0]!.sent.at(-1)! as { content: string; embeds: Array<{ fields: Array<{ name: string; value: string }> }>; components: unknown[]; allowedMentions: unknown };
+    expect(closed.content).toContain('les réponses sont closes : à vous de fixer la date');
+    expect(closed.embeds[0]!.fields[0]!.name.startsWith('⭐')).toBe(true);
+    expect(closed.embeds[0]!.fields[0]!.value).toContain('le plus disponible');
+    expect(JSON.stringify(closed.components)).toContain('poll:fix');
+    expect(closed.allowedMentions).toEqual({ users: [meeting!.organizerId] });
+
+    await service.fixDate(guild as never, meeting!.id, s1!.id, meeting!.organizerId);
     const fixed = await repos.getMeeting(meeting!.id);
     expect(fixed).toMatchObject({ status: 'scheduled', startsAt: s1!.startsAt, durationMin: 60, pollClosesAt: null, scheduledEventId: 'event1' });
     expect((await repos.listRsvps(meeting!.id)).map((r) => [r.userId, r.status]).sort()).toEqual([
@@ -99,7 +109,7 @@ describe.skipIf(!url)('Sondage de date : du sondage à la réunion planifiée', 
     expect(threads[0]!.thread.setName).toHaveBeenCalled();
   });
 
-  it('égalité à la clôture : l’organisateur est mentionné pour trancher, le sondage reste ouvert', async () => {
+  it('égalité à la clôture : pas de suggestion ; l’organisateur peut retenir n’importe quel créneau', async () => {
     const meeting = await service.createPoll(guild as never, 'organizer', { title: 'Bureau', description: '', voiceChannelId: 'v', slots: slotsInput, closesAt: new Date(Date.now() + 3_600_000) });
     const [s1, s2] = await repos.listSlots(meeting.id);
     await repos.setVote(s1!.id, '101', 'yes');

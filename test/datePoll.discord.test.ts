@@ -135,5 +135,10 @@ describe('gestionnaires du sondage', () => {
     const organizer = fakeInteraction({ kind: 'button', userId: 'organizer' });
     await handleDatePoll(ctx as never, organizer.interaction as never, { type: 'poll.fix', meetingId });
     expect(organizer.interaction.update).toHaveBeenCalled();
+    // Depuis le message public de clôture : réponse privée, le message public n'est pas modifié.
+    const fromClosed = fakeInteraction({ kind: 'button', userId: 'organizer', messageFlags: 0 });
+    await handleDatePoll(ctx as never, fromClosed.interaction as never, { type: 'poll.fix', meetingId });
+    expect(fromClosed.interaction.update).not.toHaveBeenCalled();
+    expect(fromClosed.replies.at(-1)).toMatchObject({ how: 'reply' });
   });
 });

@@ -169,8 +169,10 @@ export const fr = {
     fixed: (title: string, when: string, by: string | null) =>
       `📅 La date de « ${title} » est fixée : ${when}${by ? ` (par ${by})` : ''}. Vos disponibilités ont été reprises dans les inscriptions.`,
     fixedReply: 'Date fixée : la réunion est maintenant planifiée (rappels et événement Discord).',
-    undecided: (organizerId: string) =>
-      `⏳ <@${organizerId}> les réponses sont closes, mais aucun créneau ne se détache : choisissez-en un dans ⚙️ Gérer → Fixer la date.`,
+    closed: (organizerId: string, best: string | null) =>
+      `⏳ <@${organizerId}> les réponses sont closes : à vous de fixer la date.` +
+      (best ? ` Le créneau le plus disponible est **${best}** (⭐), mais vous pouvez retenir n'importe quel créneau proposé.` : ' Aucun créneau ne se détache.') +
+      `\n-# Bouton ci-dessous ou ⚙️ Gérer → Fixer la date. Les réponses restent possibles d'ici là.`,
     nudge: (title: string, closes: string) => `🗳️ « ${title} » : indiquez vos disponibilités avant ${closes}.`,
     tooManySlots: 'Le sondage a déjà 10 créneaux (limite de Discord pour le panneau de réponse).',
     duplicateSlot: 'Ce créneau est déjà proposé.',
@@ -179,6 +181,7 @@ export const fr = {
     notPolling: "La date de cette réunion n'est plus à choisir.",
     hubSection: 'Dates à choisir',
     resultsTitle: 'Résultat du sondage',
+    suggested: 'le plus disponible',
     chosen: 'retenu',
     answerFirst: 'La date n’est pas encore fixée : indiquez plutôt vos disponibilités avec le bouton 🗳️ de la carte.',
   },

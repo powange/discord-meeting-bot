@@ -1,4 +1,4 @@
-import { PermissionFlagsBits } from 'discord.js';
+import { MessageFlags, MessageFlagsBitField, PermissionFlagsBits } from 'discord.js';
 import { vi } from 'vitest';
 
 /**
@@ -91,6 +91,8 @@ export function fakeInteraction(opts: {
   values?: string[];
   fields?: Record<string, string>;
   guildId?: string;
+  /** Drapeaux du message qui porte le bouton ou le menu (par défaut : message privé). */
+  messageFlags?: number;
 }) {
   const perms = opts.permissions ?? [];
   const replies: Array<{ how: string; payload: unknown }> = [];
@@ -100,6 +102,7 @@ export function fakeInteraction(opts: {
     guild: { id: opts.guildId ?? 'g' },
     channel: null,
     customId: opts.customId ?? '',
+    message: { flags: new MessageFlagsBitField(opts.messageFlags ?? MessageFlags.Ephemeral) },
     user: { id: opts.userId ?? 'member' },
     member: { roles: { cache: new Map((opts.roleIds ?? []).map((r) => [r, {}])) } },
     memberPermissions: {

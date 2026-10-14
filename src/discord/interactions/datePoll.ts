@@ -79,7 +79,10 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
       requireManager(scope);
       const choices = await ctx.meetings.slotChoices(meeting);
       const ordered = action.type === 'poll.fix' ? rankById(choices) : choices;
-      await interaction.update({ components: [renderSlotChoice(meeting, ordered, action.type === 'poll.fix' ? 'fix' : 'remove', m)], allowedMentions: { parse: [] } });
+      const panel = renderSlotChoice(meeting, ordered, action.type === 'poll.fix' ? 'fix' : 'remove', m);
+      // Depuis ⚙️ Gérer (privé) : le panneau est remplacé ; depuis le message public de clôture : réponse privée.
+      if (interaction.message.flags.has(MessageFlags.Ephemeral)) await interaction.update({ components: [panel], allowedMentions: { parse: [] } });
+      else await interaction.reply({ components: [panel], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
       return;
     }
     case 'poll.fixSelect':

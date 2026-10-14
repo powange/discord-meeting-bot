@@ -135,14 +135,20 @@ export function renderPollCard(meeting: CardMeeting, poll: PollView, m: Messages
  * Résultat figé du sondage, publié dans le post quand la date est fixée : la carte redevient
  * une carte de réunion, ce message garde l'historique des réponses (créneau retenu marqué 📅).
  */
-export function renderPollResults(title: string, slots: PollView['slots'], chosenSlotId: number, m: Messages): RenderedMessage {
+/**
+ * Résultats du sondage : figés une fois la date fixée (créneau retenu 📅), ou à la clôture des
+ * réponses, en attendant le choix de l'organisateur (créneau le plus disponible ⭐, simple suggestion).
+ */
+export function renderPollResults(title: string, slots: PollView['slots'], chosenSlotId: number | null, m: Messages, suggestedSlotId: number | null = null): RenderedMessage {
   const p = m.datePoll;
   const people = respondents(slots).size;
+  const mark = (s: SlotTally) => (s.slotId === chosenSlotId ? '📅 ' : s.slotId === suggestedSlotId ? '⭐ ' : '');
+  const note = (s: SlotTally) => (s.slotId === chosenSlotId ? ` · **${p.chosen}**` : s.slotId === suggestedSlotId ? ` · **${p.suggested}**` : '');
   const embed = new EmbedBuilder()
     .setTitle(truncate(`🗳️ ${p.resultsTitle} · ${title}`, 256))
     .setColor(COLORS.polling)
     .setDescription(`-# ${p.legend}`)
-    .addFields(...pollFields(slots, (s) => (s.slotId === chosenSlotId ? '📅 ' : ''), m, (s) => (s.slotId === chosenSlotId ? ` · **${p.chosen}**` : '')))
+    .addFields(...pollFields(slots, mark, m, note))
     .setFooter({ text: people ? p.respondents(people) : p.noAnswers });
   return { embeds: [embed.toJSON()], components: [] };
 }

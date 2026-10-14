@@ -1,4 +1,4 @@
-import { ChannelType, MessageFlags, PermissionFlagsBits, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel, type VoiceBasedChannel } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, PermissionFlagsBits, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel, type VoiceBasedChannel } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
@@ -15,6 +15,7 @@ import { nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { discordErrorCode, errorMessage, UserError } from '../lib/errors.js';
+import { encode } from '../domain/customId.js';
 import type { Logger } from '../lib/logger.js';
 import { truncate } from '../lib/text.js';
 import type { CardService } from './cards.js';
@@ -294,18 +295,26 @@ export class MeetingService {
   async closePoll(meetingId: string): Promise<void> {
     const meeting = await this.repos.getMeeting(meetingId);
     if (!meeting || meeting.status !== 'polling') return;
+    // La date n'est jamais fixée toute seule : le créneau le plus disponible n'est pas forcément le
+    // bon. Résultats publiés, meilleur créneau suggéré (⭐), et l'organisateur choisit parmi tous.
+    const settings = await this.settings.get(meeting.guildId);
+    const m = messages(settings.locale);
     const tally = tallySlots(await this.repos.listSlots(meetingId), await this.repos.listVotes(meetingId));
     const best = bestSlot(tally);
-    const guild = await this.guild(meeting);
-    if (best && guild) {
-      await this.fixDate(guild, meetingId, best.slotId, null);
-      return;
-    }
-    const m = await this.settings.messages(meeting.guildId);
+    const slots = tally.map((t) => ({ ...t, label: slotLabel(t, settings.timezone, settings.locale) }));
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!thread) return;
     await ensureUnarchived(thread);
-    await thread.send({ content: m.datePoll.undecided(meeting.organizerId), allowedMentions: { users: [meeting.organizerId] } });
+    const results = renderPollResults(meeting.title, slots, null, m, best?.slotId ?? null);
+    const fix = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(encode({ type: 'poll.fix', meetingId })).setLabel(m.datePoll.fixDate).setEmoji('📅').setStyle(ButtonStyle.Primary),
+    );
+    await thread.send({
+      content: m.datePoll.closed(meeting.organizerId, best ? slots.find((x) => x.slotId === best.slotId)!.label : null),
+      embeds: results.embeds,
+      components: [fix.toJSON()],
+      allowedMentions: { users: [meeting.organizerId] },
+    });
   }
 
   /** Relance : membres du rôle configuré qui n'ont répondu à aucun créneau. */
