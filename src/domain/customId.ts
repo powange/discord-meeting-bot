@@ -93,6 +93,7 @@ export const CFG_ACTIONS = [
   'llmAddSubmit',
   'llmUp',
   'llmToggleServer',
+  'llmThinking',
   'llmDelete',
   'llmDeleteConfirm',
   'llmTestAll',

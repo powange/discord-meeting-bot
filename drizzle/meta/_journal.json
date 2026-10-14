@@ -218,6 +218,13 @@
       "when": 1792006894079,
       "tag": "0030_failure_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792010500665,
+      "tag": "0031_llm_thinking",
+      "breakpoints": true
     }
   ]
 }

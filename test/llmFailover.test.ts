@@ -25,7 +25,7 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-const client = (path: string) => new LlmClient({ baseUrl: `${base}/${path}/v1`, model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 5 }, [], { attempts: 1, delayMs: 0 });
+const client = (path: string) => new LlmClient({ baseUrl: `${base}/${path}/v1`, model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 5, thinking: true }, [], { attempts: 1, delayMs: 0 });
 const log = pino({ level: 'silent' });
 const ask = (llm: FailoverLlm) => llm.json([{ role: 'user', content: 'x' }], z.object({ ok: z.boolean() }));
 
@@ -49,7 +49,7 @@ describe('serveurs de résumé de secours', () => {
     const llm = new FailoverLlm(
       [
         { name: 'principal', client: client('panne') },
-        { name: 'absent', client: new LlmClient({ baseUrl: 'http://127.0.0.1:1/v1', model: 's', chunkTokens: 6000, temperature: 0.2, timeoutSec: 2 }, [], { attempts: 1, delayMs: 0 }) },
+        { name: 'absent', client: new LlmClient({ baseUrl: 'http://127.0.0.1:1/v1', model: 's', chunkTokens: 6000, temperature: 0.2, timeoutSec: 2, thinking: true }, [], { attempts: 1, delayMs: 0 }) },
       ],
       log,
     );

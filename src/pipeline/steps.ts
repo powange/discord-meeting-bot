@@ -20,6 +20,7 @@ import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, runFfmpeg, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
 import { isContextOverflow } from '../domain/failure.js';
+import { renderReportPdf } from '../report/pdf.js';
 import { errorMessage } from '../lib/errors.js';
 import { effectiveLlms } from '../services/llmSettings.js';
 import type { UploadFile } from '../services/storage.js';
@@ -404,7 +405,7 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
       markers.map((mk) => ({ at: mk.at, value: { time: formatClock(mk.at, settings.timezone), marker: markerText(mk, agendaRows) } })),
     ),
   );
-  return { summary, people, input, markdown, transcriptFile: `transcription-${day}.md`, reportFile: `compte-rendu-${day}.md` };
+  return { summary, people, input, markdown, transcriptFile: `transcription-${day}.md`, reportFile: `compte-rendu-${day}.md`, pdfFile: `compte-rendu-${day}.pdf` };
 }
 
 async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
@@ -426,7 +427,9 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
     await deleteMessages(thread, previousIds);
     return { messageIds: [message.id], url: message.url };
   }
-  const { summary, people, transcriptFile, markdown } = content;
+  const { summary, people, transcriptFile, markdown, pdfFile } = content;
+  // Compte rendu en PDF, téléchargeable depuis le dernier message (sans résumé : pas de PDF).
+  const pdf = content.input.summaryDisabled ? null : await renderReportPdf(content.input, m);
   const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
   const containers = renderReport(
@@ -434,6 +437,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       ...content.input,
       ...(content.input.summaryDisabled ? {} : { correctMeetingId: meeting.id }),
       transcriptFile,
+      ...(pdf ? { pdfFile } : {}),
       ...(audioUrl ? { audioUrl } : {}),
     },
     m,
@@ -450,11 +454,11 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   ];
   const toMention = assignees.filter((id) => !alreadyMentioned.has(id));
   const mentioned = [...new Set([...alreadyMentioned, ...assignees])];
-  const transcript = () => ({ attachment: Buffer.from(markdown, 'utf8'), name: transcriptFile });
+  const attachments = () => [...(pdf ? [{ attachment: pdf, name: pdfFile }] : []), { attachment: Buffer.from(markdown, 'utf8'), name: transcriptFile }];
 
   // Même nombre de messages et personne de nouveau à prévenir : édition (liens conservés, aucune notification).
   if (previousIds.length === containers.length && toMention.length === 0) {
-    const url = await editReport(thread, previousIds, containers, transcript).catch(() => null);
+    const url = await editReport(thread, previousIds, containers, attachments).catch(() => null);
     if (url) return { messageIds: previousIds, url, mentioned };
   }
 
@@ -467,7 +471,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
         components: [container],
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { users: toMention },
-        ...(last ? { files: [transcript()] } : {}),
+        ...(last ? { files: attachments() } : {}),
       });
       sent.push(message.id);
       if (i === 0) url = message.url;
@@ -485,7 +489,7 @@ async function editReport(
   thread: ThreadChannel,
   ids: readonly string[],
   containers: readonly APIContainerComponent[],
-  transcript: () => { attachment: Buffer; name: string },
+  attachments: () => Array<{ attachment: Buffer; name: string }>,
 ): Promise<string | null> {
   const messages = [];
   for (const id of ids) {
@@ -498,8 +502,8 @@ async function editReport(
     await message.edit({
       components: [containers[i]!],
       allowedMentions: { parse: [] },
-      // La transcription jointe est remplacée par la nouvelle.
-      ...(last ? { files: [transcript()], attachments: [] } : {}),
+      // Pièces jointes (PDF, transcription) remplacées par les nouvelles.
+      ...(last ? { files: attachments(), attachments: [] } : {}),
     });
   }
   return messages[0]!.url;
@@ -521,6 +525,7 @@ async function exportFiles(deps: PipelineDeps, ctx: StepContext): Promise<Record
   if (content) {
     if (!content.input.summaryDisabled) {
       files.push({ name: content.reportFile, source: { data: Buffer.from(renderReportMarkdown(content.input, m), 'utf8') }, mime: 'text/markdown' });
+      files.push({ name: content.pdfFile, source: { data: await renderReportPdf(content.input, m) }, mime: 'application/pdf' });
     }
     files.push({ name: content.transcriptFile, source: { data: Buffer.from(content.markdown, 'utf8') }, mime: 'text/markdown' });
   }

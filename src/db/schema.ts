@@ -247,6 +247,8 @@ export const llmBackends = pgTable(
     model: text().notNull(),
     apiKey: text(),
     enabled: boolean().notNull().default(true),
+    /** Réflexion du modèle (qwen3…) : désactivée par défaut (« /no_think » ajouté aux consignes). */
+    thinking: boolean().notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [unique().on(t.guildId, t.name), index().on(t.guildId, t.position)],

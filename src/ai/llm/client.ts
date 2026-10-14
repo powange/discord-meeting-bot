@@ -145,7 +145,7 @@ export class LlmClient {
           headers: { 'content-type': 'application/json', ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}) },
           body: JSON.stringify({
             model: this.config.model,
-            messages,
+            messages: this.config.thinking ? messages : withoutThinking(messages),
             temperature: this.config.temperature,
             ...(responseFormat ? { response_format: responseFormat } : {}),
           }),
@@ -159,6 +159,16 @@ export class LlmClient {
       throw new LlmError(`LLM injoignable : ${err instanceof Error ? err.message : err}`, !signal?.aborted);
     }
   }
+}
+
+/**
+ * Réflexion désactivée : « /no_think » à la fin des consignes système. Qwen3 répond alors
+ * directement (bien plus vite) ; les modèles qui ne connaissent pas ce mot-clé l'ignorent.
+ */
+export function withoutThinking(messages: readonly ChatMessage[]): ChatMessage[] {
+  const at = messages.findIndex((msg) => msg.role === 'system');
+  if (at < 0) return [{ role: 'system', content: '/no_think' }, ...messages];
+  return messages.map((msg, i) => (i === at ? { ...msg, content: `${msg.content}\n\n/no_think` } : msg));
 }
 
 /** Extrait l'objet JSON d'une réponse (blocs ```json, raisonnement <think> des modèles type qwen3). */

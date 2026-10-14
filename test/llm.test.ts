@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -40,7 +41,7 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-const llm = () => new LlmClient({ baseUrl: base, apiKey: 'k', model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 30 }, [], { attempts: 3, delayMs: 1 });
+const llm = () => new LlmClient({ baseUrl: base, apiKey: 'k', model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 30, thinking: true }, [], { attempts: 3, delayMs: 1 });
 const ctx: SummaryContext = {
   title: 'Bureau',
   description: '',
@@ -214,5 +215,23 @@ describe('sanitize', () => {
     const prompt = requests.at(-1)!.body.messages.at(-1)!.content;
     expect(prompt).toContain('1. Présentation entre les participants\n2. Plan pour aller acheter du tabac');
     expect(prompt).not.toContain('57');
+  });
+});
+
+describe('réflexion du modèle', () => {
+  it('désactivée : « /no_think » à la fin des consignes système (ajoutées s’il n’y en a pas) ; activée : messages inchangés', async () => {
+    const { withoutThinking } = await import('../src/ai/llm/client.js');
+    expect(withoutThinking([{ role: 'system', content: 'Consignes' }, { role: 'user', content: 'x' }])).toEqual([
+      { role: 'system', content: 'Consignes\n\n/no_think' },
+      { role: 'user', content: 'x' },
+    ]);
+    expect(withoutThinking([{ role: 'user', content: 'x' }])[0]).toEqual({ role: 'system', content: '/no_think' });
+
+    reply = () => '{"ok":true}';
+    const off = new LlmClient({ baseUrl: base, model: 'summary', chunkTokens: 6000, temperature: 0.2, timeoutSec: 30, thinking: false }, [], { attempts: 1, delayMs: 1 });
+    await off.json([{ role: 'system', content: 'Consignes' }, { role: 'user', content: 'x' }], z.object({ ok: z.boolean() }));
+    expect(requests.at(-1)!.body.messages[0]!.content).toBe('Consignes\n\n/no_think');
+    await llm().json([{ role: 'system', content: 'Consignes' }, { role: 'user', content: 'x' }], z.object({ ok: z.boolean() }));
+    expect(requests.at(-1)!.body.messages[0]!.content).toBe('Consignes');
   });
 });

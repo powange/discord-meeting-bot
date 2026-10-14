@@ -179,7 +179,7 @@ describe('panneau /config', () => {
 
   it('résumé : serveur choisi → ses actions (le premier ne peut pas monter), puis la liste de ses modèles', () => {
     const view = renderConfigSection('summary', { ...c, llm, canEditAi: true, llmSelected: 11 }, m);
-    expect(ids(view)).toEqual(['llmPick', 'llmEdit', 'llmUp', 'llmToggleServer', 'llmTest', 'llmDelete', 'llmModels', 'llmAdd', 'llmTestAll', 'llmToggle', 'home']);
+    expect(ids(view)).toEqual(['llmPick', 'llmEdit', 'llmUp', 'llmToggleServer', 'llmTest', 'llmDelete', 'llmThinking', 'llmModels', 'llmAdd', 'llmTestAll', 'llmToggle', 'home']);
     const up = flatten(view).find((x) => typeof x.custom_id === 'string' && (x.custom_id as string).includes(':llmUp:'))!;
     expect(up.disabled).toBe(true);
     expect(decode(up.custom_id as string)).toEqual({ type: 'cfg', action: 'llmUp', arg: 's.11' });
@@ -189,6 +189,14 @@ describe('panneau /config', () => {
       ['qwen3:14b', true],
       ['mistral', false],
     ]);
+  });
+
+  it('résumé : réflexion du modèle affichée par serveur, bouton pour l’activer ou la désactiver', () => {
+    const withThinking = { ...llm, servers: llm.servers.map((sv, i) => ({ ...sv, thinking: i === 0 })) };
+    const view = renderConfigSection('summary', { ...c, llm: withThinking, canEditAi: true, llmSelected: withThinking.servers[0]!.id }, m);
+    expect(texts(view)).toContain(`🧠 ${m.config.llmThinkingShort}`);
+    const button = flatten(view).find((x) => x.type === ComponentType.Button && (x.label as string) === m.config.llmThinkingDisable);
+    expect(button).toBeDefined();
   });
 
   it('résumé : suppression demandée → confirmation', () => {

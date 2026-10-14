@@ -1,0 +1,1 @@
+ALTER TABLE "llm_backends" ADD COLUMN "thinking" boolean DEFAULT false NOT NULL;

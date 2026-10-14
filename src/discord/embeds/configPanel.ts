@@ -31,7 +31,7 @@ export interface ConfigContext {
     source: 'discord' | 'yaml';
     enabled: boolean;
     /** Serveurs de résumé par priorité (sans id : ceux du fichier de configuration). */
-    servers: ReadonlyArray<{ id?: number; name: string; url: string; model: string; enabled: boolean; hasKey: boolean }>;
+    servers: ReadonlyArray<{ id?: number; name: string; url: string; model: string; enabled: boolean; hasKey: boolean; thinking?: boolean }>;
   };
   /** Serveur de résumé sélectionné (ses actions s'affichent) et suppression demandée. */
   llmSelected?: number | undefined;
@@ -315,7 +315,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       const canEdit = c.canEditAi ?? false;
       const servers = l?.servers ?? [];
       const list = servers.length
-        ? servers.map((sv, i) => `${sv.enabled ? '🟢' : '⚪'} **${i + 1}. ${sv.name}** · ${sv.model}${sv.hasKey ? ' · 🔑' : ''}\n-# \`${sv.url.slice(0, 120)}\``).join('\n')
+        ? servers.map((sv, i) => `${sv.enabled ? '🟢' : '⚪'} **${i + 1}. ${sv.name}** · ${sv.model}${sv.hasKey ? ' · 🔑' : ''}${sv.thinking ? ` · 🧠 ${t.llmThinkingShort}` : ''}\n-# \`${sv.url.slice(0, 120)}\``).join('\n')
         : t.llmNoServer;
       container.addTextDisplayComponents((x) => x.setContent(`${list}${l?.source === 'yaml' && servers.length ? `\n-# ${t.llmFromYaml}` : ''}`));
       const listed = servers.filter((sv): sv is typeof sv & { id: number } => sv.id !== undefined);
@@ -353,6 +353,12 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
           if (canEdit) actions.addComponents(btn('llmDelete', t.llmDelete, '🗑️', ButtonStyle.Danger).setCustomId(cfg('llmDelete', arg)));
           rows.push(actions);
           if (canEdit) {
+            // Réflexion du modèle (qwen3…) : désactivée par défaut, plus rapide pour un résumé.
+            rows.push(
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                btn('llmThinking', selected.thinking ? t.llmThinkingDisable : t.llmThinkingEnable, '🧠').setCustomId(cfg('llmThinking', arg)),
+              ),
+            );
             if (c.models?.length) {
               rows.push(
                 new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(

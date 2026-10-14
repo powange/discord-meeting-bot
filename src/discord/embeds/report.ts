@@ -23,6 +23,8 @@ export interface ReportInput {
   trace: string;
   /** Nom de la pièce jointe de transcription (référencée dans le dernier message). */
   transcriptFile?: string;
+  /** Nom de la pièce jointe PDF du compte rendu (dernier message). */
+  pdfFile?: string;
   /** Lien vers le message de l'audio complet. */
   audioUrl?: string;
   /** Aucun LLM configuré : compte rendu réduit (audio et transcription). */
@@ -86,14 +88,19 @@ function splitText(text: string, max: number): string[] {
 }
 
 /** Sections du compte rendu (titre, aperçu, sujets, points non abordés), en Markdown Discord. */
-function reportSections(input: ReportInput, m: Messages, plain = false): string[] {
-  const r = m.report;
+/** Sujets dans l'ordre de l'ordre du jour, puis hors ODJ ; et les points de l'ODJ non abordés. */
+export function orderedTopics(input: Pick<ReportInput, 'agenda' | 'summary'>): { topics: Topic[]; notCovered: Array<{ id: number; title: string }> } {
   const order = new Map(input.agenda.map((a, i) => [a.id, i]));
   const topics = [...input.summary.topics].sort(
     (a, b) => (a.agendaItemId === null ? 1e6 : (order.get(a.agendaItemId) ?? 1e6)) - (b.agendaItemId === null ? 1e6 : (order.get(b.agendaItemId) ?? 1e6)),
   );
   const covered = new Set(topics.map((t) => t.agendaItemId));
-  const notCovered = input.agenda.filter((a) => !covered.has(a.id));
+  return { topics, notCovered: input.agenda.filter((a) => !covered.has(a.id)) };
+}
+
+function reportSections(input: ReportInput, m: Messages, plain = false): string[] {
+  const r = m.report;
+  const { topics, notCovered } = orderedTopics(input);
 
   // Présents : mentions dans Discord (noms à jour, sans notification), noms dans le fichier.
   const present = input.participants?.length
@@ -142,6 +149,7 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
       if (j > 0) container.addSeparatorComponents((s) => s.setSpacing(j === 1 && i === 0 ? SeparatorSpacingSize.Large : SeparatorSpacingSize.Small));
       container.addTextDisplayComponents((t) => t.setContent(text));
     });
+    if (i === messages.length - 1 && input.pdfFile) container.addFileComponents((f) => f.setURL(`attachment://${input.pdfFile}`));
     if (i === messages.length - 1 && input.transcriptFile) container.addFileComponents((f) => f.setURL(`attachment://${input.transcriptFile}`));
     if (i === messages.length - 1 && input.correctMeetingId) {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>

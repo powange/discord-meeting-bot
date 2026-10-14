@@ -32,10 +32,11 @@ Pour qu'il démarre avec Windows, en faire un service, avec NSSM par exemple. Vi
 
 - Le propriétaire du bot ajoute un serveur compatible OpenAI (LM Studio `http://hôte:1234/v1`, Ollama `http://hôte:11434/v1` ou LiteLLM), choisit son modèle dans la liste proposée, puis peut le monter, le désactiver, le tester ou le supprimer.
 - Les administrateurs peuvent tester et désactiver le résumé.
+- **Réflexion du modèle** (qwen3 et autres modèles « à raisonnement ») : réglable par serveur, **désactivée par défaut**. Désactivée, le bot ajoute `/no_think` à ses consignes : le modèle répond directement, bien plus vite, pour un résumé de qualité équivalente.
 - La trace du compte rendu nomme le serveur qui a répondu.
 - Sans serveur dans la liste, le bloc `llm` du YAML (ou les variables `LLM_BASE_URL`, `LLM_MODEL`) s'applique.
 
-Côté machine : **LM Studio** ou **Ollama** avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
+Côté machine : **LM Studio** (Context Length 16384 ; GPU Offload au maximum ; moteur CUDA pour une carte NVIDIA, Vulkan pour AMD/Intel) ou **Ollama** avec un modèle de résumé, par exemple `ollama pull qwen3:14b`. Avec 16 Go de VRAM partagés avec Whisper, garder un `keep_alive` court côté Ollama et `--unload-timeout` côté Vibe.
 
 ## 4. LiteLLM (facultatif)
 

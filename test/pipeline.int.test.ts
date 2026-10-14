@@ -219,6 +219,12 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await save(['Carole']);
     const first = await publish();
     expect(sent.map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual(sent.map(() => ['555']));
+    // Dernier message : le compte rendu en PDF (téléchargeable) et la transcription.
+    const files = (sent.at(-1)!.files as Array<{ name: string; attachment: Buffer }>).map((f) => [f.name, f.attachment.subarray(0, 5).toString()]);
+    expect(files).toEqual([
+      ['compte-rendu-2026-10-15.pdf', '%PDF-'],
+      ['transcription-2026-10-15.md', '# Tra'],
+    ]);
     const count = sent.length;
 
     // Correction sans nouveau responsable : édition sur place, aucun message envoyé ni supprimé.
@@ -270,15 +276,20 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await storage.setFolder('g', 'Asso');
 
     const out = await steps.export(ctx);
-    expect(out).toEqual({ provider: 'google', path: 'Asso/2026-10-15 18h00 - Bureau', files: ['compte-rendu-2026-10-15.md', 'transcription-2026-10-15.md', 'reunion-2026-10-15-18h00.ogg'] });
-    expect(uploads.map((u) => u.path)).toEqual(Array(3).fill('Asso/2026-10-15 18h00 - Bureau'));
+    expect(out).toEqual({
+      provider: 'google',
+      path: 'Asso/2026-10-15 18h00 - Bureau',
+      files: ['compte-rendu-2026-10-15.md', 'compte-rendu-2026-10-15.pdf', 'transcription-2026-10-15.md', 'reunion-2026-10-15-18h00.ogg'],
+    });
+    expect(uploads.map((u) => u.path)).toEqual(Array(4).fill('Asso/2026-10-15 18h00 - Bureau'));
     expect(uploads[0]!.text).toContain('Salutations.');
-    expect(uploads[1]!.text).toContain('**[18:00:00] Alice** : Bonjour à tous.');
-    expect(uploads[2]!.size).toBeGreaterThan(0);
+    expect(uploads[1]!.size).toBeGreaterThan(1000); // PDF
+    expect(uploads[2]!.text).toContain('**[18:00:00] Alice** : Bonjour à tous.');
+    expect(uploads[3]!.size).toBeGreaterThan(0);
     expect((await repos.getStorage('g'))?.lastOkAt).toBeInstanceOf(Date);
     // Réunion à 1 h 30 du matin (heure de Paris) : fichiers datés du jour même, pas de la veille (UTC).
     const night = { ...ctx, meeting: { ...meeting, startsAt: new Date('2026-10-15T23:30:00Z') } };
-    expect(await steps.export(night)).toMatchObject({ path: 'Asso/2026-10-16 01h30 - Bureau', files: ['compte-rendu-2026-10-16.md', 'transcription-2026-10-16.md', 'reunion-2026-10-15-18h00.ogg'] });
+    expect(await steps.export(night)).toMatchObject({ path: 'Asso/2026-10-16 01h30 - Bureau', files: ['compte-rendu-2026-10-16.md', 'compte-rendu-2026-10-16.pdf', 'transcription-2026-10-16.md', 'reunion-2026-10-15-18h00.ogg'] });
     await repos.removeStorage('g');
     // Étapes terminées : pas de reprise de cette réunion dans les tests suivants.
     for (const row of await repos.listPipeline(meeting.id)) await repos.updateStep(meeting.id, row.step, { status: 'done' });

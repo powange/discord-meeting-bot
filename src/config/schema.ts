@@ -75,6 +75,8 @@ const llmSchema = z.strictObject({
   chunkTokens: z.int().min(1000).max(100_000).default(6000),
   temperature: z.number().min(0).max(2).default(0.2),
   timeoutSec: z.int().min(10).max(3600).default(600),
+  /** Réflexion du modèle (qwen3…) ; désactivée : « /no_think » est ajouté aux consignes. */
+  thinking: z.boolean().default(false),
 });
 
 /** Durée de conservation des fichiers locaux (les copies publiées dans Discord ne sont pas concernées). */

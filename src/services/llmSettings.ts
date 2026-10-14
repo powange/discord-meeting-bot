@@ -49,7 +49,7 @@ export interface EffectiveLlms {
 export function llmRowToConfig(row: LlmBackendRow, base: LlmConfig): LlmConfig {
   const { apiKey: _ignored, ...rest } = base;
   const apiKey = decryptSecret(row.apiKey);
-  return { ...rest, baseUrl: row.url, model: row.model, ...(apiKey ? { apiKey } : {}) };
+  return { ...rest, baseUrl: row.url, model: row.model, thinking: row.thinking, ...(apiKey ? { apiKey } : {}) };
 }
 
 /**

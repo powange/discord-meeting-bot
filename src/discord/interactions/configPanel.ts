@@ -77,8 +77,8 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
       enabled: llm.enabled,
       servers:
         llm.source === 'discord'
-          ? rows.map((r) => ({ id: r.id, name: r.name, url: r.url, model: r.model, enabled: r.enabled, hasKey: Boolean(r.apiKey) }))
-          : llm.servers.map((sv) => ({ name: sv.name, url: sv.config.baseUrl ?? '', model: sv.config.model, enabled: true, hasKey: Boolean(sv.config.apiKey) })),
+          ? rows.map((r) => ({ id: r.id, name: r.name, url: r.url, model: r.model, enabled: r.enabled, hasKey: Boolean(r.apiKey), thinking: r.thinking }))
+          : llm.servers.map((sv) => ({ name: sv.name, url: sv.config.baseUrl ?? '', model: sv.config.model, enabled: true, hasKey: Boolean(sv.config.apiKey), thinking: sv.config.thinking })),
     },
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
     refusals: await ctx.optouts.list(guildId),
@@ -530,6 +530,12 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const row = await server();
       await ctx.repos.updateLlmBackend(guildId, row.id, { enabled: !row.enabled });
       return show('summary', t.saved, { llmSelected: row.id });
+    }
+    case 'llmThinking': {
+      if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
+      const row = await server();
+      await ctx.repos.updateLlmBackend(guildId, row.id, { thinking: !row.thinking });
+      return show('summary', row.thinking ? t.llmThinkingOff(row.name) : t.llmThinkingOn(row.name), { llmSelected: row.id });
     }
     case 'llmDelete': {
       if (!isOwner) throw new UserError(m.backendPanel.ownersOnly);
