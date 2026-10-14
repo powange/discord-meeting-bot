@@ -1,4 +1,5 @@
-import { ContainerBuilder, SeparatorSpacingSize, type APIContainerComponent } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, SeparatorSpacingSize, type APIContainerComponent } from 'discord.js';
+import { encode } from '../../domain/customId.js';
 import { captureWarning, type CaptureCounts } from '../../domain/capture.js';
 import { attendanceReport, type PresenceInterval } from '../../domain/recording.js';
 import { discordTimestamp } from '../../domain/time.js';
@@ -80,6 +81,12 @@ export function bar(pct: number, rank = 0, length = BAR_LENGTH): string {
 export interface SummaryOptions {
   meetingTitle: string;
   interrupted: boolean;
+  /** Suivi de l'ordre du jour résumé (dernier point, notes), à la place de son message figé. */
+  agendaLine?: string | undefined;
+  /** Compte rendu publié : lien ajouté au bilan. */
+  reportUrl?: string | undefined;
+  /** Bouton « Reprendre l'enregistrement » (bilan = message à boutons tant que la réunion est ouverte). */
+  resume?: { meetingId: string; label: string } | undefined;
 }
 
 /**
@@ -129,6 +136,14 @@ export function renderRecordingSummary(input: SummaryInput, options: SummaryOpti
 
   if (options.interrupted) {
     container.addSeparatorComponents((sep) => sep).addTextDisplayComponents((t) => t.setContent(m.recording.interrupted));
+  }
+  const extra = [options.agendaLine, options.reportUrl ? s.reportLink(options.reportUrl) : undefined].filter(Boolean);
+  if (extra.length) container.addSeparatorComponents((sep) => sep.setDivider(false)).addTextDisplayComponents((t) => t.setContent(extra.join('\n')));
+  if (options.resume) {
+    const { meetingId, label } = options.resume;
+    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
+      row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'rec.start', meetingId })).setLabel(label).setEmoji('🔴').setStyle(ButtonStyle.Primary)),
+    );
   }
   return container.toJSON();
 }

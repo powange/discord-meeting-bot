@@ -30,17 +30,17 @@ export function renderHub(
     });
 
   const embed = new EmbedBuilder()
-    .setTitle(m.hub.title)
+    .setTitle(`📌 ${m.hub.title}`)
     .setColor(Accent.brand)
     .setDescription(m.hub.intro)
-    .addFields({ name: m.hub.upcoming, value: lines.length > 0 ? joinLinesWithin(lines, 1024, m.card.more) : m.hub.none });
+    .addFields({ name: `📅 ${m.hub.upcoming}`, value: lines.length > 0 ? joinLinesWithin(lines, 1024, m.card.more) : m.hub.none });
   if (polls.length > 0) {
     const lines = polls.map((p) => `<#${p.threadId}>${p.closesAt ? ` · ${discordTimestamp(p.closesAt, 'R')}` : ''}`);
     embed.addFields({ name: `🗳️ ${m.datePoll.hubSection}`, value: joinLinesWithin(lines, 1024, m.card.more) });
   }
   if (recent.length > 0) {
     const reports = recent.map((r) => `${discordTimestamp(r.startsAt, 'd')} · [${truncate(r.title.replace(/[[\]]/g, ''), 80)}](${r.url})`);
-    embed.addFields({ name: m.hub.recentReports, value: joinLinesWithin(reports, 1024, m.card.more) });
+    embed.addFields({ name: `📝 ${m.hub.recentReports}`, value: joinLinesWithin(reports, 1024, m.card.more) });
   }
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(

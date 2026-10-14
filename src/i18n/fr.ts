@@ -126,7 +126,7 @@ export const fr = {
     created: (kind: 'meeting' | 'poll', threadId: string, summary: string) => `✅ ${kind === 'poll' ? 'Sondage créé' : 'Réunion créée'} : <#${threadId}>\n📣 ${summary}`,
     /** ⚙️ Gérer : ligne des invitations. */
     manage: (summary: string) => `📣 **Invités** : ${summary}`,
-    updated: (summary: string) => `✅ Invitations mises à jour : ${summary}`,
+    updated: (summary: string) => `Invitations mises à jour : ${summary}`,
     meeting: (roles: string) => `📣 ${roles} : vous êtes invités à cette réunion. Indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte ci-dessus).`,
   },
 
@@ -293,7 +293,7 @@ export const fr = {
     noteKinds: { decision: 'Décision', action: 'Action', note: 'Remarque' } as Record<string, string>,
     noteText: 'Texte',
     noteWho: 'Responsable (pour une action)',
-    noteSaved: '📝 Note enregistrée : elle sera reprise dans le compte rendu.',
+    noteSaved: 'Note enregistrée : elle sera reprise dans le compte rendu.',
     notRecording: 'Les repères et les notes se prennent pendant l’enregistrement.',
   },
 
@@ -341,6 +341,9 @@ export const fr = {
       `**${pct} %** ${bar} ${who} · 🗣️ ${speech} · ⏱️ ${presence} (${presencePct} %)`,
     notRecorded: (who: string, presence: string, presencePct: number) => `🔇 ${who} · non enregistré · ⏱️ ${presence} (${presencePct} %)`,
     unannounced: 'non inscrit',
+    agendaLine: (point: string | null, notes: number) =>
+      `📋 ${point ? `Dernier point : ${point}` : "Hors ordre du jour"}${notes ? ` · 📝 ${notes} note${notes > 1 ? 's' : ''}` : ''}`,
+    reportLink: (url: string) => `📝 Compte rendu publié : [l'ouvrir](${url})`,
     lossWarning: (pct: number) => `⚠️ audio possiblement incomplet : ≈ ${pct} % des paquets n'ont pas pu être déchiffrés (chiffrement Discord). La transcription peut avoir des trous.`,
     noShow: '### Inscrits absents',
     nobody: "Personne n'a été enregistré.",

@@ -333,9 +333,13 @@ export class PipelineService {
         if ((await this.runStep(row, run)) !== 'done') return;
       }
     }
-    await status.update(details);
-    // Étape encore en échec (audio complet) : l'avis reste, et le mix sans perte est gardé.
-    if ((await repos.listPipeline(meetingId)).some((r) => r.status === 'failed')) return;
+    // Étape encore en échec (audio complet) : le suivi l'affiche, l'avis reste, le mix sans perte est gardé.
+    if ((await repos.listPipeline(meetingId)).some((r) => r.status === 'failed')) {
+      await status.update(details);
+      return;
+    }
+    // Tout est fait : le suivi n'a plus d'utilité (le compte rendu et le bilan portent les liens).
+    await status.remove();
     this.autoRetries.delete(meetingId);
     await this.clearFailureNotice(meetingId).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec non retiré'));
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
@@ -489,6 +493,23 @@ class StatusMessage {
       this.timer = null;
       void this.update(details).catch(() => undefined);
     }, wait);
+  }
+
+  /** Traitement réussi : le message de suivi est supprimé (il sera recréé au prochain traitement). */
+  remove(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    const next = this.queue.then(async () => {
+      const meeting = await this.deps.repos.getMeeting(this.meeting.id);
+      if (!meeting?.reportStatusMessageId) return;
+      const thread = await fetchThread(this.deps.client, meeting.threadId);
+      await thread?.messages.delete(meeting.reportStatusMessageId).catch(() => undefined);
+      await this.deps.repos.updateMeeting(meeting.id, { reportStatusMessageId: null });
+    });
+    this.queue = next.catch(() => undefined);
+    return next.catch((err) => this.deps.log.warn({ meetingId: this.meeting.id, err: errorMessage(err) }, 'Message de suivi non supprimé'));
   }
 
   /** Mises à jour l'une après l'autre : deux étapes en parallèle ne créent pas deux messages. */

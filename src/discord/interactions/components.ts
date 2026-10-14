@@ -35,7 +35,7 @@ import { renderSlotChoice } from '../embeds/datePoll.js';
 import { askInvites, handleDraft } from './creation.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
-import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
+import { meetingScope, replyEphemeral, replyNotice, requireManager, type MeetingScope } from './common.js';
 import { confirmPrompt } from '../ui/buttons.js';
 import { noticeContainer, noticeText } from '../ui/notice.js';
 import { Accent } from '../ui/palette.js';
@@ -79,7 +79,7 @@ export async function handleAction(
       if (current === action.status) await ctx.repos.deleteRsvp(meeting.id, interaction.user.id);
       else await ctx.repos.setRsvp(meeting.id, interaction.user.id, action.status);
       ctx.cards.refresh(meeting.id, ['card']);
-      await replyEphemeral(interaction, current === action.status ? m.replies.rsvpRemoved : m.replies.rsvpSaved(m.rsvp[action.status]));
+      await replyNotice(interaction, 'success', current === action.status ? m.replies.rsvpRemoved : m.replies.rsvpSaved(m.rsvp[action.status]));
       return;
     }
 
@@ -100,7 +100,7 @@ export async function handleAction(
         return { title: check.title, detail: check.detail };
       });
       ctx.cards.refresh(meeting.id, ['agenda']);
-      await replyEphemeral(interaction, m.replies.itemAdded(item.title));
+      await replyNotice(interaction, 'success', m.replies.itemAdded(item.title));
       return;
     }
 
@@ -174,7 +174,7 @@ export async function handleAction(
       if (!title) throw new UserError(m.errors.agendaEmptyTitle);
       await ctx.repos.updateAgendaItem(meeting.id, item.id, { title, detail: input.detail.trim().slice(0, AGENDA_DETAIL_MAX) });
       ctx.cards.refresh(meeting.id, ['agenda']);
-      await replyEphemeral(interaction, m.replies.itemUpdated(title));
+      await replyNotice(interaction, 'success', m.replies.itemUpdated(title));
       return;
     }
 
@@ -243,7 +243,7 @@ export async function handleAction(
       if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
       if (!(await ctx.repos.addCorrection(meeting.id, correction))) throw new UserError(m.report.correctNoSummary);
       await ctx.pipeline.regenerate(meeting.id, false, interaction.user.id);
-      await replyEphemeral(interaction, m.report.correctSaved);
+      await replyNotice(interaction, 'success', m.report.correctSaved);
       return;
     }
 
@@ -286,7 +286,7 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       await ctx.pipeline.retry(meeting.id);
-      await replyEphemeral(interaction, m.pipeline.retried); // le message de suivi se met à jour de lui-même
+      await replyNotice(interaction, 'success', m.pipeline.retried); // le message de suivi se met à jour de lui-même
       return;
     }
 
@@ -294,7 +294,7 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       await ctx.pipeline.retryNow(meeting.id);
-      await replyEphemeral(interaction, m.pipeline.retriedNow);
+      await replyNotice(interaction, 'success', m.pipeline.retriedNow);
       return;
     }
 
@@ -304,7 +304,7 @@ export async function handleAction(
       await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // la connexion au vocal peut prendre plusieurs secondes
       await ctx.meetings.ensureVoice(meeting.id); // salon temporaire : créé à la demande s'il n'existe pas encore
       await ctx.recordings.start(meeting.id, interaction.user.id);
-      await replyEphemeral(interaction, m.recording.started_reply);
+      await replyNotice(interaction, 'success', m.recording.started_reply);
       return;
     }
 
@@ -398,7 +398,7 @@ export async function handleAction(
         who: kind === 'action' && who ? who : null,
         authorId: interaction.user.id,
       });
-      await replyEphemeral(interaction, m.control.noteSaved);
+      await replyNotice(interaction, 'success', m.control.noteSaved);
       await ctx.recordings.syncControl(meeting.id);
       return;
     }
@@ -429,7 +429,7 @@ export async function handleAction(
       await ctx.meetings.inviteRoles(interaction.guild, meeting.id, next.roleIds, next.none);
       const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;
       const summary = inviteSummary(next, interaction.guildId, scope.settings.nudgeRoleId, m);
-      await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: m.invite.updated(summary) })], allowedMentions: { parse: [] } });
+      await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: noticeText('success', m.invite.updated(summary)) })], allowedMentions: { parse: [] } });
       return;
     }
 
@@ -508,7 +508,7 @@ export async function handleAction(
       requireManager(scope);
       const reason = interaction.fields.getTextInputValue('reason').trim() || null;
       const ok = await ctx.meetings.cancel(meeting.id, interaction.user.id, reason);
-      await replyEphemeral(interaction, ok ? m.replies.cancelled : m.errors.meetingClosed);
+      await replyNotice(interaction, ok ? 'success' : 'error', ok ? m.replies.cancelled : m.errors.meetingClosed);
       return;
     }
 
@@ -597,7 +597,7 @@ export async function handleAction(
           current: meeting,
         });
         await ctx.meetings.update(interaction.guild, meeting, input, interaction.user.id);
-        await replyEphemeral(interaction, m.replies.updated);
+        await replyNotice(interaction, 'success', m.replies.updated);
       });
       return;
     }

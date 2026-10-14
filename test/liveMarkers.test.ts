@@ -75,7 +75,7 @@ describe('repères pendant l’enregistrement', () => {
   it('note : n’importe quel participant, type, texte et responsable (pour une action seulement)', async () => {
     const s = setup();
     const r = await s.run('rec.noteSubmit', 'modal', { userId: 'member', fields: { kind: 'action', text: ' Réserver la salle ', who: 'Marie' } });
-    expect(r.text).toBe(m.control.noteSaved);
+    expect(r.text).toBe(`✅ ${m.control.noteSaved}`);
     await s.run('rec.noteSubmit', 'modal', { userId: 'member', fields: { kind: 'decision', text: 'Budget adopté', who: 'ignoré' } });
     expect(s.added).toMatchObject([
       { kind: 'action', text: 'Réserver la salle', who: 'Marie', authorId: 'member' },

@@ -92,6 +92,8 @@ async function main(): Promise<void> {
   pipeline.setOnPublished((meeting) => {
     cards.refresh(meeting.id, ['card']);
     hub.refresh(meeting.guildId);
+    // Bilan de la séance (message à boutons) : il reçoit le lien du compte rendu.
+    void recordings.syncControl(meeting.id).catch((err) => log.warn({ meetingId: meeting.id, err }, 'Bilan non mis à jour'));
   });
   const owners = new OwnersService(config.owners);
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts, storage };

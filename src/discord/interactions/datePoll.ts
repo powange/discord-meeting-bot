@@ -26,7 +26,7 @@ import { actorOf } from '../actor.js';
 import { noticeContainer, noticeText } from '../ui/notice.js';
 import { renderPollPanel, renderSlotChoice } from '../embeds/datePoll.js';
 import { fetchForum } from '../threads.js';
-import { meetingScope, replyEphemeral, requireManager } from './common.js';
+import { meetingScope, replyNotice, requireManager } from './common.js';
 import type { ComponentInteraction } from './components.js';
 import { askInvites } from './creation.js';
 
@@ -124,7 +124,7 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
       const parsed = parseSlotLine(interaction.fields.getTextInputValue(F.slot), settings.timezone, new Date(), settings.defaultDurationMin);
       if (!parsed.ok) throw new UserError(p.slotError(parsed.error, 1));
       await ctx.meetings.addSlot(meeting.id, parsed.slot);
-      await replyEphemeral(interaction, p.slotAdded);
+      await replyNotice(interaction, 'success', p.slotAdded);
       return;
     }
   }

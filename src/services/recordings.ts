@@ -7,6 +7,7 @@ import {
   ButtonStyle,
   MessageFlags,
   PermissionFlagsBits,
+  type APIContainerComponent,
   type Client,
   type Guild,
   type VoiceBasedChannel,
@@ -351,7 +352,11 @@ export class RecordingService {
     // Annonce de l'arrêt, comme celle du démarrage (une interruption a son propre avertissement).
     if (!interrupted) await this.announceStop(entry.guildId, entry.channelId, meetingId, reason, by).catch((err) => this.warn(meetingId, 'Annonce de l’arrêt impossible', err));
 
-    await this.postSummary(entry.recordingId, meetingId, reason, interrupted).catch((err) => this.warn(meetingId, 'Bilan impossible', err));
+    // Réunion encore ouverte : le bilan devient le message à boutons (« Reprendre »), publié par
+    // syncControl ; réunion close : bilan seul. Arrêt du bot : publié au redémarrage (syncControl).
+    if (!isOpen((await this.repos.getMeeting(meetingId))?.status ?? 'ended')) {
+      await this.postSummary(entry.recordingId, meetingId).catch((err) => this.warn(meetingId, 'Bilan impossible', err));
+    }
     if (reason !== 'shutdown') {
       this.cards.refresh(meetingId, ['card']);
       await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Mise à jour du contrôle impossible', err));
@@ -385,7 +390,10 @@ export class RecordingService {
       await this.repos.closePresence(rec.id, at);
       await this.repos.updateRecording(rec.id, { status: 'interrupted', stopReason: 'crash', endedAt: at });
       this.log.warn({ recordingId: rec.id, meetingId: rec.meetingId }, 'Enregistrement interrompu par un arrêt inattendu');
-      await this.postSummary(rec.id, rec.meetingId, 'crash', true).catch((err) => this.warn(rec.meetingId, 'Bilan impossible', err));
+      // Réunion ouverte : le bilan sera le message à boutons (syncControl ci-dessous).
+      if (!isOpen((await this.repos.getMeeting(rec.meetingId))?.status ?? 'ended')) {
+        await this.postSummary(rec.id, rec.meetingId).catch((err) => this.warn(rec.meetingId, 'Bilan impossible', err));
+      }
       this.cards.refresh(rec.meetingId, ['card']);
       await this.syncControl(rec.meetingId).catch((err) => this.warn(rec.meetingId, 'Mise à jour du contrôle impossible', err));
       await this.alertInterrupted(rec.meetingId, 'crash');
@@ -413,6 +421,8 @@ export class RecordingService {
       const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
       if (humans === 0) continue;
       try {
+        // Bilan de la session coupée d'abord (il perdra son bouton au démarrage de la nouvelle).
+        await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Bilan de la session coupée impossible', err));
         await this.start(meetingId, null, true);
         resumed.push(meetingId);
         this.log.info({ meetingId, previous: last.id }, 'Enregistrement repris automatiquement après le redémarrage');
@@ -547,16 +557,22 @@ export class RecordingService {
     // Même état : le message est mis à jour sur place (point en cours, notes…).
     if (current && (meeting.controlState === key || meeting.controlState === null) && key !== 'closed') {
       await ensureUnarchived(thread);
-      await current.edit({ content: null, ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] } });
-      if (meeting.controlState === null) await this.repos.updateMeeting(meetingId, { controlState: key });
-      return;
+      // Message d'une version précédente d'un autre format (embed → bilan V2) : remplacé.
+      const edited = await current
+        .edit(editOptions(await this.controlPayload(meeting.guildId, meetingId, key, m)))
+        .then(() => true)
+        .catch(() => current.delete().then(() => false).catch(() => false));
+      if (edited) {
+        if (meeting.controlState === null) await this.repos.updateMeeting(meetingId, { controlState: key });
+        return;
+      }
     }
     // Nouvel état : l'ancien message perd ses boutons (« non démarré » est supprimé), un nouveau est publié en bas.
     if (current) {
       await ensureUnarchived(thread);
       if (meeting.controlState === null) await current.edit({ content: m.control.closed, components: [], allowedMentions: { parse: [] } }).catch(() => undefined); // message d'avant cette version
       else if (meeting.controlState === 'idle') await current.delete().catch((err) => this.warn(meetingId, 'Suppression du contrôle impossible', err));
-      else await current.edit({ content: null, ...(await this.controlPayload(meeting.guildId, meetingId, meeting.controlState!, m, true)), allowedMentions: { parse: [] } }).catch((err) => this.warn(meetingId, 'Contrôle figé impossible', err));
+      else await current.edit(editOptions(await this.controlPayload(meeting.guildId, meetingId, meeting.controlState!, m, true))).catch((err) => this.warn(meetingId, 'Contrôle figé impossible', err));
     }
     if (key === 'closed') {
       if (meeting.controlMessageId) await this.repos.updateMeeting(meetingId, { controlMessageId: null, controlState: 'closed' });
@@ -572,14 +588,26 @@ export class RecordingService {
       }
     }
     await ensureUnarchived(thread);
-    const message = await thread.send({ ...(await this.controlPayload(meeting.guildId, meetingId, key, m)), allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications });
+    const payload = await this.controlPayload(meeting.guildId, meetingId, key, m);
+    const message = await thread.send(
+      'v2' in payload
+        ? { components: payload.components, allowedMentions: { parse: [] }, flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications }
+        : { ...payload, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications },
+    );
     await this.repos.updateMeeting(meetingId, { controlMessageId: message.id, controlState: key });
   }
 
-  /** Contenu du message à boutons pour un état (« idle », « rec:<session> », « stopped:<session> »). */
-  private async controlPayload(guildId: string, meetingId: string, key: string, m: Messages, frozen = false) {
+  /**
+   * Contenu du message à boutons pour un état (« idle », « rec:<session> », « stopped:<session> »).
+   * Arrêté : le bilan de la session (Components V2), avec « Reprendre » tant qu'il n'est pas figé.
+   */
+  private async controlPayload(guildId: string, meetingId: string, key: string, m: Messages, frozen = false): Promise<ControlPayload> {
     const [kind, recordingId] = key.split(':') as [string, string | undefined];
     const session = recordingId ? (await this.repos.listRecordingsForMeeting(meetingId)).find((r) => r.id === recordingId) : undefined;
+    if (kind === 'stopped' && session) {
+      const bilan = await this.buildSummary(session.id, meetingId, frozen ? undefined : m.buttons.resumeRecording);
+      if (bilan) return { v2: true, components: [bilan] };
+    }
     const name = (id: string | null) => (id ? displayName(this.client, guildId, id) : Promise.resolve(null));
     let state: ControlState = { kind: 'idle' };
     if (kind === 'rec' && session) {
@@ -604,8 +632,13 @@ export class RecordingService {
     const current = meeting.liveMessageId ? await thread.messages.fetch(meeting.liveMessageId).catch(() => null) : null;
     await ensureUnarchived(thread);
     if (current) {
+      // À l'arrêt, le suivi est résumé dans le bilan (dernier point, notes) : son message est retiré.
+      if (!recording) {
+        await current.delete().catch((err) => this.warn(meetingId, 'Suivi de l’ordre du jour non retiré', err));
+        await this.repos.updateMeeting(meetingId, { liveMessageId: null });
+        return;
+      }
       await current.edit({ content: null, ...payload }).catch((err) => this.warn(meetingId, 'Suivi de l’ordre du jour non mis à jour', err));
-      if (!recording) await this.repos.updateMeeting(meetingId, { liveMessageId: null });
       return;
     }
     if (!recording) {
@@ -632,22 +665,34 @@ export class RecordingService {
 
   // ---------------------------------------------------------------- bilan
 
-  private async postSummary(recordingId: string, meetingId: string, reason: StopReason | 'crash', interrupted: boolean): Promise<void> {
+  /**
+   * Bilan d'une session : participation, inscrits absents, suivi de l'ordre du jour résumé, lien
+   * du compte rendu une fois publié ; `resumeLabel` ajoute « Reprendre ». null si la session manque.
+   */
+  private async buildSummary(recordingId: string, meetingId: string, resumeLabel?: string): Promise<APIContainerComponent | null> {
     const meeting = await this.repos.getMeeting(meetingId);
-    if (!meeting) return;
-    const thread = await fetchThread(this.client, meeting.threadId);
-    if (!thread) return;
+    if (!meeting) return null;
     const m = await this.settings.messages(meeting.guildId);
-
-    const [presence, segments, rsvps, recording, capture] = await Promise.all([
+    const [presence, segments, rsvps, recording, capture, agenda, markers, pipeline] = await Promise.all([
       this.repos.listPresence(recordingId),
       this.repos.listSegments(recordingId),
       this.repos.listRsvps(meetingId),
       this.repos.getRecording(recordingId),
       this.repos.listCaptureStats(recordingId),
+      this.repos.listAgenda(meetingId),
+      this.repos.listMarkers(meetingId),
+      this.repos.listPipeline(meetingId),
     ]);
-    if (!recording) return;
-    const container = renderRecordingSummary(
+    if (!recording) return null;
+    const reason = recording.stopReason ?? 'manual';
+    // Suivi de l'ordre du jour : dernier point atteint et notes prises (son message est retiré).
+    const points = markers.filter((mk) => mk.kind === 'agenda');
+    const last = points.at(-1);
+    const index = last ? agenda.findIndex((a) => a.id === last.agendaItemId) : -1;
+    const agendaLine = last ? m.summary.agendaLine(index >= 0 ? `${index + 1}/${agenda.length} · ${agenda[index]!.title}` : null, markers.length - points.length) : undefined;
+    const publish = pipeline.find((r) => r.step === 'publish' && r.status === 'done');
+    const reportUrl = typeof publish?.output?.url === 'string' ? publish.output.url : undefined;
+    return renderRecordingSummary(
       {
         reason: m.recording.reasons[reason] ?? reason,
         startedAt: recording.startedAt,
@@ -657,19 +702,38 @@ export class RecordingService {
         rsvps,
         capture,
       },
-      { meetingTitle: meeting.title, interrupted },
+      {
+        meetingTitle: meeting.title,
+        interrupted: INTERRUPTIONS.includes(reason),
+        agendaLine,
+        reportUrl,
+        resume: resumeLabel ? { meetingId, label: resumeLabel } : undefined,
+      },
       m,
     );
+  }
 
+  /** Bilan seul (réunion close) : pas de bouton, le message à boutons a disparu avec la clôture. */
+  private async postSummary(recordingId: string, meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    const thread = await fetchThread(this.client, meeting?.threadId ?? null);
+    const container = await this.buildSummary(recordingId, meetingId);
+    if (!thread || !container) return;
     await ensureUnarchived(thread);
-    await thread.send({
-      components: [container],
-      allowedMentions: { parse: [] },
-      flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications,
-    });
+    await thread.send({ components: [container], allowedMentions: { parse: [] }, flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications });
   }
 
   private warn(meetingId: string, msg: string, err: unknown): void {
     this.log.warn({ meetingId, err: errorMessage(err) }, msg);
   }
+}
+
+/** Message à boutons : embed (non démarré, en cours) ou bilan en Components V2 (arrêté). */
+type ControlPayload = Awaited<ReturnType<typeof renderRecordingControl>> | { v2: true; components: APIContainerComponent[] };
+
+/** Options d'édition selon le format du message. */
+function editOptions(payload: ControlPayload) {
+  return 'v2' in payload
+    ? { components: payload.components, flags: MessageFlags.IsComponentsV2 as const, allowedMentions: { parse: [] as [] } }
+    : { content: null, ...payload, allowedMentions: { parse: [] as [] } };
 }
