@@ -34,3 +34,40 @@ describe('« Lire un point » : le détail en entier, en privé, pour tout membr
     expect(content).not.toContain('…');
   });
 });
+
+describe('gestion de l’ordre du jour : panneau mis à jour sur place', () => {
+  const meeting = { id: meetingId, guildId: 'g', title: 'Bureau', status: 'scheduled', organizerId: 'organizer', agendaLocked: false } as MeetingRow;
+  let agenda = [
+    { id: 7, position: 0, title: 'Premier point', detail: '', authorId: '111' },
+    { id: 8, position: 1, title: 'Deuxième point', detail: '', authorId: '111' },
+  ];
+  const ctx = {
+    config: buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
+    log: pino({ level: 'silent' }),
+    settings: { get: async () => ({ guildId: 'g', locale: 'fr', managerRoleIds: [] }) as unknown as GuildSettingsRow, messages: async () => m },
+    owners: { isOwner: () => false },
+    cards: spyObject(),
+    repos: spyObject({
+      getMeeting: async () => meeting,
+      listAgenda: async () => agenda,
+      reorderAgenda: async (_id: string, ids: number[]) => void (agenda = agenda.filter((a) => ids.includes(a.id))),
+    }),
+  };
+
+  it('« Annuler » depuis le panneau : mise à jour du panneau, pas de nouveau message ; depuis la carte : nouveau panneau', async () => {
+    const fromPanel = fakeInteraction({ kind: 'button', userId: 'organizer' });
+    await handleAction(ctx as never, fromPanel.interaction as never, { type: 'agenda.manage', meetingId });
+    expect(fromPanel.replies.map((r) => r.how)).toEqual(['update']);
+
+    const fromCard = fakeInteraction({ kind: 'button', userId: 'organizer', messageFlags: 0 });
+    await handleAction(ctx as never, fromCard.interaction as never, { type: 'agenda.manage', meetingId });
+    expect(fromCard.replies.map((r) => r.how)).toEqual(['reply']);
+  });
+
+  it('retrait confirmé : le panneau dit quel point a été retiré', async () => {
+    const confirm = fakeInteraction({ kind: 'button', userId: 'organizer' });
+    await handleAction(ctx as never, confirm.interaction as never, { type: 'agenda.removeConfirm', meetingId, itemId: 7 });
+    expect(JSON.stringify(confirm.replies.at(-1)!.payload)).toContain(`✅ ${m.agendaManager.removed('Premier point')}`);
+    expect(agenda.map((a) => a.id)).toEqual([8]);
+  });
+});

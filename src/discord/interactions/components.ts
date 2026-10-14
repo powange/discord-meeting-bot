@@ -106,6 +106,11 @@ export async function handleAction(
 
     case 'agenda.manage': {
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
+      // « Annuler » depuis le panneau privé : le panneau est remis à jour (pas un second message).
+      if (interaction.isButton() && interaction.message.flags.has(MessageFlags.Ephemeral)) {
+        await updateManager(ctx, interaction, scope, null);
+        return;
+      }
       // Gestionnaires : tout l'ODJ. Les autres : leurs propres points, tant que l'ODJ est ouvert.
       if (!scope.canManage) {
         if (meeting.agendaLocked) throw new UserError(m.errors.agendaLocked);
@@ -186,7 +191,8 @@ export async function handleAction(
       if (!interaction.isButton()) return;
       requireManager(scope);
       if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
-      const ids = (await ctx.repos.listAgenda(meeting.id)).map((i) => i.id);
+      const items = await ctx.repos.listAgenda(meeting.id);
+      const ids = items.map((i) => i.id);
       if (!ids.includes(action.itemId)) throw new UserError(m.errors.agendaItemGone);
       if (action.type === 'agenda.move') {
         const next = moveItem(ids, action.itemId, action.direction);
@@ -197,7 +203,8 @@ export async function handleAction(
           meeting.id,
           ids.filter((id) => id !== action.itemId),
         );
-        await updateManager(ctx, interaction, scope, null);
+        const removed = items.find((i) => i.id === action.itemId)!;
+        await updateManager(ctx, interaction, scope, null, false, noticeText('success', m.agendaManager.removed(removed.title)));
       }
       ctx.cards.refresh(meeting.id, ['agenda']);
       return;
@@ -269,7 +276,7 @@ export async function handleAction(
     }
 
     case 'meeting.dismiss': {
-      // « ✖️ Annuler » d'une confirmation : le message privé l'indique, rien n'est fait.
+      // « Annuler » d'une confirmation : le message privé l'indique, rien n'est fait.
       if (!interaction.isButton()) return;
       await interaction.update({ components: [noticeContainer('info', m.buttons.cancelled)] });
       return;
@@ -719,11 +726,12 @@ async function updateManager(
   scope: MeetingScope,
   selectedId: number | null,
   confirmRemove = false,
+  notice?: string,
 ): Promise<void> {
   const all = await ctx.repos.listAgenda(scope.meeting.id);
   const agenda = scope.canManage ? all : all.filter((i) => i.authorId === interaction.user.id);
   await interaction.update({
-    ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m, scope.canManage ? 'manager' : 'author', confirmRemove),
+    ...renderAgendaManager(scope.meeting, agenda, selectedId, scope.m, scope.canManage ? 'manager' : 'author', confirmRemove, notice),
     allowedMentions: { parse: [] },
   });
 }

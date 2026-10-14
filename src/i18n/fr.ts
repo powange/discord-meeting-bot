@@ -221,6 +221,7 @@ export const fr = {
     selected: (title: string) => `Point sélectionné : **${title}**`,
     removeConfirm: 'Confirmer : retirer',
     removeAsk: (title: string) => `Retirer le point **${title}** de l'ordre du jour ?`,
+    removed: (title: string) => `Point « ${title} » retiré de l'ordre du jour.`,
   },
 
   replies: {

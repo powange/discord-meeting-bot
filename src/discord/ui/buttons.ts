@@ -3,7 +3,8 @@ import { Accent } from './palette.js';
 
 /**
  * Confirmation en deux temps d'une action lourde ou difficile à défaire (même forme partout) :
- * question « ⚠️ … ? », bouton « Confirmer : <verbe> » en rouge, puis « ✖️ Annuler ».
+ * question « ⚠️ … ? », bouton « Confirmer : <verbe> » en rouge, puis « Annuler » en gris (sans emoji :
+ * ✖️ est noir, presque invisible en thème sombre).
  */
 export function confirmPrompt(question: string, confirm: { id: string; label: string; emoji: string }, cancel: { id: string; label: string }): APIContainerComponent {
   return new ContainerBuilder()
@@ -12,7 +13,7 @@ export function confirmPrompt(question: string, confirm: { id: string; label: st
     .addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
       row.addComponents(
         new ButtonBuilder().setCustomId(confirm.id).setLabel(confirm.label).setEmoji(confirm.emoji).setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId(cancel.id).setLabel(cancel.label).setEmoji('✖️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(cancel.id).setLabel(cancel.label).setStyle(ButtonStyle.Secondary),
       ),
     )
     .toJSON();

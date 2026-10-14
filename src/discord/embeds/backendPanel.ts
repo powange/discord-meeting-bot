@@ -29,7 +29,7 @@ export interface PanelState {
 
 const tx = (action: TxAction, backendId: number | null = null) => encode({ type: 'tx', action, backendId });
 const button = (action: TxAction, id: number | null, emoji: string, label: string, style = ButtonStyle.Secondary) =>
-  new ButtonBuilder().setCustomId(tx(action, id)).setEmoji(emoji).setLabel(label).setStyle(style);
+  (emoji ? new ButtonBuilder().setEmoji(emoji) : new ButtonBuilder()).setCustomId(tx(action, id)).setLabel(label).setStyle(style);
 
 /** Panneau des serveurs de transcription : un bloc par serveur avec ses boutons d'action. */
 export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], state: PanelState, m: Messages): APIContainerComponent {
@@ -68,7 +68,7 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
       // Consultation : le test est dans l'accessoire, pas de rangée d'actions.
     } else if (state.confirmDeleteId === r.id) {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
-        row.addComponents(button('confirmDelete', r.id, '🗑️', p.confirmDelete(truncate(r.name, 40)), ButtonStyle.Danger), button('select', null, '✖️', p.cancel)),
+        row.addComponents(button('confirmDelete', r.id, '🗑️', p.confirmDelete(truncate(r.name, 40)), ButtonStyle.Danger), button('select', null, '', p.cancel)),
       );
     } else {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>

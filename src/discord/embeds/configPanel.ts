@@ -75,7 +75,7 @@ export function voiceModeOf(s: GuildSettingsRow): VoiceMode {
 
 const cfg = (action: CfgAction, arg?: string) => encode(arg === undefined ? { type: 'cfg', action } : { type: 'cfg', action, arg });
 const btn = (action: CfgAction, label: string, emoji: string, style = ButtonStyle.Secondary) =>
-  new ButtonBuilder().setCustomId(cfg(action)).setLabel(label).setEmoji(emoji).setStyle(style);
+  (emoji ? new ButtonBuilder().setEmoji(emoji) : new ButtonBuilder()).setCustomId(cfg(action)).setLabel(label).setStyle(style);
 
 function role(id: string | null, m: Messages): string {
   return id ? `<@&${id}>` : `*${m.config.none}*`;
@@ -275,7 +275,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
         container.addTextDisplayComponents((x) => x.setContent(st.pending!.code ? t.storageDevice(name, st.pending!.url, st.pending!.code) : t.storageDropbox));
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(st.pending.url).setLabel(t.storageOpenPage).setEmoji('🌐'));
         if (!st.pending.code) row.addComponents(btn('storageCode', t.storageEnterCode, '🔑', ButtonStyle.Primary));
-        row.addComponents(btn('storageCancel', t.storageCancel, '✖️'));
+        row.addComponents(btn('storageCancel', t.storageCancel, ''));
         rows.push(row);
         break;
       }
@@ -341,7 +341,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
           rows.push(
             new ActionRowBuilder<ButtonBuilder>().addComponents(
               btn('llmDeleteConfirm', t.llmDeleteConfirm, '🗑️', ButtonStyle.Danger).setCustomId(cfg('llmDeleteConfirm', arg)),
-              btn('llmCancel', t.llmCancel, '✖️').setCustomId(cfg('llmCancel', arg)),
+              btn('llmCancel', t.llmCancel, '').setCustomId(cfg('llmCancel', arg)),
             ),
           );
         } else {

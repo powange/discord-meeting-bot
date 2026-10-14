@@ -274,13 +274,17 @@ export function renderAgendaManager(
   mode: 'manager' | 'author' = 'manager',
   /** Retrait du point sélectionné demandé : bouton de confirmation à la place des actions. */
   confirmRemove = false,
+  /** Résultat de la dernière action (« ✅ Point retiré… »), affiché en haut du panneau. */
+  notice?: string,
 ): { components: APIContainerComponent[]; flags: MessageFlags.IsComponentsV2 } {
   const rows: APIActionRowComponent<APIComponentInMessageActionRow>[] = [];
   // Panneau Components V2, même en-tête que les autres panneaux privés.
   const panel = (title: string, text: string) => {
     const container = new ContainerBuilder()
       .setAccentColor(Accent.brand)
-      .addTextDisplayComponents((t) => t.setContent(`## 🗂️ ${title}${meeting.title ? `\n-# ${truncate(meeting.title, 120)}` : ''}${text ? `\n${text}` : ''}`));
+      .addTextDisplayComponents((t) =>
+        t.setContent(`## 🗂️ ${title}${meeting.title ? `\n-# ${truncate(meeting.title, 120)}` : ''}${notice ? `\n${notice}` : ''}${text ? `\n${text}` : ''}`),
+      );
     for (const row of rows) container.addActionRowComponents(row as never);
     return { components: [container.toJSON()], flags: MessageFlags.IsComponentsV2 as MessageFlags.IsComponentsV2 };
   };
@@ -325,7 +329,6 @@ export function renderAgendaManager(
           new ButtonBuilder()
             .setCustomId(encode({ type: 'agenda.manage', meetingId: meeting.id }))
             .setLabel(m.buttons.cancel)
-            .setEmoji('✖️')
             .setStyle(ButtonStyle.Secondary),
         )
         .toJSON(),

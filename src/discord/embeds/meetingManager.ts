@@ -33,7 +33,7 @@ export function renderMeetingManager(
   const g = m.manage;
   const open = isOpen(meeting.status);
   const button = (type: MeetingAction, label: string, emoji: string, style = ButtonStyle.Secondary) =>
-    new ButtonBuilder().setCustomId(encode({ type, meetingId: meeting.id } as Action)).setLabel(label).setEmoji(emoji).setStyle(style);
+    (emoji ? new ButtonBuilder().setEmoji(emoji) : new ButtonBuilder()).setCustomId(encode({ type, meetingId: meeting.id } as Action)).setLabel(label).setStyle(style);
 
   const container = new ContainerBuilder()
     .setAccentColor(Accent.brand)
@@ -77,7 +77,7 @@ export function renderMeetingManager(
       state.confirmEnd
         ? new ActionRowBuilder<ButtonBuilder>().addComponents(
             button('meeting.endConfirm', g.endConfirm, '⏹️', ButtonStyle.Danger),
-            button('meeting.manage', m.buttons.cancel, '✖️'),
+            button('meeting.manage', m.buttons.cancel, ''),
           )
         : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.end', g.end, '⏹️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
     );
@@ -87,7 +87,7 @@ export function renderMeetingManager(
       state.confirmRegenAll
         ? new ActionRowBuilder<ButtonBuilder>().addComponents(
             button('meeting.regenAllConfirm', g.regenAllConfirm, '🔁', ButtonStyle.Danger),
-            button('meeting.manage', m.buttons.cancel, '✖️'),
+            button('meeting.manage', m.buttons.cancel, ''),
           )
         : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.regen', g.regen, '🔄'), button('meeting.regenAll', g.regenAll, '🔁')),
     );

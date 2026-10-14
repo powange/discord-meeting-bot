@@ -58,7 +58,7 @@ async function render(ctx: AppContext, id: string, p: Pending, notice?: string) 
     new ButtonBuilder().setCustomId(ids('create')).setLabel(i.create(p.kind)).setEmoji('✅').setStyle(ButtonStyle.Primary),
   );
   if (p.retryId) actions.addComponents(new ButtonBuilder().setCustomId(p.retryId).setLabel(i.edit).setEmoji('✏️').setStyle(ButtonStyle.Secondary));
-  actions.addComponents(new ButtonBuilder().setCustomId(ids('cancel')).setLabel(i.cancel).setEmoji('✖️').setStyle(ButtonStyle.Secondary));
+  actions.addComponents(new ButtonBuilder().setCustomId(ids('cancel')).setLabel(i.cancel).setStyle(ButtonStyle.Secondary));
   const container = new ContainerBuilder()
     .setAccentColor(Accent.brand)
     .addTextDisplayComponents((t) => t.setContent(`${text.header}${notice ? `\n\n${notice}` : ''}\n\n${i.current(inviteSummary(p.state, p.guildId, nudgeRoleId, m))}`));
