@@ -195,3 +195,35 @@ describe('reprise automatique après un redémarrage du bot', () => {
     expect(await svc.resumeAfterRestart(now)).toEqual(expected);
   });
 });
+
+describe('premier enregistrement : la réunion commence par le point 1', () => {
+  function svc(markers: Array<{ kind: string }>, agenda: Array<{ id: number }>) {
+    const added: Array<Record<string, unknown>> = [];
+    const service = new RecordingService(
+      { user: { id: 'bot' } } as never,
+      { listMarkers: async () => markers, listAgenda: async () => agenda, addMarker: async (v: Record<string, unknown>) => void added.push(v) } as never,
+      { get: async () => settings, messages: async () => m } as never,
+      { refresh: () => undefined } as never,
+      buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
+      pino({ level: 'silent' }),
+      { load: async () => undefined, isOptedOut: () => false } as never,
+    );
+    const start = (by: string | null) => (service as unknown as { startFirstPoint(id: string, at: Date, by: string | null): Promise<void> }).startFirstPoint('m1', new Date('2026-10-15T16:00:00Z'), by);
+    return { start, added };
+  }
+
+  it('repère « point 1 » posé au démarrage ; rien sans ordre du jour, ni à la reprise', async () => {
+    const first = svc([], [{ id: 10 }, { id: 11 }]);
+    await first.start('u1');
+    expect(first.added).toEqual([{ meetingId: 'm1', kind: 'agenda', at: new Date('2026-10-15T16:00:00Z'), agendaItemId: 10, authorId: 'u1' }]);
+    const auto = svc([], [{ id: 10 }]);
+    await auto.start(null);
+    expect(auto.added[0]).toMatchObject({ authorId: 'bot' }); // démarrage automatique
+    const empty = svc([], []);
+    await empty.start('u1');
+    expect(empty.added).toEqual([]);
+    const resumed = svc([{ kind: 'agenda' }], [{ id: 10 }]);
+    await resumed.start('u1');
+    expect(resumed.added).toEqual([]);
+  });
+});

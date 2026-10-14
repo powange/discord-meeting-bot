@@ -113,7 +113,7 @@ export function renderLiveControl(meetingId: string, live: LiveState, m: Message
     actions.addComponents(
       new ButtonBuilder()
         .setCustomId(encode({ type: 'rec.next', meetingId }))
-        .setLabel(truncate(c.next(label), 80))
+        .setLabel(truncate(current ? c.next(label) : c.start(label), 80))
         .setEmoji('▶️')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(done),

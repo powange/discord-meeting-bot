@@ -201,6 +201,7 @@ export class RecordingService {
     }
 
     this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
+    await this.startFirstPoint(meeting.id, now, by).catch((err) => this.warn(meeting.id, 'Premier point de l’ordre du jour non repéré', err));
     await this.announceStart(meeting, m, channel, by, resumed);
     this.cards.refresh(meeting.id, ['card']);
     await this.syncControl(meeting.id);
@@ -301,6 +302,17 @@ export class RecordingService {
         .send({ content: m.recording.stopped(byName, m.recording.reasons[reason] ?? reason), allowedMentions: { parse: [] } })
         .catch((err) => this.warn(meetingId, 'Annonce de l’arrêt (chat vocal) impossible', err));
     }
+  }
+
+  /**
+   * Premier enregistrement de la réunion : la réunion commence par le point 1 de l'ordre du jour,
+   * repéré d'office (« Point suivant » propose alors le point 2). Une reprise ne change rien.
+   */
+  private async startFirstPoint(meetingId: string, at: Date, by: string | null): Promise<void> {
+    if ((await this.repos.listMarkers(meetingId)).some((mk) => mk.kind === 'agenda')) return;
+    const [first] = await this.repos.listAgenda(meetingId);
+    if (!first) return;
+    await this.repos.addMarker({ meetingId, kind: 'agenda', at, agendaItemId: first.id, authorId: by ?? this.client.user?.id ?? 'bot' });
   }
 
   // ---------------------------------------------------------------- arrêt

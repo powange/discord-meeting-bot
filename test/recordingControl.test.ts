@@ -36,7 +36,7 @@ describe('messages de l’enregistrement (embeds)', () => {
     const c = renderLiveControl(id, { agenda, markers: [] }, m);
     expect(shown(c)).toMatchObject({ title: m.control.liveTitle, description: m.control.noPointYet, color: 0x5865f2 });
     expect(ids(c)).toEqual(['rec.next', 'rec.note', 'rec.goto']);
-    expect(labels(c)).toContain('Point suivant : 1. Budget');
+    expect(labels(c)).toContain('Commencer : 1. Budget'); // aucun point commencé (ordre du jour rempli après le démarrage)
   });
 
   it('suivi : point en cours, notes comptées ; au dernier point, le suivant est la fin de l’ordre du jour ; figé : gris, sans boutons', () => {
