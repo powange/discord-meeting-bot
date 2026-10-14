@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "failure_notice_id" text;

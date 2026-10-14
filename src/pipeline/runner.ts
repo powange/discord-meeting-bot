@@ -8,6 +8,7 @@ import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { PIPELINE_STEPS, type PipelineStep } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
+import { failureCause, TRANSIENT_CAUSES } from '../domain/failure.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import type { SettingsService } from '../services/settings.js';
@@ -41,6 +42,15 @@ export interface PipelineDeps {
 const STATUS_THROTTLE_MS = 3000;
 
 /**
+ * Relances automatiques d'une étape qui dépend d'un serveur (transcription, résumé, copie vers le
+ * stockage) quand l'échec est passager (éteint, occupé, trop lent) : après 30 s, 2 min puis 5 min.
+ * L'organisateur n'est prévenu qu'une fois ces relances épuisées. Ce qui est déjà fait est gardé
+ * (blocs transcrits…).
+ */
+export const AUTO_RETRY_DELAYS_MS = [30_000, 2 * 60_000, 5 * 60_000] as const;
+const AUTO_RETRY_STEPS: readonly PipelineStep[] = ['transcribe', 'summarize', 'export'];
+
+/**
  * Traitement post-réunion, reprenable : chaque étape est enregistrée en BDD. Une réunion à la
  * fois (les GPU de transcription et de résumé sont partagés). Un échec arrête le traitement et
  * propose « Relancer », qui ne refait que l'étape en échec et les suivantes ; un arrêt du bot
@@ -57,6 +67,11 @@ export class PipelineService {
   private lastGuild: string | null = null;
   /** Réunions à retraiter dès la fin du traitement en cours (nouvel enregistrement entre-temps). */
   private readonly refreshAfterRun = new Set<string>();
+  /** Relances automatiques déjà faites, et relance programmée, par réunion. */
+  private readonly autoRetries = new Map<string, number>();
+  private readonly retryTimers = new Map<string, NodeJS.Timeout>();
+  /** Délais des relances automatiques (raccourcis dans les tests). */
+  autoRetryDelaysMs: readonly number[] = AUTO_RETRY_DELAYS_MS;
 
   /** Compte rendu publié : la carte (liens) et le post épinglé (derniers comptes rendus) sont mis à jour. */
   private onPublished: (meeting: MeetingRow) => void = () => undefined;
@@ -74,6 +89,7 @@ export class PipelineService {
    * remplacé). Si la réunion est en cours de traitement, la mise à jour suit immédiatement.
    */
   async refresh(meetingId: string): Promise<void> {
+    this.clearAutoRetry(meetingId);
     if (!(await this.hasSpeech(meetingId))) return;
     if (this.running.has(meetingId)) {
       this.refreshAfterRun.add(meetingId);
@@ -114,6 +130,7 @@ export class PipelineService {
 
   /** Relance : les étapes en échec et les suivantes repassent en attente. */
   async retry(meetingId: string): Promise<void> {
+    this.clearAutoRetry(meetingId);
     const rows = await this.deps.repos.listPipeline(meetingId);
     const firstFailed = rows.findIndex((r) => r.status === 'failed');
     if (firstFailed >= 0) await this.deps.repos.resetSteps(meetingId, rows.slice(firstFailed).map((r) => r.step));
@@ -122,6 +139,7 @@ export class PipelineService {
 
   /** Nouveau compte rendu : résumé et publication refaits ; la transcription aussi si demandé. */
   async regenerate(meetingId: string, retranscribe: boolean, requestedBy?: string): Promise<void> {
+    this.clearAutoRetry(meetingId);
     // Gardé en base : la personne est prévenue à la publication, même après un redémarrage.
     if (requestedBy) await this.deps.repos.addReportRequester(meetingId, requestedBy);
     await this.deps.repos.ensurePipeline(meetingId);
@@ -146,8 +164,15 @@ export class PipelineService {
     for (const meetingId of await this.deps.repos.listEndedWithoutPipeline()) await this.processIfNeeded(meetingId);
   }
 
+  private clearAutoRetry(meetingId: string): void {
+    clearTimeout(this.retryTimers.get(meetingId));
+    this.retryTimers.delete(meetingId);
+    this.autoRetries.delete(meetingId);
+  }
+
   async stop(): Promise<void> {
     this.stopping = true;
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.abort.abort();
     await Promise.allSettled([...this.running.values()].map((r) => r.done));
   }
@@ -239,6 +264,7 @@ export class PipelineService {
         });
         await repos.updateStep(meetingId, row.step, { status: 'done', finishedAt: new Date(), output });
         plog.info({ step: row.step }, 'Étape terminée');
+        this.autoRetries.delete(meetingId); // la série de relances repart de zéro pour l'étape suivante
         // Compte rendu publié : la carte, le post épinglé et les demandeurs n'attendent pas la copie vers le stockage.
         if (row.step === 'publish') {
           this.onPublished(meeting);
@@ -250,6 +276,25 @@ export class PipelineService {
           return;
         }
         const message = errorMessage(err);
+        // Échec passager d'un serveur : relance automatique plus tard, sans prévenir personne.
+        const tries = this.autoRetries.get(meetingId) ?? 0;
+        const cause = failureCause(message);
+        if (AUTO_RETRY_STEPS.includes(row.step) && TRANSIENT_CAUSES.includes(cause) && tries < this.autoRetryDelaysMs.length && !this.stopping) {
+          const delay = this.autoRetryDelaysMs[tries]!;
+          this.autoRetries.set(meetingId, tries + 1);
+          plog.warn({ step: row.step, err: message, attempt: tries + 1, delayMs: delay }, 'Étape en échec passager : relance automatique');
+          await repos.updateStep(meetingId, row.step, { status: 'pending', error: message });
+          details.set(row.step, m.pipeline.autoRetry(m.pipeline.causes[cause], Math.max(1, Math.round(delay / 60_000)), delay < 60_000, tries + 1, this.autoRetryDelaysMs.length));
+          await status.update(details);
+          this.retryTimers.set(
+            meetingId,
+            setTimeout(() => {
+              this.retryTimers.delete(meetingId);
+              void this.enqueue(meetingId).catch((e) => plog.error({ err: e }, 'Relance automatique impossible'));
+            }, delay),
+          );
+          return;
+        }
         plog.error({ step: row.step, err }, 'Étape en échec');
         await repos.updateStep(meetingId, row.step, { status: 'failed', finishedAt: new Date(), error: message });
         details.set(row.step, message);
@@ -265,6 +310,8 @@ export class PipelineService {
       }
     }
     await status.update(details);
+    this.autoRetries.delete(meetingId);
+    await this.clearFailureNotice(meetingId).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec non retiré'));
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
     if ((await repos.getMeeting(meetingId))?.status === 'ended') {
       const master = await repos.dropMixMaster(meetingId);
@@ -280,7 +327,20 @@ export class PipelineService {
     const requesters = (await this.deps.repos.getMeeting(meeting.id))?.reportRequesters ?? [];
     const users = [...new Set([meeting.organizerId, ...requesters])];
     await ensureUnarchived(thread);
-    await thread.send({ content: m.pipeline.failedNotice(users), allowedMentions: { users } });
+    // Un seul avis par réunion : le précédent est remplacé (le nouveau notifie de nouveau).
+    await this.clearFailureNotice(meeting.id);
+    const notice = await thread.send({ content: m.pipeline.failedNotice(users), allowedMentions: { users } });
+    await this.deps.repos.updateMeeting(meeting.id, { failureNoticeId: notice.id });
+  }
+
+  /** Avis d'échec retiré : traitement réussi, ou remplacé par un nouvel avis. */
+  private async clearFailureNotice(meetingId: string): Promise<void> {
+    const noticeId = (await this.deps.repos.getMeeting(meetingId))?.failureNoticeId;
+    if (!noticeId) return;
+    await this.deps.repos.updateMeeting(meetingId, { failureNoticeId: null });
+    const meeting = await this.deps.repos.getMeeting(meetingId);
+    const thread = await fetchThread(this.deps.client, meeting?.threadId ?? null);
+    await thread?.messages.delete(noticeId).catch(() => undefined);
   }
 
   /** Compte rendu publié : ceux qui avaient demandé une correction ou une régénération sont prévenus. */

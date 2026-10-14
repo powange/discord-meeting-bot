@@ -19,6 +19,8 @@ import { buildBlocks, cleanSegments, dropEchoes, formatClock, formatLine, mergeT
 import type { PipelineStep } from '../domain/types.js';
 import { clock, planParts, uploadLimitBytes } from '../domain/audio.js';
 import { assembleWav, ffmpegPath, mixPlaced, runFfmpeg, splitAudio, type PlacedInput } from '../lib/ffmpeg.js';
+import { isContextOverflow } from '../domain/failure.js';
+import { errorMessage } from '../lib/errors.js';
 import { effectiveLlms } from '../services/llmSettings.js';
 import type { UploadFile } from '../services/storage.js';
 import { effectiveBackends } from '../services/transcriptionBackends.js';
@@ -312,26 +314,43 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
   );
   const agenda = await repos.listAgenda(meeting.id);
   const corrections = (await repos.getSummary(meeting.id))?.corrections ?? [];
-  const result = await summarizeMeeting(
-    llm,
-    {
-      title: meeting.title,
-      description: meeting.description,
-      date: formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when),
-      participants: [...new Set(names.values())],
-      agenda: agenda.map((a) => ({ id: a.id, title: a.title, detail: a.detail })),
-      vocabulary: settings.vocabulary,
-      corrections,
-    },
-    // Repères pris en direct (point en cours, notes) insérés à leur heure dans la transcription.
-    interleave(
-      lines.map((l) => ({ at: l.startAt, value: formatLine(l, settings.timezone) })),
-      (await repos.listMarkers(meeting.id)).map((mk) => ({ at: mk.at, value: `[${formatClock(mk.at, settings.timezone)}] ${markerText(mk, agenda)}` })),
-    ),
-    cfg.chunkTokens,
-    (pass, total) => ctx.progress(m.pipeline.progressSummarize(pass, total)),
-    ctx.signal,
+  // Repères pris en direct (point en cours, notes) insérés à leur heure dans la transcription.
+  const transcript = interleave(
+    lines.map((l) => ({ at: l.startAt, value: formatLine(l, settings.timezone) })),
+    (await repos.listMarkers(meeting.id)).map((mk) => ({ at: mk.at, value: `[${formatClock(mk.at, settings.timezone)}] ${markerText(mk, agenda)}` })),
   );
+  const run = (chunkTokens: number) =>
+    summarizeMeeting(
+      llm,
+      {
+        title: meeting.title,
+        description: meeting.description,
+        date: formatWhen(meeting.startsAt, settings.timezone, settings.locale, m.format.when),
+        participants: [...new Set(names.values())],
+        agenda: agenda.map((a) => ({ id: a.id, title: a.title, detail: a.detail })),
+        vocabulary: settings.vocabulary,
+        corrections,
+      },
+      transcript,
+      chunkTokens,
+      (pass, total) => ctx.progress(m.pipeline.progressSummarize(pass, total)),
+      ctx.signal,
+    );
+  // Modèle chargé avec un contexte trop petit pour les morceaux (LM Studio : 4096 ou 8192 par
+  // défaut) : on recommence avec des morceaux deux fois plus petits, jusqu'à 1500 tokens.
+  let chunkTokens = cfg.chunkTokens;
+  let result: Awaited<ReturnType<typeof run>>;
+  for (;;) {
+    try {
+      result = await run(chunkTokens);
+      break;
+    } catch (err) {
+      if (!isContextOverflow(errorMessage(err)) || chunkTokens <= 1500 || ctx.signal.aborted) throw err;
+      chunkTokens = Math.max(1500, Math.floor(chunkTokens / 2));
+      ctx.log.warn({ chunkTokens }, 'Contexte du modèle trop petit : résumé recommencé avec des morceaux plus petits');
+      ctx.progress(m.pipeline.progressSmallerChunks(chunkTokens));
+    }
+  }
   await repos.saveSummary({
     meetingId: meeting.id,
     content: result.summary,

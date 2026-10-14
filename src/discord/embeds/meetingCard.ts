@@ -48,7 +48,6 @@ const COLORS: Record<MeetingStatus, number> = {
 const DESCRIPTION_BUDGET = 2000;
 const RSVP_FIELD_BUDGET = 1000;
 const AGENDA_BUDGET = 4000;
-const AGENDA_DETAIL_PREVIEW = 300;
 
 /** Carte de la réunion (premier message du post) : infos et présences, reconstruite depuis la BDD. */
 export function renderMeetingCard(
@@ -183,8 +182,9 @@ export function renderAgendaMessage(
   const embed = new EmbedBuilder()
     .setTitle(`📋 ${meeting.agendaLocked ? m.card.agendaLocked : m.card.agenda}`)
     .setColor(COLORS[meeting.status])
-    .setDescription(renderAgenda(agenda, m));
+    .setDescription(agendaText(agenda, m).text);
   if (open && !meeting.agendaLocked) embed.setFooter({ text: m.card.agendaHint });
+  const truncated = agendaText(agenda, m).truncated;
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -200,6 +200,8 @@ export function renderAgendaMessage(
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!open),
   );
+  // Ordre du jour trop long pour tout afficher : chacun peut lire un point en entier (réponse privée).
+  if (truncated) row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'agenda.read', meetingId: meeting.id })).setLabel(m.buttons.readItem).setEmoji('📖').setStyle(ButtonStyle.Secondary));
   return { embeds: [embed.toJSON()], components: [row.toJSON()] };
 }
 
@@ -222,27 +224,48 @@ function rsvpButton(meetingId: string, status: 'yes' | 'maybe' | 'no', label: st
     .setDisabled(!enabled);
 }
 
-/** Lignes du détail affichées au plus dans l'aperçu (la suite est dans « Gérer l'ordre du jour »). */
-const AGENDA_DETAIL_LINES = 6;
-
-/** Détail d'un point en citation, retours à la ligne conservés (lignes vides retirées), aperçu borné. */
-function quoteDetail(detail: string): string {
-  const lines = truncate(detail.trim(), AGENDA_DETAIL_PREVIEW)
+/** Détail d'un point en citation, retours à la ligne conservés (lignes vides retirées), coupé à `max` caractères. */
+function quoteDetail(detail: string, max: number): string {
+  return truncate(detail.trim(), Math.max(max, 1))
     .split('\n')
     .map((line) => line.trim())
-    .filter(Boolean);
-  const shown = lines.slice(0, AGENDA_DETAIL_LINES);
-  if (lines.length > AGENDA_DETAIL_LINES) shown[AGENDA_DETAIL_LINES - 1] += ' …';
-  return shown.map((line) => `> ${line}`).join('\n');
+    .filter(Boolean)
+    .map((line) => `> ${line}`)
+    .join('\n');
 }
 
-export function renderAgenda(agenda: readonly AgendaItem[], m: Messages): string {
-  if (agenda.length === 0) return m.card.agendaEmpty;
-  const lines = agenda.map((item, i) => {
-    const head = `**${i + 1}. ${truncate(item.title, 100)}** — ${m.card.agendaBy(item.authorId)}`;
-    return item.detail.trim() ? `${head}\n${quoteDetail(item.detail)}` : head;
+/**
+ * Place accordée à chaque détail pour que tout l'ordre du jour tienne dans `budget` : les détails
+ * courts en entier, la place restante partagée équitablement entre les longs (répartition « au
+ * niveau de l'eau »). Renvoie la longueur gardée pour chaque détail (dans l'ordre).
+ */
+export function shareDetails(lengths: readonly number[], budget: number): number[] {
+  const kept = lengths.map(() => 0);
+  let remaining = Math.max(budget, 0);
+  const order = lengths.map((len, i) => ({ len, i })).sort((a, b) => a.len - b.len);
+  order.forEach(({ len, i }, k) => {
+    const share = Math.floor(remaining / (order.length - k));
+    kept[i] = Math.min(len, share);
+    remaining -= kept[i]!;
   });
-  return joinLinesWithin(lines, AGENDA_BUDGET, m.card.more, '\n\n');
+  return kept;
+}
+
+/** Ordre du jour en texte ; `truncated` : au moins un détail n'est pas affiché en entier. */
+export function renderAgenda(agenda: readonly AgendaItem[], m: Messages): string {
+  return agendaText(agenda, m).text;
+}
+
+export function agendaText(agenda: readonly AgendaItem[], m: Messages): { text: string; truncated: boolean } {
+  if (agenda.length === 0) return { text: m.card.agendaEmpty, truncated: false };
+  const heads = agenda.map((item, i) => `**${i + 1}. ${truncate(item.title, 100)}** — ${m.card.agendaBy(item.authorId)}`);
+  const details = agenda.map((item) => item.detail.trim());
+  // Place fixe : titres, séparateurs, et en moyenne « > » + saut de ligne par ligne de détail.
+  const overhead = heads.reduce((n, h) => n + h.length + 2, 0) + details.reduce((n, d) => n + (d ? 1 + 3 * (d.split('\n').length + 1) : 0), 0);
+  const kept = shareDetails(details.map((d) => d.length), AGENDA_BUDGET - overhead);
+  const lines = heads.map((head, i) => (details[i] && kept[i]! > 0 ? `${head}\n${quoteDetail(details[i]!, kept[i]!)}` : head));
+  const truncated = details.some((d, i) => d.length > kept[i]!);
+  return { text: joinLinesWithin(lines, AGENDA_BUDGET, m.card.more, '\n\n'), truncated };
 }
 
 /** Vue éphémère de gestion de l'ODJ (réservée aux gestionnaires). */

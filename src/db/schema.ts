@@ -104,6 +104,8 @@ export const meetings = pgTable(
     targetRoleIds: text().array().notNull().default(sql`'{}'::text[]`),
     /** « Personne » choisi à la création : aucune relance, même avec un rôle relancé dans /config. */
     inviteNone: boolean().notNull().default(false),
+    /** Avis « le compte rendu n'a pas pu être terminé » en cours : remplacé au prochain échec, retiré à la réussite. */
+    failureNoticeId: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

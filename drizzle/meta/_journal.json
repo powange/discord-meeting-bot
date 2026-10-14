@@ -211,6 +211,13 @@
       "when": 1791959894497,
       "tag": "0029_invite_none",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792006894079,
+      "tag": "0030_failure_notice",
+      "breakpoints": true
     }
   ]
 }

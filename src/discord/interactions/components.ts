@@ -22,6 +22,7 @@ import { canReschedule, isOpen } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
 import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
+import { truncate } from '../../lib/text.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
 import { OFF_AGENDA } from '../embeds/recordingControl.js';
@@ -110,6 +111,24 @@ export async function handleAction(
       }
       const agenda = await ctx.repos.listAgenda(meeting.id);
       await interaction.reply({ ...renderAgendaManager(meeting, agenda, null, m), flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+      return;
+    }
+
+    case 'agenda.read':
+    case 'agenda.readSelect': {
+      // Lecture d'un point en entier (ordre du jour trop long pour tout afficher) : ouvert à tous, en privé.
+      const agenda = await ctx.repos.listAgenda(meeting.id);
+      if (agenda.length === 0) throw new UserError(m.card.agendaEmpty);
+      const picked = interaction.isStringSelectMenu() ? agenda.findIndex((i) => String(i.id) === interaction.values[0]) : -1;
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(encode({ type: 'agenda.readSelect', meetingId: meeting.id }))
+        .setPlaceholder(m.card.readPick)
+        .addOptions(agenda.slice(0, 25).map((item, i) => ({ label: truncate(`${i + 1}. ${item.title}`, 100), value: String(item.id), default: i === picked, ...(item.detail.trim() ? { description: truncate(item.detail.trim().replace(/\s*\n\s*/g, ' '), 100) } : {}) })));
+      const item = picked >= 0 ? agenda[picked]! : null;
+      const content = item ? m.card.readItem(picked + 1, item.title, item.authorId, item.detail.trim()) : m.card.readPick;
+      const payload = { content: truncate(content, 2000), components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select).toJSON()], allowedMentions: { parse: [] } };
+      if (interaction.isStringSelectMenu()) await interaction.update(payload);
+      else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
       return;
     }
 

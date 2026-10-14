@@ -36,6 +36,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
   let dataDir: string;
   const hits = { vibe: 0, speaches: 0, llm: 0 };
   const llmPrompts: string[] = [];
+  let llmContextRefusals = 0;
 
   beforeAll(async () => {
     ({ db, pool } = createDb(await freshDatabase(url!, 'pipeline')));
@@ -67,6 +68,11 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       }
       if (req.url === '/llm/v1/chat/completions') {
         hits.llm++;
+        // Contexte trop petit simulé : refus tant que des « refus » restent à servir.
+        if (llmContextRefusals > 0) {
+          llmContextRefusals--;
+          return res.writeHead(400, { 'content-type': 'application/json' }).end('{"error":{"code":400,"message":"request (9908 tokens) exceeds the available context size (8192 tokens)"}}');
+        }
         llmPrompts.push(JSON.parse(raw).messages.at(-1).content);
         return res
           .writeHead(200, { 'content-type': 'application/json', 'x-litellm-model-id': 'ollama-pc1' })
@@ -156,6 +162,21 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(summary).toMatchObject({ content: { overview: 'Salutations.' }, passes: 1, llmDeployments: ['qwen3 (ollama-pc1)'], transcriptionBackends: ['speaches (large-v3)'] });
     expect(llmPrompts.at(-1)).toContain('[18:00:00] Alice : Bonjour à tous.');
     expect(llmPrompts.at(-1)).toContain('Participants : Alice, Bob');
+  }, 60_000);
+
+  it('résumé refusé pour contexte trop petit : recommencé avec des morceaux plus petits', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const steps = createSteps(d);
+    const settings = await d.settings.get('g');
+    const progress: string[] = [];
+    const ctx = { meeting, settings, m: (await import('../src/i18n/index.js')).messages('fr'), signal: new AbortController().signal, log, progress: (x: string) => void progress.push(x) };
+    await steps.transcribe(ctx);
+    llmContextRefusals = 1;
+    const before = hits.llm;
+    expect(await steps.summarize(ctx)).toMatchObject({ passes: 1 });
+    expect(hits.llm - before).toBe(2); // refus, puis nouvel essai réussi
+    expect(progress.some((x) => x.includes('morceaux de 3000 tokens'))).toBe(true);
   }, 60_000);
 
   it('sans LLM configuré : résumé sauté, pas d’échec', async () => {
@@ -438,7 +459,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       mix: quick,
       transcribe: quick,
       summarize: async () => {
-        if (fail) throw new Error('LLM injoignable');
+        if (fail) throw new Error('LLM : erreur 404 model "qwen3" not found') // définitif : pas de relance automatique;
         return {};
       },
       publish: async () => ({ url: 'https://discord.com/channels/g/thread-regen/42' }),
@@ -514,6 +535,50 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await engine.regenerate(meeting.id, false, '555'); // ce que font « Corriger » et « Régénérer »
     await waitIdle(engine, meeting.id);
     expect(calls).toEqual(['summarize', 'publish', 'export']);
+  }, 30_000);
+
+  it('échec passager (serveur injoignable) : relances automatiques, puis un seul avis d’échec, retiré à la réussite', async () => {
+    const meeting = (await repos.updateMeeting((await seedMeeting()).id, { threadId: 'thread-auto', organizerId: '900' }))!;
+    const { thread, sent, deleted } = fakeThread('thread-auto');
+    const d = { ...deps(), client: { guilds: { fetch: async () => ({ premiumTier: 0 }) }, channels: { fetch: async () => thread } } as unknown as Client };
+    let failures = 5;
+    const calls: string[] = [];
+    const quick: StepFn = async () => ({});
+    const engine = new PipelineService(d, {
+      mix: quick,
+      summarize: quick,
+      publish: quick,
+      export: quick,
+      transcribe: async (ctx) => {
+        if (ctx.meeting.id !== meeting.id) return {};
+        calls.push('transcribe');
+        if (failures-- > 0) throw new Error('Transcription impossible après 3 tours : vibe-pc : indisponible');
+        return {};
+      },
+    });
+    engine.autoRetryDelaysMs = [5, 5, 5];
+    const notices = () => sent.filter((p) => typeof p.content === 'string' && (p.content as string).includes("n'a pas pu être terminé"));
+    const waitFor = async (cond: () => boolean) => {
+      for (let i = 0; i < 300 && !cond(); i++) await new Promise((r) => setTimeout(r, 10));
+    };
+
+    await engine.schedule(meeting.id);
+    // 1 essai + 3 relances automatiques, puis l'échec est annoncé (une fois).
+    await waitFor(() => notices().length === 1);
+    await waitIdle(engine, meeting.id);
+    expect(calls).toHaveLength(4);
+    expect(notices()).toHaveLength(1);
+    expect((await repos.listPipeline(meeting.id)).find((r) => r.step === 'transcribe')?.status).toBe('failed');
+
+    // Relance manuelle : de nouveau 1 essai + 1 relance, la 2e réussit ; l'avis d'échec est retiré.
+    await engine.retry(meeting.id);
+    await waitFor(() => (calls.length === 6 && !engine.isQueued(meeting.id)));
+    await waitIdle(engine, meeting.id);
+    expect(calls).toHaveLength(6);
+    expect(notices()).toHaveLength(1);
+    expect(deleted.length).toBeGreaterThanOrEqual(1);
+    expect((await repos.getMeeting(meeting.id))?.failureNoticeId).toBeNull();
+    expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
   }, 30_000);
 
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {

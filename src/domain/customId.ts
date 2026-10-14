@@ -23,6 +23,8 @@ export type Action =
   | { type: 'agenda.addSubmit'; meetingId: string }
   | { type: 'agenda.manage'; meetingId: string }
   | { type: 'agenda.select'; meetingId: string }
+  | { type: 'agenda.read'; meetingId: string }
+  | { type: 'agenda.readSelect'; meetingId: string }
   | { type: 'agenda.move'; meetingId: string; itemId: number; direction: 'up' | 'down' }
   | { type: 'agenda.remove'; meetingId: string; itemId: number }
   | { type: 'agenda.removeConfirm'; meetingId: string; itemId: number }
@@ -297,6 +299,8 @@ export function decode(customId: string): Action | null {
       case 'addSubmit':
       case 'manage':
       case 'select':
+      case 'read':
+      case 'readSelect':
         return rest.length === 2 ? { type: `agenda.${verb}`, meetingId } : null;
       case 'move': {
         const itemId = toId(a);

@@ -16,6 +16,9 @@ export const fr = {
   } satisfies Record<RsvpStatus, string>,
 
   card: {
+    readPick: 'Choisissez un point pour le lire en entier.',
+    readItem: (n: number, title: string, authorId: string, detail: string) =>
+      `**${n}. ${title}** — proposé par <@${authorId}>${detail ? `\n${detail.split('\n').map((l) => `> ${l}`).join('\n')}` : ''}`,
     when: 'Date',
     duration: 'Durée',
     voice: 'Salon vocal',
@@ -40,6 +43,7 @@ export const fr = {
   buttons: {
     addItem: 'Ajouter un point',
     manageAgenda: "Gérer l'ordre du jour",
+    readItem: 'Lire un point',
     edit: 'Modifier',
     manage: 'Gérer',
     moveUp: 'Monter',
@@ -486,6 +490,7 @@ export const fr = {
     progressExport: (files: number) => `envoi de ${files} fichier${files > 1 ? 's' : ''}`,
     progressTranscribe: (done: number, total: number) => `${done}/${total} bloc${total > 1 ? 's' : ''}`,
     progressSummarize: (pass: number, total: number) => `passe ${pass}/${total}`,
+    progressSmallerChunks: (tokens: number) => `contexte du modèle trop petit : nouvel essai par morceaux de ${tokens} tokens`,
     published: (url: string) => `Compte rendu publié : ${url}`,
     stepTooLong: (min: number) => `Transcription interrompue : elle dépassait la durée maximale (${min} min). Vérifiez que le serveur de transcription répond, puis relancez.`,
     causes: {
@@ -497,6 +502,7 @@ export const fr = {
       disk: 'disque du bot plein',
       discord: 'Discord a refusé l’opération (permissions du bot ?)',
       tooLong: 'durée maximale dépassée',
+      context: 'texte trop long pour le contexte du modèle (augmentez « Context Length » dans LM Studio)',
       unknown: 'erreur inattendue (détail envoyé aux administrateurs)',
     },
     failedNotice: (userIds: readonly string[]) =>
@@ -504,6 +510,8 @@ export const fr = {
     updatedNotice: (userIds: readonly string[], url: string | null) =>
       `✅ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu est à jour${url ? ` : ${url}` : '.'}`,
     retried: 'Relance lancée : seules les étapes en échec sont refaites.',
+    autoRetry: (cause: string, minutes: number, seconds: boolean, attempt: number, max: number) =>
+      `${cause} — nouvelle tentative automatique dans ${seconds ? '30 s' : `${minutes} min`} (${attempt}/${max})`,
     failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut le relancer : seules les étapes en échec sont refaites.",
     retry: 'Relancer',
     scheduled: 'Compte rendu programmé : il sera publié dans le post, et vous y serez mentionné une fois prêt.',

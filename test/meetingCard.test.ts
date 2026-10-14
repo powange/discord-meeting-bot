@@ -1,6 +1,6 @@
 import { ComponentType, type APIButtonComponentWithCustomId, type APIEmbed } from 'discord.js';
 import { describe, expect, it } from 'vitest';
-import { renderAgendaManager, renderAgendaMessage, renderMeetingCard, type CardMeeting } from '../src/discord/embeds/meetingCard.js';
+import { renderAgendaManager, renderAgendaMessage, renderMeetingCard, shareDetails, type CardMeeting } from '../src/discord/embeds/meetingCard.js';
 import type { AgendaItem, Rsvp } from '../src/domain/types.js';
 import { messages } from '../src/i18n/index.js';
 import { decode } from '../src/domain/customId.js';
@@ -91,12 +91,19 @@ describe('renderAgendaMessage', () => {
     ]);
   });
 
-  it('détail : retours à la ligne gardés, lignes vides retirées, au plus 6 lignes', () => {
-    const detail = 'Bilan des comptes\n\n  Coût de la restauration  \nBar\n4\n5\n6\n7\n8';
-    const description = renderAgendaMessage(meeting, [item(1, detail)], m).embeds[0]!.description!;
-    expect(description).toContain('> Bilan des comptes\n> Coût de la restauration\n> Bar\n> 4\n> 5\n> 6 …');
-    expect(description).not.toContain('> 7');
+  it('détail affiché en entier quand tout tient : retours à la ligne gardés, lignes vides retirées, pas de bouton « Lire un point »', () => {
+    const detail = 'Bilan des comptes\n\n  Coût de la restauration  \nBar\n4\n5\n6\n7\n8' + ' Lorem'.repeat(100);
+    const out = renderAgendaMessage(meeting, [item(1, detail)], m);
+    expect(out.embeds[0]!.description).toContain('> Bilan des comptes\n> Coût de la restauration\n> Bar\n> 4\n> 5\n> 6\n> 7\n> 8 Lorem');
+    expect(out.embeds[0]!.description).not.toContain('…');
+    expect(buttons(out).map((b) => b.label)).not.toContain(m.buttons.readItem);
   });
+
+  it('place partagée équitablement : les détails courts en entier, les longs raccourcis à parts égales', () => {
+    expect(shareDetails([10, 500, 2000], 1000)).toEqual([10, 495, 495]);
+    expect(shareDetails([10, 20], 1000)).toEqual([10, 20]);
+  });
+
 
   it('vide', () => {
     expect(renderAgendaMessage(meeting, [], m).embeds[0]!.description).toBe(m.card.agendaEmpty);
@@ -114,7 +121,8 @@ describe('renderAgendaMessage', () => {
     const embed = renderAgendaMessage(meeting, agenda, m).embeds[0]!;
     expect(embed.description!.length).toBeLessThanOrEqual(4096);
     expect(embedLength(embed)).toBeLessThanOrEqual(6000);
-    expect(embed.description).toMatch(/… et \d+ de plus$/);
+    // Tout ne tient pas : les détails sont raccourcis, et « Lire un point » permet de les lire en entier.
+    expect(buttons(renderAgendaMessage(meeting, agenda, m)).map((b) => b.label)).toContain(m.buttons.readItem);
   });
 });
 
