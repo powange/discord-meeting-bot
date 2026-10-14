@@ -65,6 +65,11 @@ describe('panneau /config', () => {
     expect((select.options as Array<{ value: string }>).map((o) => o.value)).toEqual([...CONFIG_SECTIONS]);
   });
 
+  it('accueil : version du bot en pied (commit de l’image, ou « développement » en local)', () => {
+    expect(texts(renderConfigHome({ ...c, version: { version: '1.5.0', commit: 'cdacb8e1f2a3' } }, m))).toContain('-# Meeting recorder v1.5.0 · cdacb8e');
+    expect(texts(renderConfigHome({ ...c, version: { version: '1.5.0', commit: 'dev' } }, m))).toContain('v1.5.0 · développement');
+  });
+
   it('accueil : « À faire » liste ce qui manque, dans l’ordre ; rien quand tout est réglé', () => {
     const fresh = texts(renderConfigHome({ ...c, settings: { ...settings, forumChannelId: null, managerRoleIds: [] } }, m));
     expect(fresh).toContain(m.config.todo.title);

@@ -58,6 +58,8 @@ export interface ConfigContext {
   forumPostsReserved?: boolean | undefined;
   /** Permissions qui manquent au bot sur le forum choisi (vérifiées à chaque ouverture). */
   forumMissing?: readonly string[];
+  /** Version du bot en cours d'exécution (pied de l'accueil). */
+  version?: { version: string; commit: string };
   notice?: string | undefined;
 }
 
@@ -137,6 +139,7 @@ export function renderConfigHome(c: ConfigContext, m: Messages): APIContainerCom
     .addSeparatorComponents((x) => x.setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents((x) => x.setContent(lines.join('\n')))
     .addActionRowComponents((row: ActionRowBuilder<StringSelectMenuBuilder>) => row.addComponents(select));
+  if (c.version) container.addTextDisplayComponents((x) => x.setContent(`-# ${t.version(c.version!.version, c.version!.commit)}`));
   return container.toJSON();
 }
 

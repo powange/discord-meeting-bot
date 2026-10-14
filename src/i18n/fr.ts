@@ -636,6 +636,7 @@ export const fr = {
     refusalsList: "**Refusent l'enregistrement** (chacun change son choix avec « Mon choix d'enregistrement » sur le post épinglé) :",
     refusals: (n: number) => (n ? `🔇 ${n} personne${n > 1 ? 's refusent' : ' refuse'} l'enregistrement` : "🔇 Personne ne refuse l'enregistrement"),
     pickNudge: 'Rôle relancé : tapez un nom pour chercher',
+    version: (version: string, commit: string) => `Meeting recorder v${version}${commit && commit !== 'dev' ? ` · ${commit.slice(0, 7)}` : ' · développement'}`,
     postsReserved: '🔒 Création de posts réservée au bot : les membres répondent dans les posts des réunions et utilisent les boutons, sans créer de post.',
     postsOpen: '🔓 Les membres peuvent créer des posts dans ce forum (seul le post épinglé est protégé).',
     postsReserveButton: 'Réserver la création de posts au bot',
