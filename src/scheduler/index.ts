@@ -4,7 +4,7 @@ import type { ScheduledJobRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
-import { nonResponders, reminderTargets } from '../domain/rsvp.js';
+import { nonResponders, nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import { formatWhen } from '../domain/time.js';
 import { rsvpButtons } from '../discord/embeds/meetingCard.js';
 import { joinVoiceRows, mentionBatches, voiceName } from '../discord/notify.js';
@@ -119,14 +119,14 @@ export class Scheduler {
     const batches: Array<{ content: string; users: string[] }> = [];
     batches.push(...mentionBatches(targets.length > 0 ? `${intro}\n${m.thread.reminderTargets} ` : intro, targets));
 
-    if (settings.nudgeRoleId && isNudgeReminder(job.offsetMin, settings.reminderOffsetsMin)) {
+    const roleIds = nudgeRoles(meeting, settings);
+    if (roleIds.length && isNudgeReminder(job.offsetMin, settings.reminderOffsetsMin)) {
       // La relance est un plus : son échec (intent GuildMembers absent, délai) ne doit pas
       // empêcher le rappel lui-même.
       try {
         const guild = await this.ctx.client.guilds.fetch(meeting.guildId);
         await guild.members.fetch(); // nécessite l'intent privilégié GuildMembers
-        const role = guild.roles.cache.get(settings.nudgeRoleId);
-        const expected = role ? [...role.members.filter((mb) => !mb.user.bot).keys()] : [];
+        const expected = roleIds.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot).keys() ?? [])]);
         const missing = nonResponders(expected, rsvps, [meeting.organizerId]);
         if (missing.length > 0) batches.push(...mentionBatches(`${m.thread.nudge} `, missing));
       } catch (err) {

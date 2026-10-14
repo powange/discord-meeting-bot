@@ -1,4 +1,4 @@
-import { ChannelType, MessageFlags, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel, type VoiceBasedChannel } from 'discord.js';
+import { ChannelType, MessageFlags, PermissionFlagsBits, ThreadAutoArchiveDuration, type Client, type Guild, type ThreadChannel, type VoiceBasedChannel } from 'discord.js';
 import type { AppConfig } from '../config/index.js';
 import type { Repositories } from '../db/repositories.js';
 import type { GuildSettingsRow, MeetingRow } from '../db/schema.js';
@@ -11,7 +11,7 @@ import { planJobs, planPollJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
 import { displayName, joinVoiceRows, sendWithMentions, voiceName } from '../discord/notify.js';
 import { renderPollResults } from '../discord/embeds/meetingCard.js';
-import { reminderTargets } from '../domain/rsvp.js';
+import { nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
 import { messages, type Messages } from '../i18n/index.js';
 import { discordErrorCode, errorMessage, UserError } from '../lib/errors.js';
@@ -178,6 +178,35 @@ export class MeetingService {
     return meeting;
   }
 
+  /**
+   * Rôles invités à répondre au sondage : enregistrés (ils remplacent le rôle de relance du
+   * serveur pour la relance), et les nouveaux mentionnés dans le post. Un rôle que le bot ne peut
+   * pas mentionner (non mentionnable, sans la permission « Mentionner @everyone ») : ses membres
+   * sont mentionnés un par un.
+   */
+  async inviteRoles(guild: Guild, meetingId: string, roleIds: readonly string[]): Promise<void> {
+    const meeting = await this.requirePolling(meetingId);
+    const added = roleIds.filter((id) => !meeting.targetRoleIds.includes(id));
+    await this.repos.updateMeeting(meetingId, { targetRoleIds: [...roleIds] });
+    if (added.length === 0) return;
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!thread) return;
+    const m = await this.settings.messages(guild.id);
+    const canMentionAll = guild.members.me?.permissions.has(PermissionFlagsBits.MentionEveryone) ?? false;
+    const pingable = added.filter((id) => canMentionAll || guild.roles.cache.get(id)?.mentionable);
+    const others = added.filter((id) => !pingable.includes(id));
+    let members: string[] = [];
+    if (others.length) {
+      await guild.members.fetch().catch((err) => this.log.warn({ meetingId, err: errorMessage(err) }, 'Membres des rôles invités introuvables'));
+      members = [...new Set(others.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot).keys() ?? [])]))];
+    }
+    await ensureUnarchived(thread);
+    const roles = (ids: readonly string[]) => ids.map((id) => `<@&${id}>`).join(' ');
+    if (pingable.length) await thread.send({ content: m.datePoll.invite(roles(pingable)), allowedMentions: { roles: pingable } });
+    // Rôles non mentionnables : le message les nomme, et leurs membres sont mentionnés un par un.
+    if (others.length) await sendWithMentions(thread, m.datePoll.invite(roles(others)), m.datePoll.invitedMembers, members);
+  }
+
   /** Créneau ajouté à un sondage en cours. */
   async addSlot(meetingId: string, slot: SlotInput): Promise<void> {
     const meeting = await this.requirePolling(meetingId);
@@ -273,15 +302,16 @@ export class MeetingService {
     const meeting = await this.repos.getMeeting(meetingId);
     if (!meeting || meeting.status !== 'polling') return;
     const settings = await this.settings.get(meeting.guildId);
-    if (!settings.nudgeRoleId) return;
+    const roleIds = nudgeRoles(meeting, settings);
+    if (roleIds.length === 0) return;
     const m = messages(settings.locale);
     const guild = await this.guild(meeting);
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!guild || !thread) return;
     await guild.members.fetch();
-    const role = guild.roles.cache.get(settings.nudgeRoleId);
     const answered = respondents(tallySlots(await this.repos.listSlots(meetingId), await this.repos.listVotes(meetingId)));
-    const missing = role ? [...role.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== meeting.organizerId).keys()] : [];
+    const members = roleIds.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== meeting.organizerId).keys() ?? [])]);
+    const missing = [...new Set(members)];
     if (missing.length === 0) return;
     await ensureUnarchived(thread);
     const closes = formatWhen(meeting.pollClosesAt ?? meeting.startsAt, settings.timezone, settings.locale, m.format.when);

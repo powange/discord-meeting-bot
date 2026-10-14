@@ -23,3 +23,9 @@ export function nonResponders(expected: Iterable<string>, rsvps: readonly Rsvp[]
   const excluded = new Set(exclude);
   return [...new Set(expected)].filter((id) => !answered.has(id) && !excluded.has(id));
 }
+
+/** Rôles relancés : ceux invités pour cette réunion (sondage), sinon le rôle de relance du serveur. */
+export function nudgeRoles(meeting: { targetRoleIds: readonly string[] }, settings: { nudgeRoleId: string | null }): string[] {
+  if (meeting.targetRoleIds.length) return [...meeting.targetRoleIds];
+  return settings.nudgeRoleId ? [settings.nudgeRoleId] : [];
+}

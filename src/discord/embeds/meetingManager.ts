@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, type APIContainerComponent } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, RoleSelectMenuBuilder, type APIContainerComponent } from 'discord.js';
 import { encode, type Action } from '../../domain/customId.js';
 import { isOpen } from '../../domain/meeting.js';
 import type { MeetingStatus } from '../../domain/types.js';
@@ -20,7 +20,7 @@ type MeetingAction = Extract<Action, { meetingId: string }>['type'];
 
 /** Panneau « Gérer » d'une réunion (organisateur et gestionnaires) : remplace les sous-commandes /reunion. */
 export function renderMeetingManager(
-  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean },
+  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean; targetRoleIds?: readonly string[] },
   state: ManagerState,
   m: Messages,
 ): APIContainerComponent {
@@ -48,6 +48,10 @@ export function renderMeetingManager(
       new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.edit', g.edit, '✏️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
     );
     for (const row of rows) container.addActionRowComponents(row);
+    // Rôles invités à répondre : mentionnés à l'ajout, relancés la veille de la fin des réponses.
+    const invite = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId: meeting.id })).setPlaceholder(p.inviteRoles).setMinValues(0).setMaxValues(5);
+    if (meeting.targetRoleIds?.length) invite.setDefaultRoles(...meeting.targetRoleIds);
+    container.addActionRowComponents((row: ActionRowBuilder<RoleSelectMenuBuilder>) => row.addComponents(invite));
     return container.toJSON();
   }
   const main = new ActionRowBuilder<ButtonBuilder>();

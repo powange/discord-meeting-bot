@@ -11,6 +11,7 @@ import {
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type ModalSubmitInteraction,
+  type RoleSelectMenuInteraction,
   type StringSelectMenuInteraction,
 } from 'discord.js';
 import type { AppContext } from '../../context.js';
@@ -32,7 +33,7 @@ import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
 import { handleDatePoll, type PollAction } from './datePoll.js';
 
-export type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
+export type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | RoleSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
 
 /** Traite un bouton, menu ou formulaire dont le customId a été décodé. */
 export async function handleAction(

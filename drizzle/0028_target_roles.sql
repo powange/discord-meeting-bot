@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "target_role_ids" text[] DEFAULT '{}'::text[] NOT NULL;

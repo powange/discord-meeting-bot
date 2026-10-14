@@ -87,6 +87,13 @@ export const fr = {
     `Ensuite, le bouton « Nouvelle réunion » apparaît dans le post épinglé du forum.`,
 
   datePoll: {
+    created: (threadId: string) =>
+      `Sondage créé : <#${threadId}>\n📣 Vous pouvez inviter des rôles à répondre : ils seront mentionnés dans le sondage, puis relancés la veille de la fin des réponses s'ils n'ont pas répondu.`,
+    inviteRoles: 'Inviter des rôles à répondre (facultatif)',
+    invitedMembers: 'Invités :',
+    invite: (roles: string) => `📣 ${roles} : vous êtes invités à indiquer vos disponibilités (bouton « Indiquer mes disponibilités » sur la carte ci-dessus).`,
+    invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés la veille de la fin des réponses.`,
+    noInvited: "Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).",
     hubButton: 'Proposer des dates',
     modalTitle: 'Proposer des dates',
     slotsField: 'Créneaux proposés (un par ligne)',

@@ -19,6 +19,7 @@ export type Action =
   | { type: 'poll.addSubmit'; meetingId: string }
   | { type: 'poll.remove'; meetingId: string }
   | { type: 'poll.removeSelect'; meetingId: string }
+  | { type: 'poll.roles'; meetingId: string }
   | { type: 'agenda.add'; meetingId: string }
   | { type: 'agenda.addSubmit'; meetingId: string }
   | { type: 'agenda.manage'; meetingId: string }
@@ -127,7 +128,7 @@ export const MEETING_VERBS = [
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
 
-const POLL_VERBS = ['answer', 'fix', 'fixSelect', 'add', 'addSubmit', 'remove', 'removeSelect'] as const;
+const POLL_VERBS = ['answer', 'fix', 'fixSelect', 'add', 'addSubmit', 'remove', 'removeSelect', 'roles'] as const;
 
 const VERSION = 'v1';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

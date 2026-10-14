@@ -8,6 +8,7 @@ import {
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
+  RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -55,6 +56,18 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
   if (meeting.status !== 'polling') throw new UserError(p.notPolling);
 
   switch (action.type) {
+    case 'poll.roles': {
+      if (!interaction.isRoleSelectMenu()) return;
+      requireManager(scope);
+      const roleIds = [...interaction.roles.keys()].filter((id) => id !== interaction.guildId).slice(0, 5);
+      await interaction.deferUpdate();
+      await ctx.meetings.inviteRoles(interaction.guild, meeting.id, roleIds);
+      const text = roleIds.length ? p.invitedReply(roleIds.map((id) => `<@&${id}>`).join(' ')) : p.noInvited;
+      // Depuis ⚙️ Gérer (panneau Components V2) : réponse dans le même format ; depuis la confirmation de création : texte.
+      if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) await interaction.editReply({ components: [notice(text)], allowedMentions: { parse: [] } });
+      else await interaction.editReply({ content: text, components: [inviteRow(meeting.id, roleIds, m)], allowedMentions: { parse: [] } });
+      return;
+    }
     case 'poll.answer': {
       if (!interaction.isButton()) return;
       await interaction.reply({ components: [await panel(ctx, meeting, interaction.user.id, m)], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
@@ -139,6 +152,13 @@ function rankById<T extends { id: number; yes: number; maybe: number }>(choices:
   return [...choices].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
 }
 
+/** Sélecteur des rôles invités à répondre (jusqu'à 5). */
+function inviteRow(meetingId: string, current: readonly string[], m: Messages) {
+  const select = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId })).setPlaceholder(m.datePoll.inviteRoles).setMinValues(0).setMaxValues(5);
+  if (current.length) select.setDefaultRoles(...current);
+  return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON();
+}
+
 function notice(text: string) {
   return new ContainerBuilder().setAccentColor(0x57f287).addTextDisplayComponents((t) => t.setContent(text)).toJSON();
 }
@@ -209,7 +229,8 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
   try {
     const meeting = await ctx.meetings.createPoll(interaction.guild, interaction.user.id, { title, description, voiceChannelId, slots: parsed.slots, closesAt });
     drafts.delete(interaction.user.id);
-    await replyEphemeral(interaction, m.replies.created(meeting.threadId!));
+    // Le formulaire est plein (5 éléments au plus) : les rôles à inviter se choisissent ici.
+    await interaction.editReply({ content: p.created(meeting.threadId!), components: [inviteRow(meeting.id, [], m)], allowedMentions: { parse: [] } });
   } catch (err) {
     if (err instanceof UserError) return fail(err.message);
     throw err;

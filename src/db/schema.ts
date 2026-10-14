@@ -100,6 +100,8 @@ export const meetings = pgTable(
     pollClosesAt: tz(),
     /** Personnes qui ont demandé une correction ou une régénération : prévenues à la publication. */
     reportRequesters: text().array().notNull().default(sql`'{}'::text[]`),
+    /** Rôles invités à répondre (sondage) : mentionnés à l'invitation, relancés à la place du rôle de relance du serveur. */
+    targetRoleIds: text().array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
