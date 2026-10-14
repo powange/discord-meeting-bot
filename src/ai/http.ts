@@ -14,7 +14,7 @@ export async function fetchWithTimeout(
   const signals = [AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])];
   const dispatcher = guardedDispatcher(allowedHosts);
   // Aucune redirection suivie : une URL autorisée ne doit pas pouvoir renvoyer ailleurs.
-  const res = await fetch(url, { redirect: 'manual', ...init, signal: AbortSignal.any(signals), ...(dispatcher ? { dispatcher } : {}) } as RequestInit);
+  const res = await fetch(url, { redirect: 'manual', ...init, signal: AbortSignal.any(signals), dispatcher } as RequestInit);
   if (res.status >= 300 && res.status < 400) {
     await res.body?.cancel();
     throw new RedirectError(`Redirection refusée (${res.status}) depuis ${url}`);
@@ -37,17 +37,24 @@ export function trimSlash(url: string): string {
 const dispatchers = new Map<string, Agent>();
 
 /**
- * Connexions limitées aux adresses autorisées, vérifiées au moment de se connecter : une
+ * Dispatcher des appels aux serveurs d'IA. Avec des motifs (ai.allowedHosts) : connexions limitées aux adresses autorisées, vérifiées au moment de se connecter : une
  * vérification préalable (assertUrlAllowed) puis une seconde résolution DNS par fetch laisseraient
  * un nom changer d'adresse entre les deux (DNS rebinding). Un nom autorisé explicitement garde
  * toutes ses adresses ; sinon, seules celles qui correspondent à un motif d'IP sont utilisées.
  */
-export function guardedDispatcher(patterns: readonly string[]): Agent | undefined {
-  if (patterns.length === 0) return undefined;
+export function guardedDispatcher(patterns: readonly string[]): Agent {
   const key = patterns.join(',');
   let agent = dispatchers.get(key);
   if (!agent) {
-    agent = new Agent({ connect: { lookup: guardedLookup(patterns) } });
+    agent = new Agent({
+      // Pas de délai caché : par défaut, Node coupe une requête dont la réponse tarde plus de 300 s
+      // (headersTimeout, bodyTimeout). LM Studio et Vibe ne répondent qu'une fois le travail fini :
+      // un résumé ou un bloc de transcription de plus de 5 min échouait en « fetch failed »
+      // (« serveur injoignable »). Seul le délai du bot (timeoutSec, signal d'annulation) s'applique.
+      headersTimeout: 0,
+      bodyTimeout: 0,
+      ...(patterns.length ? { connect: { lookup: guardedLookup(patterns) } } : {}),
+    });
     dispatchers.set(key, agent);
   }
   return agent;
