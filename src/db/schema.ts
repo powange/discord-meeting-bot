@@ -48,7 +48,7 @@ export const guildSettings = pgTable('guild_settings', {
   managerRoleIds: text().array().notNull().default(sql`'{}'::text[]`),
   /** Ancien rôle « ne pas m'enregistrer » : ses membres sont repris dans recording_optouts, puis il est oublié. */
   optoutRoleId: text(),
-  /** Si renseigné, ses membres sans réponse sont relancés avec le premier rappel. */
+  /** Si renseigné, ses membres sans réponse sont relancés à chaque rappel. */
   nudgeRoleId: text(),
   creatorsRestricted: boolean().notNull().default(false),
   timezone: text().notNull(),

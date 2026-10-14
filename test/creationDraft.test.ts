@@ -43,7 +43,7 @@ describe('création en deux temps : « Qui inviter ? »', () => {
     const { payload, ids } = await s.start();
     expect(s.create).not.toHaveBeenCalled();
     expect(payload.content).toContain('**mentionnées dès la création**');
-    expect(payload.content).toContain('**relancées au premier rappel**');
+    expect(payload.content).toContain('**relancées à chaque rappel**');
     expect(payload.content).toContain('**↩️ Par défaut** : <@&r0>, le rôle relancé de /config.');
     expect(payload.content).toContain('**🚫 Personne** : aucune mention, aucune relance.');
     expect(payload.content).toContain(m.invite.current(m.invite.summaryDefault('<@&r0>')));

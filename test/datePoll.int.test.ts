@@ -9,6 +9,9 @@ import { MeetingService } from '../src/services/meetings.js';
 import { SettingsService } from '../src/services/settings.js';
 import { freshDatabase } from './helpers/db.js';
 import { fakeThread } from './helpers/discordFakes.js';
+import { messages } from '../src/i18n/index.js';
+
+const m = messages('fr');
 
 const url = process.env.TEST_DATABASE_URL;
 const log = pino({ level: 'silent' });
@@ -123,6 +126,31 @@ describe.skipIf(!url)('Sondage de date : du sondage à la réunion planifiée', 
     // L'organisateur tranche : la date est fixée au créneau choisi.
     await service.fixDate(guild as never, meeting.id, s2!.id, 'organizer');
     expect(await repos.getMeeting(meeting.id)).toMatchObject({ status: 'scheduled', startsAt: s2!.startsAt, durationMin: 90 });
+  });
+
+  it('date fixée : les invités qui n’ont pas répondu sont prévenus ; puis bascule sur un autre créneau', async () => {
+    const meeting = await service.createPoll(guild as never, 'organizer', { title: 'AG', description: '', voiceChannelId: 'v', slots: slotsInput, closesAt: new Date(Date.now() + 3_600_000) });
+    await repos.updateMeeting(meeting.id, { targetRoleIds: ['r1'] });
+    // Rôle invité : 101 a répondu, 104 non, 105 est un bot.
+    const all = new Map([
+      ['101', { id: '101', user: { bot: false } }],
+      ['104', { id: '104', user: { bot: false } }],
+      ['105', { id: '105', user: { bot: true } }],
+    ]);
+    guild.roles.cache.set('r1', { members: Object.assign(all, { filter: (fn: (v: { id: string; user: { bot: boolean } }) => boolean) => new Map([...all].filter(([, v]) => fn(v))) }) } as never);
+    const [s1, s2] = await repos.listSlots(meeting.id);
+    await repos.setVote(s1!.id, '101', 'yes');
+    await service.fixDate(guild as never, meeting.id, s1!.id, 'organizer');
+    const thread = threads.find((t) => t.thread.id === (meeting.threadId ?? ''))!;
+    const ask = thread.sent.at(-1)!;
+    expect(ask.content).toContain(m.datePoll.fixedAsk);
+    expect(ask.allowedMentions).toEqual({ users: ['104'] });
+
+    // Bascule sur l'autre créneau du sondage : réunion déplacée, inscrits prévenus du report.
+    const fixed = (await repos.getMeeting(meeting.id))!;
+    await service.update(guild as never, fixed, { title: fixed.title, description: fixed.description, startsAt: s2!.startsAt, durationMin: s2!.durationMin, voiceChannelId: fixed.voiceChannelId }, 'organizer');
+    expect(await repos.getMeeting(meeting.id)).toMatchObject({ status: 'scheduled', startsAt: s2!.startsAt, durationMin: 90 });
+    guild.roles.cache.delete('r1');
   });
 
   it('créneaux : ajout (sans doublon), retrait (jamais le dernier)', async () => {

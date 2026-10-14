@@ -17,6 +17,8 @@ export interface ManagerState {
   notice?: string | undefined;
   /** Rôle relancé de /config (bouton « Par défaut » des invitations). */
   nudgeRoleId?: string | null;
+  /** Réunion issue d'un sondage (plusieurs créneaux) : on peut rebasculer sur un autre créneau. */
+  pollSlots?: boolean;
 }
 
 type MeetingAction = Extract<Action, { meetingId: string }>['type'];
@@ -59,6 +61,7 @@ export function renderMeetingManager(
   main.addComponents(button('meeting.duplicate', g.duplicate, '📄'));
   if (open) main.addComponents(button('meeting.autoRecord', meeting.autoRecord ? g.autoOff : g.autoOn, meeting.autoRecord ? '⏸️' : '🔴'));
   rows.push(main);
+  if (open && meeting.status === 'scheduled' && state.pollSlots) rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.reslot', m.datePoll.reslot, '🗳️')));
   // Enregistrer à tout moment, même avant l'heure ou avant que quelqu'un rejoigne le vocal.
   if (open) {
     rows.push(
@@ -89,7 +92,7 @@ export function renderMeetingManager(
     );
   }
   for (const row of rows) container.addActionRowComponents(row);
-  // Réunion à venir : rôles invités (mentionnés à l'ajout, relancés au premier rappel).
+  // Réunion à venir : rôles invités (mentionnés à l'ajout, relancés à chaque rappel).
   if (meeting.status === 'scheduled') addInvites(container, meeting, state, m);
   return container.toJSON();
 }

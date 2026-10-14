@@ -146,6 +146,36 @@ describe('summarizeMeeting', () => {
     expect(r.summary.overview).toBe('Fusion');
     expect(progress).toEqual(Array.from({ length: r.passes }, (_, i) => i + 1));
   });
+
+  it('reprise après un redémarrage : les morceaux déjà résumés ne sont pas redemandés ; autre transcription : tout est refait', async () => {
+    reply = (body) => {
+      const prompt = body.messages.at(-1)!.content;
+      if (prompt.includes('résumés partiels')) return JSON.stringify({ overview: 'Fusion', topics: [topic(1, 'Budget', ['A'])] });
+      return JSON.stringify({ overview: 'Partiel', topics: [topic(1, 'Budget', ['A'])] });
+    };
+    const lines = Array.from({ length: 40 }, (_, i) => `[18:${String(i).padStart(2, '0')}:00] Alice : ${'blabla '.repeat(60)}`);
+    const store = new Map<string, unknown[]>();
+    let saves = 0;
+    const checkpoint = {
+      load: (key: string) => store.get(key) as never,
+      save: async (key: string, partials: readonly unknown[]) => {
+        saves++;
+        store.set(key, [...partials]);
+        if (saves === 2) throw new Error('redémarrage du bot'); // coupure après deux morceaux
+      },
+    };
+    await expect(summarizeMeeting(llm(), ctx, lines, 1500, undefined, undefined, checkpoint)).rejects.toThrow('redémarrage');
+    const before = requests.length;
+    const r = await summarizeMeeting(llm(), ctx, lines, 1500, undefined, undefined, checkpoint);
+    const maps = requests.slice(before).filter((c) => c.body.messages.at(-1)!.content.includes("Voici l'extrait"));
+    expect(maps.some((c) => c.body.messages.at(-1)!.content.includes("Voici l'extrait 1/"))).toBe(false); // repris au 3e
+    expect(maps.some((c) => c.body.messages.at(-1)!.content.includes("Voici l'extrait 3/"))).toBe(true);
+    expect(r.summary.overview).toBe('Fusion');
+
+    const other = requests.length;
+    await summarizeMeeting(llm(), ctx, lines.map((l) => `${l} !`), 1500, undefined, undefined, checkpoint);
+    expect(requests.slice(other).some((c) => c.body.messages.at(-1)!.content.includes("Voici l'extrait 1/"))).toBe(true);
+  });
 });
 
 describe('corrections de l’organisateur', () => {

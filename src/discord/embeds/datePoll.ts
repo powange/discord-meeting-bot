@@ -53,13 +53,14 @@ export interface RankedSlot {
 export function renderSlotChoice(
   meeting: { id: string; title: string },
   slots: readonly RankedSlot[],
-  purpose: 'fix' | 'remove',
+  purpose: 'fix' | 'remove' | 'reslot',
   m: Messages,
 ): APIContainerComponent {
   const p = m.datePoll;
+  const type = purpose === 'fix' ? 'poll.fixSelect' : purpose === 'remove' ? 'poll.removeSelect' : 'meeting.reslotSelect';
   const select = new StringSelectMenuBuilder()
-    .setCustomId(encode({ type: purpose === 'fix' ? 'poll.fixSelect' : 'poll.removeSelect', meetingId: meeting.id }))
-    .setPlaceholder(purpose === 'fix' ? p.pickFix : p.pickRemove)
+    .setCustomId(encode({ type, meetingId: meeting.id }))
+    .setPlaceholder(purpose === 'remove' ? p.pickRemove : p.pickFix)
     .addOptions(
       slots.slice(0, 25).map((s) => ({
         label: truncate(s.label, 100),
@@ -69,7 +70,11 @@ export function renderSlotChoice(
     );
   return new ContainerBuilder()
     .setAccentColor(0xfee75c)
-    .addTextDisplayComponents((t) => t.setContent(`## ${purpose === 'fix' ? `📅 ${p.fixDate}` : `➖ ${p.removeSlot}`}\n-# ${truncate(meeting.title, 120)}`))
+    .addTextDisplayComponents((t) =>
+      t.setContent(
+        `## ${purpose === 'fix' ? `📅 ${p.fixDate}` : purpose === 'remove' ? `➖ ${p.removeSlot}` : `🗳️ ${p.reslot}`}\n-# ${truncate(meeting.title, 120)}${purpose === 'reslot' ? `\n${p.reslotHint}` : ''}`,
+      ),
+    )
     .addActionRowComponents((row: ActionRowBuilder<StringSelectMenuBuilder>) => row.addComponents(select))
     .addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
       row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'meeting.manage', meetingId: meeting.id })).setLabel(m.manage.back).setEmoji('↩️').setStyle(ButtonStyle.Secondary)),

@@ -44,11 +44,6 @@ export function isReminderStale(startsAt: Date, now: Date): boolean {
   return now.getTime() >= startsAt.getTime();
 }
 
-/** La relance des non-répondants accompagne le rappel le plus précoce. */
-export function isNudgeReminder(offsetMin: number, reminderOffsetsMin: readonly number[]): boolean {
-  return reminderOffsetsMin.length > 0 && offsetMin === Math.max(...reminderOffsetsMin);
-}
-
 const UNIT_MINUTES: Record<string, number> = {
   '': 1, m: 1, mn: 1, min: 1, mins: 1, minute: 1, minutes: 1,
   h: 60, hr: 60, hrs: 60, heure: 60, heures: 60, hour: 60, hours: 60,

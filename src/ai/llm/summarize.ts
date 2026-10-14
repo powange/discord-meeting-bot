@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chunkLines, estimateTokens } from '../../domain/transcript.js';
 import type { ChatMessage } from './client.js';
 import type { JsonLlm } from './failover.js';
@@ -13,6 +14,16 @@ export interface SummaryContext {
   vocabulary?: readonly string[];
   /** Consignes de correction de l'organisateur, prioritaires sur la transcription. */
   corrections?: readonly string[];
+}
+
+/**
+ * Reprise après un redémarrage : les notes partielles déjà obtenues (passe « map », une par
+ * morceau) sont gardées sous une clé qui dépend de tout ce qui les produit (consignes, contexte,
+ * morceaux). Même clé à la reprise : les morceaux déjà résumés ne sont pas redemandés.
+ */
+export interface SummaryCheckpoint {
+  load(key: string): MeetingSummary[] | undefined;
+  save(key: string, partials: readonly MeetingSummary[]): Promise<void>;
 }
 
 export interface SummarizeResult {
@@ -41,6 +52,7 @@ const RULES = `Règles :
 - N'invente rien : uniquement ce qui figure dans la transcription. Une transcription automatique contient des erreurs : corrige les mots manifestement mal reconnus, sans changer le sens.
 - Un sujet = une question discutée. Rattache-le à un point de l'ordre du jour (son numéro dans agendaItemId) seulement s'il traite vraiment de ce point, même abordé dans le désordre ou en d'autres termes.
 - Tout autre sujet (digression, autre projet, sujet évoqué en passant) est un sujet distinct hors ordre du jour (agendaItemId null), avec un titre court que tu rédiges et ses propres décisions et actions. Ne le fusionne jamais dans un point de l'ordre du jour, même s'il a été évoqué juste après ou par les mêmes personnes.
+- Pour un sujet rattaché à un point de l'ordre du jour, le titre est celui du point, tel quel, sans sa description.
 - Un point de l'ordre du jour non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).
 - Lignes « ▶️ Point N de l'ordre du jour » : repères posés en direct par l'animateur au moment où la réunion passe à ce point (« Fin de l'ordre du jour » : la suite est hors ordre du jour). Sers-t'en pour rattacher les échanges au bon point, sans en faire un sujet.
@@ -76,6 +88,7 @@ export async function summarizeMeeting(
   chunkTokens: number,
   onProgress: (pass: number, total: number) => void = () => undefined,
   signal?: AbortSignal,
+  checkpoint?: SummaryCheckpoint,
 ): Promise<SummarizeResult> {
   const models = new Set<string>();
   const run = async (messages: ChatMessage[]) => {
@@ -99,9 +112,12 @@ export async function summarizeMeeting(
     return { summary: sanitize(summary, ctx), passes: pass, models: [...models] };
   }
 
-  // Passe « map » : notes partielles par morceau.
-  let partials: MeetingSummary[] = [];
+  // Passe « map » : notes partielles par morceau, gardées au fur et à mesure (reprise).
+  const key = createHash('sha256').update(JSON.stringify({ system: system.content, context: contextBlock(ctx), chunks })).digest('hex').slice(0, 32);
+  let partials: MeetingSummary[] = [...(checkpoint?.load(key) ?? [])].slice(0, chunks.length);
+  pass = partials.length;
   for (const [i, chunk] of chunks.entries()) {
+    if (i < partials.length) continue; // déjà résumé avant un redémarrage
     onProgress(++pass, estimatedTotal);
     partials.push(
       await run([
@@ -112,6 +128,7 @@ export async function summarizeMeeting(
         },
       ]),
     );
+    await checkpoint?.save(key, partials);
   }
 
   // Passes « reduce » : fusion par paquets tenant dans la fenêtre, jusqu'à un seul résumé.

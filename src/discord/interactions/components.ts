@@ -30,6 +30,7 @@ import { fetchForum } from '../threads.js';
 import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingDraft, readMeetingModal, type MeetingDraft } from '../modals.js';
 import { renderMeetingManager } from '../embeds/meetingManager.js';
 import { inviteSummary, nextInviteState } from '../embeds/invite.js';
+import { renderSlotChoice } from '../embeds/datePoll.js';
 import { askInvites, handleDraft } from './creation.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
@@ -370,6 +371,32 @@ export async function handleAction(
       return;
     }
 
+    case 'meeting.reslot':
+    case 'meeting.reslotSelect': {
+      // Réunion issue d'un sondage, date déjà fixée : rebasculer sur un autre créneau proposé.
+      requireManager(scope);
+      if (meeting.status !== 'scheduled') throw new UserError(m.errors.meetingClosed);
+      if (action.type === 'meeting.reslot') {
+        if (!interaction.isButton()) return;
+        const choices = [...(await ctx.meetings.slotChoices(meeting))].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
+        await interaction.update({ components: [renderSlotChoice(meeting, choices, 'reslot', m)], allowedMentions: { parse: [] } });
+        return;
+      }
+      if (!interaction.isStringSelectMenu()) return;
+      const slot = (await ctx.repos.listSlots(meeting.id)).find((x) => String(x.id) === interaction.values[0]);
+      if (!slot) throw new UserError(m.datePoll.slotGone);
+      await interaction.deferUpdate();
+      // Même chemin qu'une modification : inscrits prévenus du report, rappels et événement replanifiés.
+      const updated = await ctx.meetings.update(
+        interaction.guild,
+        meeting,
+        { title: meeting.title, description: meeting.description, startsAt: slot.startsAt, durationMin: slot.durationMin, voiceChannelId: meeting.voiceChannelId },
+        interaction.user.id,
+      );
+      await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: m.datePoll.reslotDone })], allowedMentions: { parse: [] } });
+      return;
+    }
+
     case 'meeting.autoRecord': {
       if (!interaction.isButton()) return;
       requireManager(scope);
@@ -626,7 +653,8 @@ async function managerPanel(ctx: AppContext, meeting: MeetingRow, state: { confi
   const m = await ctx.settings.messages(meeting.guildId);
   const hasRecording = (await ctx.repos.listRecordingsForMeeting(meeting.id)).length > 0;
   const nudgeRoleId = (await ctx.settings.get(meeting.guildId)).nudgeRoleId;
-  return renderMeetingManager(meeting, { hasRecording, recording: ctx.recordings.isRecording(meeting.id), nudgeRoleId, ...state }, m);
+  const pollSlots = meeting.status === 'scheduled' && (await ctx.repos.listSlots(meeting.id)).length > 1;
+  return renderMeetingManager(meeting, { hasRecording, recording: ctx.recordings.isRecording(meeting.id), nudgeRoleId, pollSlots, ...state }, m);
 }
 
 async function updateManager(

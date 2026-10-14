@@ -3,7 +3,7 @@ import type { AppContext } from '../context.js';
 import type { ScheduledJobRow } from '../db/schema.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
-import { isNudgeReminder, isReminderStale } from '../domain/reminders.js';
+import { isReminderStale } from '../domain/reminders.js';
 import { nonResponders, nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import { formatWhen } from '../domain/time.js';
 import { rsvpButtons } from '../discord/embeds/meetingCard.js';
@@ -120,7 +120,9 @@ export class Scheduler {
     batches.push(...mentionBatches(targets.length > 0 ? `${intro}\n${m.thread.reminderTargets} ` : intro, targets));
 
     const roleIds = nudgeRoles(meeting, settings);
-    if (roleIds.length && isNudgeReminder(job.offsetMin, settings.reminderOffsetsMin)) {
+    // Relance à chaque rappel : les membres des rôles invités (ou du rôle de relance) qui n'ont
+    // toujours pas répondu sont mentionnés un par un.
+    if (roleIds.length) {
       // La relance est un plus : son échec (intent GuildMembers absent, délai) ne doit pas
       // empêcher le rappel lui-même.
       try {

@@ -281,6 +281,13 @@ export class MeetingService {
       await sendWithMentions(thread, m.datePoll.fixed(meeting.title, when, byName), m.thread.responders, people, joinVoiceRows(meeting.guildId, meeting.voiceChannelId, m)).catch((err) =>
         this.warn(meeting!, 'Annonce de la date impossible', err),
       );
+      // Invités (rôles de la réunion, à défaut rôle de relance) qui n'ont pas répondu au sondage :
+      // prévenus aussi, pour qu'ils indiquent s'ils viennent.
+      const missing = await this.silentMembers(guild, nudgeRoles(meeting, settings), new Set(people), meeting.organizerId).catch((err) => {
+        this.warn(meeting!, 'Invités sans réponse introuvables', err);
+        return [];
+      });
+      if (missing.length) await sendWithMentions(thread, m.datePoll.fixedAsk, m.thread.nudge, missing).catch((err) => this.warn(meeting!, 'Relance après la date fixée impossible', err));
     }
     await this.cards.refreshNow(meeting.id);
     this.onChange(meeting.guildId);
@@ -328,14 +335,20 @@ export class MeetingService {
     const guild = await this.guild(meeting);
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!guild || !thread) return;
-    await guild.members.fetch();
     const answered = respondents(tallySlots(await this.repos.listSlots(meetingId), await this.repos.listVotes(meetingId)));
-    const members = roleIds.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== meeting.organizerId).keys() ?? [])]);
-    const missing = [...new Set(members)];
+    const missing = await this.silentMembers(guild, roleIds, answered, meeting.organizerId);
     if (missing.length === 0) return;
     await ensureUnarchived(thread);
     const closes = formatWhen(meeting.pollClosesAt ?? meeting.startsAt, settings.timezone, settings.locale, m.format.when);
     await sendWithMentions(thread, m.datePoll.nudge(meeting.title, closes), m.thread.nudge, missing);
+  }
+
+  /** Membres des rôles (hors bots et organisateur) qui ne figurent pas parmi ceux qui ont répondu. */
+  private async silentMembers(guild: Guild, roleIds: readonly string[], answered: ReadonlySet<string>, organizerId: string): Promise<string[]> {
+    if (roleIds.length === 0) return [];
+    await guild.members.fetch(); // nécessite l'intent privilégié GuildMembers
+    const ids = roleIds.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== organizerId).keys() ?? [])]);
+    return [...new Set(ids)];
   }
 
   /** Libellés des créneaux d'un sondage, dans le fuseau du serveur. */

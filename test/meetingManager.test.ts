@@ -35,6 +35,11 @@ describe('panneau « Gérer »', () => {
       'meeting.none',
     ]);
   });
+  it('réunion issue d’un sondage : bouton « Autre créneau du sondage »', () => {
+    expect(actions(renderMeetingManager(meeting, { hasRecording: false, pollSlots: true }, m))).toContain('meeting.reslot');
+    expect(actions(renderMeetingManager(meeting, { hasRecording: false }, m))).not.toContain('meeting.reslot');
+  });
+
   it('enregistrement : Enregistrer maintenant, ou Arrêter s’il tourne', () => {
     expect(actions(renderMeetingManager(meeting, { hasRecording: true, recording: true }, m))).toContain('rec.stop');
     expect(actions(renderMeetingManager(meeting, { hasRecording: true, recording: true }, m))).not.toContain('rec.start');

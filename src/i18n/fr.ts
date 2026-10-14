@@ -105,7 +105,7 @@ export const fr = {
     draft: (kind: 'meeting' | 'poll', title: string, when: string, defaultRole: string | null) => {
       const poll = kind === 'poll';
       const what = poll ? 'le sondage' : 'la réunion';
-      const relance = poll ? 'la veille de la fin des réponses' : 'au premier rappel';
+      const relance = poll ? 'la veille de la fin des réponses' : 'à chaque rappel';
       return [
         `## 📣 Qui inviter ?`,
         `**${title}** · ${when}`,
@@ -164,6 +164,9 @@ export const fr = {
     notAnswered: 'pas encore répondu',
     fixDate: 'Fixer la date',
     pickFix: 'Créneau retenu (le mieux placé en premier)',
+    reslot: 'Autre créneau du sondage',
+    reslotHint: 'La réunion passe sur le créneau choisi : les inscrits sont prévenus du changement, rappels et événement Discord suivent.',
+    reslotDone: '✅ Réunion déplacée sur le créneau choisi : les inscrits ont été prévenus.',
     addSlot: 'Ajouter un créneau',
     addSlotField: 'Nouveau créneau',
     removeSlot: 'Retirer un créneau',
@@ -173,6 +176,7 @@ export const fr = {
     fixed: (title: string, when: string, by: string | null) =>
       `📅 La date de « ${title} » est fixée : ${when}${by ? ` (par ${by})` : ''}. Vos disponibilités ont été reprises dans les inscriptions.`,
     fixedReply: 'Date fixée : la réunion est maintenant planifiée (rappels et événement Discord).',
+    fixedAsk: "📅 La date est fixée : indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte).",
     closed: (organizerId: string, best: string | null) =>
       `⏳ <@${organizerId}> les réponses sont closes : à vous de fixer la date.` +
       (best ? ` Le créneau le plus disponible est **${best}** (⭐), mais vous pouvez retenir n'importe quel créneau proposé.` : ' Aucun créneau ne se détache.') +
@@ -601,7 +605,7 @@ export const fr = {
         hint: 'Au choix, imposé ou créé automatiquement',
         help: "Au choix : l'organisateur choisit. Imposé : toutes les réunions s'y tiennent. Créé automatiquement : un salon au nom de la réunion est créé peu avant le début, puis supprimé une fois la réunion finie et le salon vide.",
       },
-      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "**Gestionnaires** : gèrent toutes les réunions.\n**Relance** : ses membres qui n'ont pas répondu sont mentionnés au premier rappel (sauf si la réunion a des rôles invités).\nDiscord n'affiche qu'une partie des rôles : tapez quelques lettres dans le sélecteur pour trouver les autres. Videz un sélecteur pour retirer un rôle." },
+      roles: { emoji: '👥', label: 'Rôles', hint: 'Gestionnaires, relance', help: "**Gestionnaires** : gèrent toutes les réunions.\n**Relance** : ses membres qui n'ont pas répondu sont mentionnés à chaque rappel (sauf si la réunion a des rôles invités).\nDiscord n'affiche qu'une partie des rôles : tapez quelques lettres dans le sélecteur pour trouver les autres. Videz un sélecteur pour retirer un rôle." },
       reminders: { emoji: '⏰', label: 'Rappels', hint: 'Délais avant la réunion', help: 'Messages envoyés avant la réunion, avec mention des inscrits. Les réunions à venir sont replanifiées.' },
       general: { emoji: '🗓️', label: 'Général', hint: 'Fuseau, durée, création', help: 'Fuseau horaire des dates saisies, durée par défaut, et qui peut créer des réunions.' },
       recording: { emoji: '🔴', label: 'Enregistrement', hint: 'Démarrage auto, refus d’enregistrement', help: "Valeur par défaut des nouvelles réunions : le bot rejoint le vocal 2 min avant l'heure et enregistre seul. Modifiable réunion par réunion (carte → ⚙️ Gérer)." },

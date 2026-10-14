@@ -161,6 +161,19 @@ describe('repères en direct dans le compte rendu', () => {
   });
 });
 
+describe('titre des sujets de l’ordre du jour', () => {
+  it('titre exact du point (pas celui du modèle, qui y ajoute la description), description en italique dessous', () => {
+    const input = {
+      ...base,
+      agenda: [{ id: 2, title: 'Feux d’artifice', detail: 'Font-ils des dégâts ?\nSur les *chaloupes*' }],
+      summary: { overview: '', topics: [{ agendaItemId: 2, title: 'Feux d’artifice — Font-ils des dégâts ?', summary: 'Pas sûr.', decisions: [], actions: [], openQuestions: [] }] },
+    };
+    const t = texts(renderReport(input, m)[0]!);
+    expect(t).toContain('### 1. Feux d’artifice\n*Font-ils des dégâts ?*\n*Sur les chaloupes*\nPas sûr.');
+    expect(t).not.toContain('— Font-ils');
+  });
+});
+
 describe('renderReportMarkdown', () => {
   it('fichier lisible hors Discord : titre, sujets dans l’ordre, responsables par leur nom, sans lien ni mention', () => {
     const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x' }, m);

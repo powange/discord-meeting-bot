@@ -11,7 +11,8 @@ export interface ReportInput {
   title: string;
   /** Sous-titre déjà formaté (date, durée, participants). */
   subtitle: string;
-  agenda: ReadonlyArray<{ id: number; title: string }>;
+  /** Ordre du jour : titre et description (affichée en italique sous le titre du sujet). */
+  agenda: ReadonlyArray<{ id: number; title: string; detail?: string }>;
   summary: MeetingSummary;
   /** Temps passé sur chaque point d'ordre du jour (repères « Point suivant »), par id. */
   durations?: ReadonlyMap<number, number>;
@@ -51,12 +52,33 @@ export function resolvePerson(name: string, people: ReadonlyMap<string, string>)
   return byFirst.length === 1 ? `<@${byFirst[0]![1]}>` : name;
 }
 
+/**
+ * Titre d'un sujet : celui du point de l'ordre du jour s'il y est rattaché (le modèle y ajoute
+ * volontiers la description), sinon celui rédigé par le modèle. Et la description du point.
+ */
+export function topicHeading(topic: Topic, input: Pick<ReportInput, 'agenda'>): { title: string; detail: string } {
+  const item = topic.agendaItemId === null ? undefined : input.agenda.find((a) => a.id === topic.agendaItemId);
+  return { title: item?.title ?? topic.title, detail: item?.detail?.trim() ?? '' };
+}
+
+/** Texte en italique Discord, ligne par ligne (astérisques retirés pour ne pas casser la mise en forme). */
+function italic(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\*/g, '').trim())
+    .filter(Boolean)
+    .map((line) => `*${line}*`)
+    .join('\n');
+}
+
 function topicSection(topic: Topic, index: number, input: ReportInput, m: Messages): string {
   const r = m.report;
   const spent = topic.agendaItemId === null ? undefined : input.durations?.get(topic.agendaItemId);
+  const { title, detail } = topicHeading(topic, input);
   const lines = [
-    `### ${index}. ${truncate(topic.title, 200)}${topic.agendaItemId === null ? ` *(${r.offAgenda})*` : ''}${spent && spent >= 60_000 ? ` · ⏱️ ${m.format.duration(spent)}` : ''}`,
+    `### ${index}. ${truncate(title, 200)}${topic.agendaItemId === null ? ` *(${r.offAgenda})*` : ''}${spent && spent >= 60_000 ? ` · ⏱️ ${m.format.duration(spent)}` : ''}`,
   ];
+  if (detail) lines.push(italic(truncate(detail, 1000)));
   if (topic.summary) lines.push(topic.summary);
   if (topic.decisions.length) lines.push(`**${r.decisions}**`, ...topic.decisions.map((d) => `- ✅ ${d}`));
   if (topic.actions.length) {

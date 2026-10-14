@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit';
-import { orderedTopics, type ReportInput } from '../discord/embeds/report.js';
+import { orderedTopics, topicHeading, type ReportInput } from '../discord/embeds/report.js';
 import type { Messages } from '../i18n/index.js';
 
 /**
@@ -59,7 +59,9 @@ export function renderReportPdf(input: ReportInput, m: Messages): Promise<Buffer
     topics.forEach((topic, i) => {
       const spent = topic.agendaItemId === null ? undefined : input.durations?.get(topic.agendaItemId);
       const suffix = [topic.agendaItemId === null ? `(${r.offAgenda})` : '', spent && spent >= 60_000 ? `· ${m.format.duration(spent)}` : ''].filter(Boolean).join(' ');
-      heading(`${i + 1}. ${topic.title}${suffix ? ` ${suffix}` : ''}`, 13);
+      const { title, detail } = topicHeading(topic, input);
+      heading(`${i + 1}. ${title}${suffix ? ` ${suffix}` : ''}`, 13);
+      if (detail) doc.font('Helvetica-Oblique').fontSize(10).fillColor(MUTED).text(pdfText(detail), { paragraphGap: 3, lineGap: 1.5 });
       if (topic.summary) body(topic.summary);
       doc.moveDown(0.2);
       list(r.decisions, topic.decisions);

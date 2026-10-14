@@ -145,6 +145,8 @@ export class PipelineService {
     await this.deps.repos.ensurePipeline(meetingId);
     if (retranscribe) await this.deps.repos.resetTranscription(meetingId);
     await this.deps.repos.resetSteps(meetingId, retranscribe ? [...PIPELINE_STEPS] : ['summarize', 'publish', 'export']);
+    // Nouveau résumé demandé : les notes partielles d'un résumé interrompu ne sont pas reprises.
+    await this.deps.repos.updateStep(meetingId, 'summarize', { output: null });
     await this.enqueue(meetingId);
   }
 

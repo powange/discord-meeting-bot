@@ -133,6 +133,8 @@ export const MEETING_VERBS = [
   'everyone',
   'none',
   'default',
+  'reslot',
+  'reslotSelect',
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
 

@@ -75,7 +75,7 @@ describe('rappels', () => {
     expect(sent).toHaveLength(1);
   });
 
-  it('relance : seulement au premier rappel, sans l’organisateur ni les bots ni ceux qui ont répondu', async () => {
+  it('relance à chaque rappel, sans l’organisateur ni les bots ni ceux qui ont répondu', async () => {
     const member = (id: string, bot = false) => [id, { user: { bot } }] as const;
     // Collection discord.js simulée : une Map avec filter().
     const all = new Map([member('101'), member('900'), member('104'), member('105', true)]);
@@ -88,6 +88,6 @@ describe('rappels', () => {
     expect(first.sent.at(-1)!.allowedMentions).toEqual({ users: ['104'] });
     const later = setup({ settings: nudging, guild, rsvps: [{ userId: '101', status: 'yes' }] });
     await later.scheduler.run(job(15), new Date('2026-10-15T15:45:00Z'));
-    expect(later.sent).toHaveLength(1);
+    expect(later.sent.at(-1)!.allowedMentions).toEqual({ users: ['104'] }); // toujours sans réponse : relancé de nouveau
   });
 });

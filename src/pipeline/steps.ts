@@ -4,7 +4,8 @@ import { basename, join } from 'node:path';
 import { MessageFlags, type APIContainerComponent, type ThreadChannel } from 'discord.js';
 import { LlmClient } from '../ai/llm/client.js';
 import { FailoverLlm } from '../ai/llm/failover.js';
-import { summarizeMeeting } from '../ai/llm/summarize.js';
+import { summarizeMeeting, type SummaryCheckpoint } from '../ai/llm/summarize.js';
+import type { MeetingSummary } from '../ai/llm/schema.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
 import { TranscriptionPool } from '../ai/transcription/pool.js';
 import type { MeetingRow } from '../db/schema.js';
@@ -320,6 +321,16 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
     lines.map((l) => ({ at: l.startAt, value: formatLine(l, settings.timezone) })),
     (await repos.listMarkers(meeting.id)).map((mk) => ({ at: mk.at, value: `[${formatClock(mk.at, settings.timezone)}] ${markerText(mk, agenda)}` })),
   );
+  // Notes partielles gardées dans l'étape en cours : après un redémarrage du bot, le résumé
+  // reprend au morceau suivant au lieu de tout redemander au modèle.
+  let saved = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'summarize')?.output?.checkpoint as { key: string; partials: MeetingSummary[] } | undefined;
+  const checkpoint: SummaryCheckpoint = {
+    load: (key) => (saved?.key === key ? saved.partials : undefined),
+    save: async (key, partials) => {
+      saved = { key, partials: [...partials] };
+      await repos.updateStep(meeting.id, 'summarize', { output: { checkpoint: saved } });
+    },
+  };
   const run = (chunkTokens: number) =>
     summarizeMeeting(
       llm,
@@ -336,6 +347,7 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
       chunkTokens,
       (pass, total) => ctx.progress(m.pipeline.progressSummarize(pass, total)),
       ctx.signal,
+      checkpoint,
     );
   // Modèle chargé avec un contexte trop petit pour les morceaux (LM Studio : 4096 ou 8192 par
   // défaut) : on recommence avec des morceaux deux fois plus petits, jusqu'à 1500 tokens.
@@ -382,7 +394,7 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
   const summaryDisabled = summarizeStep?.output?.skipped === true;
   // Date de la réunion dans le fuseau du serveur (une réunion à 1 h du matin n'est pas datée de la veille).
   const day = formatWhen(meeting.startsAt, settings.timezone, settings.locale, 'yyyy-MM-dd');
-  const agendaRows = (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title }));
+  const agendaRows = (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title, detail: a.detail }));
   const markers = await repos.listMarkers(meeting.id);
   const input: ReportInput = {
     title: meeting.title,

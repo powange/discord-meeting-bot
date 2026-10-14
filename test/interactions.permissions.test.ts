@@ -54,7 +54,7 @@ function context() {
     pipeline: spyObject({ isQueued: () => false }),
     cards: spyObject(),
     hub: spyObject(),
-    repos: spyObject({ getMeeting: async () => meeting, listAgenda: async () => [{ id: 1, authorId: 'someone', title: 'x', detail: '', position: 0 }], listRecordingsForMeeting: async () => [{ id: 'r' }] }),
+    repos: spyObject({ getMeeting: async () => meeting, listAgenda: async () => [{ id: 1, authorId: 'someone', title: 'x', detail: '', position: 0 }], listRecordingsForMeeting: async () => [{ id: 'r' }], listSlots: async () => [] }),
   };
   const ctx = {
     ...services,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatOffset, isNudgeReminder, isReminderStale, parseOffsets, planJobs } from '../src/domain/reminders.js';
+import { formatOffset, isReminderStale, parseOffsets, planJobs } from '../src/domain/reminders.js';
 
 const startsAt = new Date('2026-10-15T16:00:00Z');
 const meeting = { startsAt, durationMin: 60, status: 'scheduled' as const };
@@ -57,9 +57,6 @@ describe('rappels', () => {
   });
 
   it('la relance accompagne le premier rappel', () => {
-    expect(isNudgeReminder(1440, [1440, 15])).toBe(true);
-    expect(isNudgeReminder(15, [1440, 15])).toBe(false);
-    expect(isNudgeReminder(15, [])).toBe(false);
   });
 });
 

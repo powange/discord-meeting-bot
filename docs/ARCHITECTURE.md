@@ -7,7 +7,7 @@
 > - Config YAML : les réglages initiaux d'un serveur sont sous `defaults.seed` / `guilds.<id>.seed`. Les blocs `transcription`, `llm`, `storage` et `retention` arriveront avec leur phase.
 > - Création et modification d'une réunion via un **formulaire** (modal avec sélecteur de salon vocal) plutôt que par options de commande.
 > - Les points d'ODJ retirés sont supprimés, sans suppression logique (`removed_at`).
-> - `scheduled_jobs.kind` vaut `reminder | start | auto_end` en phase 1. La relance des non-répondants accompagne le premier rappel et cible un rôle choisi (`nudge_role_id`).
+> - `scheduled_jobs.kind` vaut `reminder | start | auto_end` en phase 1. La relance des non-répondants accompagne chaque rappel et cible un rôle choisi (`nudge_role_id`).
 > - Toutes les tables du schéma ci-dessous n'existent pas encore : chaque phase ajoute les siennes par migration.
 >
 > Écarts de la phase 2 :
