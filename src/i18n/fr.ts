@@ -243,6 +243,7 @@ export const fr = {
       'Une piste audio par participant, uniquement pour rédiger le compte rendu.\n' +
       "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » : votre présence reste notée, pas votre voix.",
     stopped: (by: string | null, reason: string) => `⏹️ **Enregistrement arrêté** · ${by ? `par ${by}` : reason}`,
+    resumedNotice: "🔄 Le bot a redémarré : l'enregistrement reprend automatiquement (une nouvelle session, réunie aux précédentes dans le compte rendu).",
     arrival: (userId: string) =>
       `⚠️ <@${userId}>, cette réunion est **enregistrée** : une piste audio par participant, pour rédiger le compte rendu.\n` +
       "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » ci-dessous.",

@@ -114,6 +114,8 @@ async function main(): Promise<void> {
     );
     // Les sessions restées « en cours » sont marquées interrompues avant que la surveillance ne tourne.
     await step('recoverInterrupted', () => recordings.recoverInterrupted());
+    // Enregistrement coupé par ce redémarrage : repris tout seul s'il reste du monde dans le vocal.
+    await step('resumeRecordings', () => recordings.resumeAfterRestart());
     scheduler.start();
     watcher.start();
     retention.start();

@@ -38,6 +38,8 @@ import type { SettingsService } from './settings.js';
 const JOIN_TIMEOUT_MS = 20_000;
 const DISK_CHECK_MS = 10 * 60_000;
 const RECONNECT_GRACE_MS = 5_000;
+/** Délai au-delà duquel un enregistrement coupé par un redémarrage n'est plus repris tout seul. */
+const RESUME_WINDOW_MS = 15 * 60_000;
 
 const VOICE_PERMISSIONS = {
   ViewChannel: PermissionFlagsBits.ViewChannel,
@@ -123,7 +125,7 @@ export class RecordingService {
   // ---------------------------------------------------------------- démarrage
 
   /** Démarre l'enregistrement d'une réunion. `by` = null pour un démarrage automatique. */
-  async start(meetingId: string, by: string | null): Promise<void> {
+  async start(meetingId: string, by: string | null, resumed = false): Promise<void> {
     const meeting = await this.repos.getMeeting(meetingId);
     if (!meeting) throw new Error(`Réunion ${meetingId} introuvable`);
     const settings = await this.settings.get(meeting.guildId);
@@ -135,14 +137,14 @@ export class RecordingService {
 
     this.active.set(meeting.guildId, null); // réservation
     try {
-      await this.doStart(meeting, settings, m, by);
+      await this.doStart(meeting, settings, m, by, resumed);
     } catch (err) {
       if (this.active.get(meeting.guildId) === null) this.active.delete(meeting.guildId);
       throw err;
     }
   }
 
-  private async doStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, by: string | null): Promise<void> {
+  private async doStart(meeting: MeetingRow, settings: GuildSettingsRow, m: Messages, by: string | null, resumed = false): Promise<void> {
     const guild = await this.client.guilds.fetch(meeting.guildId);
     const channel = meeting.voiceChannelId ? await guild.channels.fetch(meeting.voiceChannelId).catch(() => null) : null;
     if (!channel?.isVoiceBased()) throw new UserError(m.errors.voiceInvalid);
@@ -199,7 +201,7 @@ export class RecordingService {
     }
 
     this.log.info({ guildId: guild.id, meetingId: meeting.id, recordingId, by }, 'Enregistrement démarré');
-    await this.announceStart(meeting, m, channel, by);
+    await this.announceStart(meeting, m, channel, by, resumed);
     this.cards.refresh(meeting.id, ['card']);
     await this.syncControl(meeting.id);
     this.watchDisk();
@@ -276,8 +278,11 @@ export class RecordingService {
    * Avertissement dans le chat du salon vocal (lu par ceux qui y sont). Dans le post, c'est le
    * message à boutons de l'enregistrement qui le porte.
    */
-  private async announceStart(meeting: MeetingRow, m: Messages, channel: VoiceBasedChannel, by: string | null) {
+  private async announceStart(meeting: MeetingRow, m: Messages, channel: VoiceBasedChannel, by: string | null, resumed = false) {
     const byName = by ? await displayName(this.client, meeting.guildId, by) : null;
+    if (resumed && channel.isTextBased()) {
+      await channel.send({ content: m.recording.resumedNotice, allowedMentions: { parse: [] } }).catch((err) => this.warn(meeting.id, 'Annonce de reprise impossible', err));
+    }
     const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(consentButton(m)).toJSON()];
     if (channel.isTextBased()) {
       await channel
@@ -363,6 +368,37 @@ export class RecordingService {
       await this.syncControl(rec.meetingId).catch((err) => this.warn(rec.meetingId, 'Mise à jour du contrôle impossible', err));
       await this.alertInterrupted(rec.meetingId, 'crash');
     }
+  }
+
+  /**
+   * Au démarrage, après recoverInterrupted : un enregistrement coupé par le redémarrage du bot (ou
+   * un arrêt brutal) il y a peu est repris tout seul, si la réunion est en cours et qu'il reste
+   * quelqu'un dans le vocal. Pas après une déconnexion du vocal : souvent quelqu'un a sorti le
+   * bot volontairement. En cas d'échec, le message « interrompu » garde son bouton Reprendre.
+   */
+  async resumeAfterRestart(now = new Date()): Promise<string[]> {
+    const resumed: string[] = [];
+    const recent = (await this.repos.listRecordingsByStatus('interrupted')).filter(
+      (r) => (r.stopReason === 'shutdown' || r.stopReason === 'crash') && r.endedAt && now.getTime() - r.endedAt.getTime() < RESUME_WINDOW_MS,
+    );
+    for (const meetingId of new Set(recent.map((r) => r.meetingId))) {
+      const meeting = await this.repos.getMeeting(meetingId);
+      const sessions = await this.repos.listRecordingsForMeeting(meetingId);
+      const last = sessions.at(-1);
+      // Seulement si c'est bien la dernière session de la réunion, et que personne n'a déjà relancé.
+      if (!meeting || meeting.status !== 'live' || !last || !recent.some((r) => r.id === last.id) || this.active.has(meeting.guildId)) continue;
+      const channel = meeting.voiceChannelId ? this.client.channels.cache.get(meeting.voiceChannelId) : undefined;
+      const humans = channel?.isVoiceBased() ? channel.members.filter((mb) => !mb.user.bot).size : 0;
+      if (humans === 0) continue;
+      try {
+        await this.start(meetingId, null, true);
+        resumed.push(meetingId);
+        this.log.info({ meetingId, previous: last.id }, 'Enregistrement repris automatiquement après le redémarrage');
+      } catch (err) {
+        this.warn(meetingId, 'Reprise automatique de l’enregistrement impossible', err);
+      }
+    }
+    return resumed;
   }
 
   // ---------------------------------------------------------------- présences et surveillance

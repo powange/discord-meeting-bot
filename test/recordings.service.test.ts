@@ -150,3 +150,48 @@ describe('message à boutons : toujours le dernier message de l’enregistrement
     expect(s.t.sent).toHaveLength(6);
   });
 });
+
+describe('reprise automatique après un redémarrage du bot', () => {
+  const now = new Date('2026-10-15T16:30:00Z');
+  const minutesAgo = (n: number) => new Date(now.getTime() - n * 60_000);
+
+  function setup(opts: { reason?: string; endedAt?: Date; status?: string; humans?: number; later?: boolean } = {}) {
+    const sessions = [{ id: 'r1', meetingId: 'm1', status: 'interrupted', stopReason: opts.reason ?? 'shutdown', endedAt: opts.endedAt ?? minutesAgo(2) }];
+    if (opts.later) sessions.push({ id: 'r2', meetingId: 'm1', status: 'stopped', stopReason: 'manual', endedAt: minutesAgo(1) });
+    const members = Array.from({ length: opts.humans ?? 1 }, (_, i) => ({ user: { bot: false }, id: `u${i}` }));
+    const voiceChannel = { isVoiceBased: () => true, members: { filter: (fn: (x: { user: { bot: boolean } }) => boolean) => ({ size: members.filter(fn).length }) } };
+    const svc = new RecordingService(
+      { channels: { cache: new Map([['v', voiceChannel]]) } } as never,
+      {
+        listRecordingsByStatus: async () => sessions.filter((r) => r.status === 'interrupted'),
+        getMeeting: async () => ({ ...meeting, status: opts.status ?? 'live' }),
+        listRecordingsForMeeting: async () => sessions,
+      } as never,
+      { get: async () => settings, messages: async () => m } as never,
+      { refresh: () => undefined } as never,
+      buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
+      pino({ level: 'silent' }),
+      { load: async () => undefined, isOptedOut: () => false } as never,
+    );
+    const start = vi.spyOn(svc, 'start').mockResolvedValue(undefined);
+    return { svc, start };
+  }
+
+  it('coupé par le redémarrage il y a 2 min, quelqu’un dans le vocal : repris (démarrage automatique, annoncé comme reprise)', async () => {
+    const { svc, start } = setup();
+    expect(await svc.resumeAfterRestart(now)).toEqual(['m1']);
+    expect(start).toHaveBeenCalledWith('m1', null, true);
+  });
+
+  it.each([
+    ['arrêt brutal (crash) : repris aussi', { reason: 'crash' }, ['m1']],
+    ['déconnexion du vocal (sorti volontairement ?) : pas repris', { reason: 'disconnected' }, []],
+    ['interrompu il y a plus de 15 min : pas repris', { endedAt: minutesAgo(20) }, []],
+    ['vocal vide : pas repris', { humans: 0 }, []],
+    ['réunion close : pas reprise', { status: 'ended' }, []],
+    ['une session plus récente existe déjà : rien à reprendre', { later: true }, []],
+  ] as const)('%s', async (_label, opts, expected) => {
+    const { svc } = setup(opts as never);
+    expect(await svc.resumeAfterRestart(now)).toEqual(expected);
+  });
+});
