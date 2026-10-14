@@ -402,19 +402,22 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await engine.refresh(meeting.id); // 2e arrêt pendant le traitement → mise à jour après
     release();
     await waitIdle(engine, meeting.id);
-    expect(inOrder(calls)).toEqual(['mix', 'transcribe', 'summarize', 'publish', 'mix', 'transcribe', 'summarize', 'publish']);
+    // Le traitement obsolète s'arrête après l'audio et la transcription (pas de résumé ni de
+    // publication intermédiaires), puis la mise à jour refait tout.
+    expect([...calls].sort()).toEqual(['mix', 'mix', 'publish', 'summarize', 'transcribe', 'transcribe']);
+    expect(calls.slice(-2)).toEqual(['summarize', 'publish']);
 
     // Clôture de la réunion : tout est déjà traité → rien de plus.
     await repos.updateRecording((await repos.listRecordingsForMeeting(meeting.id))[0]!.id, { endedAt: new Date(Date.now() - 60_000) });
     await engine.processIfNeeded(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toHaveLength(8);
+    expect(calls).toHaveLength(6);
 
     // Une session terminée après le dernier traitement (ex. interrompue) est rattrapée à la clôture.
     await repos.updateRecording((await repos.listRecordingsForMeeting(meeting.id))[0]!.id, { endedAt: new Date(Date.now() + 60_000) });
     await engine.processIfNeeded(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toHaveLength(12);
+    expect(calls).toHaveLength(10);
   }, 30_000);
 
   it('file par serveur : serveurs servis à tour de rôle, plafond global, jamais deux réunions d’un même serveur à la fois', async () => {
@@ -639,6 +642,72 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await engine.retry(meeting.id);
     await waitIdle(engine, meeting.id);
     expect(calls).toEqual(['mix', 'summarize', 'publish', 'export']);
+  }, 30_000);
+
+  it('moteur : « Relancer » pendant que l’autre étape parallèle tourne : reprise à la fin', async () => {
+    const meeting = await seedMeeting();
+    const calls: string[] = [];
+    let transcribeFails = true;
+    let releaseMix!: () => void;
+    const mixGate = new Promise<void>((r) => (releaseMix = r));
+    let failedOnce!: () => void;
+    const transcribeFailed = new Promise<void>((r) => (failedOnce = r));
+    const quick: StepFn = async (ctx) => {
+      if (ctx.meeting.id === meeting.id) calls.push('next');
+      return {};
+    };
+    const engine = new PipelineService(deps(), {
+      mix: async (ctx) => {
+        if (ctx.meeting.id !== meeting.id) return {};
+        calls.push('mix');
+        await mixGate;
+        return {};
+      },
+      transcribe: async (ctx) => {
+        if (ctx.meeting.id !== meeting.id) return {};
+        calls.push('transcribe');
+        if (transcribeFails) {
+          transcribeFails = false;
+          failedOnce();
+          throw new Error('format audio refusé'); // échec non passager : ❌ et « Relancer »
+        }
+        return {};
+      },
+      summarize: quick,
+      publish: quick,
+      export: quick,
+    });
+
+    await engine.schedule(meeting.id);
+    await transcribeFailed;
+    for (let i = 0; i < 200 && (await repos.listPipeline(meeting.id)).find((r) => r.step === 'transcribe')?.status !== 'failed'; i++) await new Promise((r) => setTimeout(r, 10));
+    await engine.retry(meeting.id); // l'audio complet tourne encore
+    releaseMix();
+    for (let i = 0; i < 300 && calls.filter((c) => c === 'next').length < 3; i++) await new Promise((r) => setTimeout(r, 10));
+    await waitIdle(engine, meeting.id);
+    expect(calls.filter((c) => c === 'transcribe')).toHaveLength(2);
+    expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
+  }, 30_000);
+
+  it('moteur : au démarrage, un traitement en échec n’est pas repris (il attend « Relancer »)', async () => {
+    const meeting = await seedMeeting();
+    const calls: string[] = [];
+    const fake = (name: string): StepFn => async (ctx) => {
+      if (ctx.meeting.id === meeting.id) calls.push(name);
+      return {};
+    };
+    const engine = new PipelineService(deps(), { mix: fake('mix'), transcribe: fake('transcribe'), summarize: fake('summarize'), publish: fake('publish'), export: fake('export') });
+    await repos.ensurePipeline(meeting.id);
+    for (const step of ['mix', 'transcribe'] as const) await repos.updateStep(meeting.id, step, { status: 'done' });
+    await repos.updateStep(meeting.id, 'summarize', { status: 'failed', error: 'résumé KO' });
+
+    await engine.resume();
+    await waitIdle(engine, meeting.id);
+    expect(calls).toEqual([]);
+
+    await engine.retry(meeting.id);
+    await waitIdle(engine, meeting.id);
+    expect(calls).toEqual(['summarize', 'publish', 'export']);
   }, 30_000);
 
   it('moteur : « Réessayer maintenant » relance sans attendre le délai automatique', async () => {

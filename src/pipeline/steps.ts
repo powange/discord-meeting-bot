@@ -12,7 +12,7 @@ import type { MeetingRow } from '../db/schema.js';
 import { renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput, type TranscriptEntry } from '../discord/embeds/report.js';
 import { interleave, markerText, pointDurations } from '../domain/markers.js';
 import { ensureUnarchived } from '../discord/forum.js';
-import { fetchThread } from '../discord/threads.js';
+import { fetchThread, isUnknownMessage } from '../discord/threads.js';
 import { meetingFolderName } from '../domain/storage.js';
 import { formatWhen } from '../domain/time.js';
 import { whisperPrompt } from '../domain/vocabulary.js';
@@ -219,7 +219,8 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   // Annulation commune : abandon du traitement, durée maximale dépassée, ou échec d'un bloc
   // (les autres s'arrêtent au lieu de continuer pendant qu'on supprime leur dossier).
   const failed = new AbortController();
-  const stepSignal = AbortSignal.any([signal, failed.signal, AbortSignal.timeout(cfg.stepMaxMin * 60_000)]);
+  const tooLong = AbortSignal.timeout(cfg.stepMaxMin * 60_000);
+  const stepSignal = AbortSignal.any([signal, failed.signal, tooLong]);
   try {
     const queue = [...pending];
     const worker = async () => {
@@ -259,7 +260,8 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
     );
     const firstError = results.find((r) => r.status === 'rejected')?.reason as unknown;
     if (firstError !== undefined) {
-      if (!signal.aborted && !failed.signal.aborted && stepSignal.aborted) throw new Error(ctx.m.pipeline.stepTooLong(cfg.stepMaxMin));
+      // Durée maximale dépassée : échec clair, pas une relance automatique (« délai dépassé »).
+      if (!signal.aborted && tooLong.aborted) throw new Error(ctx.m.pipeline.stepTooLong(cfg.stepMaxMin));
       // Erreur d'origine plutôt que les annulations qu'elle a provoquées chez les autres blocs.
       const original = results.find((r) => r.status === 'rejected' && !(r.reason instanceof Error && r.reason.name === 'AbortError'));
       throw (original as PromiseRejectedResult | undefined)?.reason ?? firstError;
@@ -473,7 +475,11 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
 
   // Même nombre de messages et personne de nouveau à prévenir : édition (liens conservés, aucune notification).
   if (previousIds.length === containers.length && toMention.length === 0) {
-    const url = await editReport(thread, previousIds, containers, attachments).catch(() => null);
+    // Republication seulement si un message a été supprimé ; une erreur passagère fait échouer l'étape.
+    const url = await editReport(thread, previousIds, containers, attachments).catch((err: unknown) => {
+      if (isUnknownMessage(err)) return null;
+      throw err;
+    });
     if (url) return { messageIds: previousIds, url, mentioned };
   }
 
@@ -508,7 +514,10 @@ async function editReport(
 ): Promise<string | null> {
   const messages = [];
   for (const id of ids) {
-    const message = await thread.messages.fetch(id).catch(() => null);
+    const message = await thread.messages.fetch(id).catch((err: unknown) => {
+      if (isUnknownMessage(err)) return null;
+      throw err;
+    });
     if (!message) return null;
     messages.push(message);
   }
