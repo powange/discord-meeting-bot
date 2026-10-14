@@ -41,10 +41,10 @@ services:
       # Résumés : se règle dans /config → Résumé. À défaut, ces variables servent de valeur par
       # défaut (LiteLLM de la stack : http://litellm:4000/v1 ; Ollama : http://hôte:11434/v1).
       LLM_BASE_URL: ${LLM_BASE_URL:-}
-      # Avec LiteLLM : une clé virtuelle limitée au modèle « summary » (voir le README) plutôt que la clé maîtresse.
+      # Avec LiteLLM : une clé virtuelle limitée au modèle « summary » (voir docs/ia.md) plutôt que la clé maîtresse.
       LLM_API_KEY: ${LLM_API_KEY:-${LITELLM_MASTER_KEY:-}}
       # Stockages que chaque serveur Discord peut connecter (/config → Stockage) : applications OAuth
-      # de l'opérateur, voir le README. Un service sans identifiant n'est pas proposé.
+      # de l'opérateur, voir docs/stockage.md. Un service sans identifiant n'est pas proposé.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       ONEDRIVE_CLIENT_ID: ${ONEDRIVE_CLIENT_ID:-}
@@ -127,7 +127,7 @@ services:
   # Facultatif (COMPOSE_PROFILES=offsite) : copie hors site, chaque nuit après la sauvegarde, des
   # volumes « backups » et « recordings » vers une destination rclone (NAS, Google Drive…). Les
   # fichiers supprimés ici sont gardés 30 jours dans <destination>/.supprimes avant d'être effacés.
-  # rclone.conf à créer sur l'hôte (voir le README). « unhealthy » sans copie réussie depuis 26 h.
+  # rclone.conf à créer sur l'hôte (voir docs/exploitation.md). « unhealthy » sans copie réussie depuis 26 h.
   offsite:
     image: rclone/rclone:1.75.1
     profiles: [offsite]
@@ -167,7 +167,7 @@ services:
     volumes:
       - backups:/data/backups:ro
       - recordings:/data/recordings:ro
-      # rclone.conf (créé avec « rclone config », voir le README)
+      # rclone.conf (créé avec « rclone config », voir docs/exploitation.md)
       - ${RCLONE_CONFIG_DIR:-/srv/meeting-bot/rclone}:/config/rclone
 
   # Facultatif : lancé seulement avec COMPOSE_PROFILES=litellm.

@@ -623,7 +623,7 @@ export const fr = {
     storageProviders: { google: 'Google Drive', onedrive: 'OneDrive', dropbox: 'Dropbox' } as Record<string, string>,
     storageEmoji: { google: '🟢', onedrive: '🔵', dropbox: '🔷' } as Record<string, string>,
     storageNone: 'aucun',
-    storageUnavailable: "aucun service proposé (l'opérateur du bot doit les activer, voir le README)",
+    storageUnavailable: "aucun service proposé (l'opérateur du bot doit les activer, voir docs/stockage.md du dépôt)",
     storageSummary: (provider: string, account: string, folder: string) => `${provider} · ${account} · 📁 ${folder}`,
     storageStatus: (folder: string, lastOk: Date | null, lastError: string | null) =>
       [

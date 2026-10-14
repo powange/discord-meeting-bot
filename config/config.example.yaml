@@ -41,7 +41,7 @@ pipeline:
   maxConcurrent: 1
 
 # Stockages que chaque serveur peut connecter dans /config → Stockage (copie des comptes rendus,
-# transcriptions et audios). Un service sans identifiant n'est pas proposé. Voir le README.
+# transcriptions et audios). Un service sans identifiant n'est pas proposé. Voir docs/stockage.md.
 storage:
   google:
     clientId: ${GOOGLE_CLIENT_ID:-}
