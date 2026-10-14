@@ -1,10 +1,11 @@
 import { ContainerBuilder, type APIContainerComponent } from 'discord.js';
+import { Accent } from './palette.js';
 
 /** Nature d'un avis : son emoji et sa couleur sont les mêmes partout. */
 export type NoticeKind = 'success' | 'error' | 'warn' | 'info';
 
 const EMOJI: Record<NoticeKind, string> = { success: '✅', error: '❌', warn: '⚠️', info: 'ℹ️' };
-const COLOR: Record<NoticeKind, number> = { success: 0x57f287, error: 0xed4245, warn: 0xe67e22, info: 0x5865f2 };
+const COLOR: Record<NoticeKind, number> = { success: Accent.live, error: Accent.danger, warn: Accent.warning, info: Accent.brand };
 
 /** Texte préfixé de l'emoji de sa nature (sauf s'il commence déjà par un emoji). */
 export function noticeText(kind: NoticeKind, text: string): string {

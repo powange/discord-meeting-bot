@@ -4,7 +4,8 @@ import { attendanceReport, type PresenceInterval } from '../../domain/recording.
 import { discordTimestamp } from '../../domain/time.js';
 import type { RsvpStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
-import { joinLinesWithin } from '../../lib/text.js';
+import { joinLinesWithin, truncate } from '../../lib/text.js';
+import { Accent } from '../ui/palette.js';
 
 export interface SummaryInput {
   reason: string;
@@ -92,10 +93,10 @@ export function renderRecordingSummary(input: SummaryInput, options: SummaryOpti
   const reason = input.reason.charAt(0).toUpperCase() + input.reason.slice(1);
 
   const container = new ContainerBuilder()
-    .setAccentColor(options.interrupted ? 0xe67e22 : 0x57f287)
+    .setAccentColor(options.interrupted ? Accent.warning : Accent.brand)
     .addTextDisplayComponents((t) =>
       t.setContent(
-        `${s.title(options.meetingTitle)}\n${s.subtitle(
+        `${s.title(truncate(options.meetingTitle, 120))}\n${s.subtitle(
           options.interrupted ? s.status.interrupted : s.status.stopped,
           reason,
           discordTimestamp(input.startedAt, 't'),

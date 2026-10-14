@@ -12,7 +12,7 @@ const long = 'Quels moyens y a-t-il pour faire accélérer une chaloupe ?\nPeut-
 
 describe('« Lire un point » : le détail en entier, en privé, pour tout membre', () => {
   it('bouton → choix du point ; choix → texte complet', async () => {
-    const meeting = { id: meetingId, guildId: 'g', status: 'scheduled', organizerId: 'o' } as MeetingRow;
+    const meeting = { id: meetingId, guildId: 'g', title: 'Bureau', status: 'scheduled', organizerId: 'o' } as MeetingRow;
     const ctx = {
       config: buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
       log: pino({ level: 'silent' }),
@@ -22,11 +22,13 @@ describe('« Lire un point » : le détail en entier, en privé, pour tout membr
     };
     const open = fakeInteraction({ kind: 'button', userId: 'member' });
     await handleAction(ctx as never, open.interaction as never, { type: 'agenda.read', meetingId });
-    expect(open.replies.at(-1)).toMatchObject({ how: 'reply', payload: { content: m.card.readPick, flags: 64 } });
+    const text = (payload: unknown) => JSON.stringify(payload);
+    expect(open.replies.at(-1)).toMatchObject({ how: 'reply', payload: { flags: 64 | 32768 } });
+    expect(text(open.replies.at(-1)!.payload)).toContain(m.card.readPick);
 
     const pick = fakeInteraction({ kind: 'select', userId: 'member', values: ['7'] });
     await handleAction(ctx as never, pick.interaction as never, { type: 'agenda.readSelect', meetingId });
-    const content = (pick.replies.at(-1)!.payload as { content: string }).content;
+    const content = ((pick.replies.at(-1)!.payload as { components: Array<{ components: Array<{ content?: string }> }> }).components[0]!.components[0]!.content)!;
     expect(content).toContain('**1. Ram Strat** — proposé par <@111>');
     expect(content).toContain(`> ${long.split('\n')[1]!.trimEnd()}`); // en entier, sans coupure
     expect(content).not.toContain('…');

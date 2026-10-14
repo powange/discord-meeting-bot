@@ -58,9 +58,11 @@ describe('panneau « Gérer »', () => {
 });
 
 describe('choix d’enregistrement', () => {
-  it('accepte : bouton Refuser actif', () => {
+  it('accepte : choix actif marqué ✓, bouton Refuser actif, aucun bouton rouge', () => {
     const c = renderConsent({ refused: false }, m);
-    expect(actions(c)).toEqual(['consent.refuse', 'consent.accept']);
+    expect(actions(c)).toEqual(['consent.accept', 'consent.refuse']);
+    expect(JSON.stringify(c)).toContain(`✓ ${m.consent.accept}`);
+    expect(JSON.stringify(c)).not.toContain('"style":4');
     expect(JSON.stringify(c)).toContain('**acceptez**');
   });
   it('refuse : statut affiché, bouton Accepter actif', () => {
@@ -71,5 +73,16 @@ describe('choix d’enregistrement', () => {
   it('accessible depuis le post épinglé', () => {
     const hub = renderHub([], m);
     expect(hub.components[0]!.components.map((b) => decode((b as { custom_id: string }).custom_id)?.type)).toEqual(['meeting.create', 'poll.create', 'consent.open']);
+  });
+});
+
+describe('charte : couleurs centralisées', () => {
+  it('aucune couleur hexadécimale en dur dans src/discord en dehors de la palette', async () => {
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const files = (await readdir('src/discord', { recursive: true })).filter((f) => f.endsWith('.ts') && !f.endsWith('palette.ts'));
+    const offenders = [];
+    for (const f of files) if (/0x[0-9a-f]{6}\b/i.test(await readFile(join('src/discord', f), 'utf8'))) offenders.push(f);
+    expect(offenders).toEqual([]);
   });
 });

@@ -62,10 +62,11 @@ export function inviteControls(ids: InviteIds, guildId: string, state: InviteSta
   const select = new RoleSelectMenuBuilder().setCustomId(ids.roles).setPlaceholder(i.roles).setMinValues(0).setMaxValues(5);
   if (roles.length) select.setDefaultRoles(...roles);
   const everyone = state.roleIds.includes(guildId);
+  // Choix actif : vert et « ✓ » dans le libellé (l'état ne dépend pas que de la couleur).
   const button = (id: string, label: string, emoji: string, active: boolean) =>
-    new ButtonBuilder().setCustomId(id).setLabel(label).setEmoji(emoji).setStyle(active ? ButtonStyle.Success : ButtonStyle.Secondary);
-  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(button(ids.everyone, everyone ? i.everyoneOff : i.everyoneOn, '📣', everyone));
-  if (nudgeRoleId) buttons.addComponents(button(ids.default, i.defaultButton, '↩️', choice === 'default'));
+    new ButtonBuilder().setCustomId(id).setLabel(active ? `✓ ${label}` : label).setEmoji(emoji).setStyle(active ? ButtonStyle.Success : ButtonStyle.Secondary);
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(button(ids.everyone, i.everyoneOn, '📣', everyone));
+  if (nudgeRoleId) buttons.addComponents(button(ids.default, i.defaultButton, '⭐', choice === 'default'));
   buttons.addComponents(button(ids.none, i.noneButton, '🚫', choice === 'none'));
   return [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON(), buttons.toJSON()];
 }

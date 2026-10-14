@@ -3,6 +3,7 @@ import type { Availability } from '../../domain/datePoll.js';
 import { encode } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
+import { Accent } from '../ui/palette.js';
 
 const EMOJI: Record<Availability, string> = { yes: '✅', maybe: '🟡', no: '❌' };
 const ORDER: readonly Availability[] = ['yes', 'maybe', 'no'];
@@ -22,7 +23,7 @@ export interface PanelSlot {
 export function renderPollPanel(meeting: { id: string; title: string }, slots: readonly PanelSlot[], m: Messages, notice?: string): APIContainerComponent {
   const p = m.datePoll;
   const container = new ContainerBuilder()
-    .setAccentColor(0xfee75c)
+    .setAccentColor(Accent.pending)
     .addTextDisplayComponents((t) => t.setContent(`## 🗳️ ${p.panelTitle}\n-# ${truncate(meeting.title, 120)} · ${p.panelHint}${notice ? `\n\n${notice}` : ''}`));
   for (const slot of slots) {
     const select = new StringSelectMenuBuilder()
@@ -69,7 +70,7 @@ export function renderSlotChoice(
       })),
     );
   return new ContainerBuilder()
-    .setAccentColor(0xfee75c)
+    .setAccentColor(Accent.pending)
     .addTextDisplayComponents((t) =>
       t.setContent(
         `## ${purpose === 'fix' ? `📅 ${p.fixDate}` : purpose === 'remove' ? `➖ ${p.removeSlot}` : `🗳️ ${p.reslot}`}\n-# ${truncate(meeting.title, 120)}${purpose === 'reslot' ? `\n${p.reslotHint}` : ''}`,

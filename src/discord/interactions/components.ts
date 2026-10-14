@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
@@ -35,7 +36,9 @@ import { askInvites, handleDraft } from './creation.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
-import { noticeText } from '../ui/notice.js';
+import { confirmPrompt } from '../ui/buttons.js';
+import { noticeContainer, noticeText } from '../ui/notice.js';
+import { Accent } from '../ui/palette.js';
 import { handleDatePoll, type PollAction } from './datePoll.js';
 
 export type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | RoleSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
@@ -108,11 +111,11 @@ export async function handleAction(
         if (meeting.agendaLocked) throw new UserError(m.errors.agendaLocked);
         const own = (await ctx.repos.listAgenda(meeting.id)).filter((i) => i.authorId === interaction.user.id);
         if (own.length === 0) throw new UserError(m.agendaManager.noOwnItems);
-        await interaction.reply({ ...renderAgendaManager(meeting, own, null, m, 'author'), flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+        await interaction.reply({ ...renderAgendaManager(meeting, own, null, m, 'author'), flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
         return;
       }
       const agenda = await ctx.repos.listAgenda(meeting.id);
-      await interaction.reply({ ...renderAgendaManager(meeting, agenda, null, m), flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+      await interaction.reply({ ...renderAgendaManager(meeting, agenda, null, m), flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
       return;
     }
 
@@ -128,9 +131,13 @@ export async function handleAction(
         .addOptions(agenda.slice(0, 25).map((item, i) => ({ label: truncate(`${i + 1}. ${item.title}`, 100), value: String(item.id), default: i === picked, ...(item.detail.trim() ? { description: truncate(item.detail.trim().replace(/\s*\n\s*/g, ' '), 100) } : {}) })));
       const item = picked >= 0 ? agenda[picked]! : null;
       const content = item ? m.card.readItem(picked + 1, item.title, item.authorId, item.detail.trim()) : m.card.readPick;
-      const payload = { content: truncate(content, 2000), components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select).toJSON()], allowedMentions: { parse: [] } };
+      const panel = new ContainerBuilder()
+        .setAccentColor(Accent.brand)
+        .addTextDisplayComponents((t) => t.setContent(truncate(`## 📖 ${m.buttons.readItem}\n-# ${truncate(meeting.title, 120)}\n${content}`, 3800)))
+        .addActionRowComponents(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
+      const payload = { components: [panel.toJSON()], flags: MessageFlags.IsComponentsV2 as const, allowedMentions: { parse: [] } };
       if (interaction.isStringSelectMenu()) await interaction.update(payload);
-      else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+      else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
       return;
     }
 
@@ -234,13 +241,37 @@ export async function handleAction(
     }
 
     case 'report.regen': {
+      // Le compte rendu publié sera remplacé : confirmation d'abord (message privé).
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.reply({
+        components: [
+          confirmPrompt(
+            m.report.regenAsk,
+            { id: encode({ type: 'report.regenConfirm', meetingId: meeting.id }), label: m.report.regenConfirm, emoji: '🔄' },
+            { id: encode({ type: 'meeting.dismiss', meetingId: meeting.id }), label: m.buttons.cancel },
+          ),
+        ],
+        flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
+      });
+      return;
+    }
+
+    case 'report.regenConfirm': {
       // Nouveau résumé à partir de la même transcription, sans consigne supplémentaire.
       if (!interaction.isButton()) return;
       requireManager(scope);
       if (ctx.recordings.isRecording(meeting.id)) throw new UserError(m.errors.alreadyRecording);
       if (ctx.pipeline.isQueued(meeting.id)) throw new UserError(m.pipeline.running_reply);
       await ctx.pipeline.regenerate(meeting.id, false, interaction.user.id);
-      await replyEphemeral(interaction, m.pipeline.scheduled);
+      await interaction.update({ components: [noticeContainer('success', m.pipeline.scheduled)] });
+      return;
+    }
+
+    case 'meeting.dismiss': {
+      // « ✖️ Annuler » d'une confirmation : le message privé l'indique, rien n'est fait.
+      if (!interaction.isButton()) return;
+      await interaction.update({ components: [noticeContainer('info', m.buttons.cancelled)] });
       return;
     }
 
@@ -271,13 +302,28 @@ export async function handleAction(
     }
 
     case 'rec.stop': {
+      // Couper l'enregistrement en pleine réunion : confirmation d'abord (message privé, ou à la
+      // place du panneau « Gérer »).
       if (!interaction.isButton()) return;
       requireManager(scope);
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const prompt = confirmPrompt(
+        m.recording.stopAsk,
+        { id: encode({ type: 'rec.stopConfirm', meetingId: meeting.id }), label: m.recording.stopConfirm, emoji: '⏹️' },
+        { id: encode({ type: 'meeting.dismiss', meetingId: meeting.id }), label: m.buttons.cancel },
+      );
+      if (interaction.message.flags.has(MessageFlags.Ephemeral)) await interaction.update({ components: [prompt] });
+      else await interaction.reply({ components: [prompt], flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+      return;
+    }
+
+    case 'rec.stopConfirm': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await interaction.deferUpdate();
       const stopped = await ctx.recordings.stop(meeting.id, 'manual', interaction.user.id);
       // Déjà arrêté (redémarrage du bot, autre clic) : le message à boutons est remis à jour.
       if (!stopped) await ctx.recordings.syncControl(meeting.id);
-      await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.recording.alreadyStopped);
+      await interaction.editReply({ components: [noticeContainer(stopped ? 'success' : 'info', stopped ? m.recording.stopped_reply : m.recording.alreadyStopped)] });
       return;
     }
 

@@ -4,6 +4,7 @@ import { isOpen } from '../../domain/meeting.js';
 import type { MeetingStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
 import { inviteControls, inviteSummary } from './invite.js';
+import { Accent } from '../ui/palette.js';
 
 export interface ManagerState {
   /** Une session d'enregistrement existe : le compte rendu peut être régénéré. */
@@ -35,7 +36,7 @@ export function renderMeetingManager(
     new ButtonBuilder().setCustomId(encode({ type, meetingId: meeting.id } as Action)).setLabel(label).setEmoji(emoji).setStyle(style);
 
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(Accent.brand)
     .addTextDisplayComponents((t) =>
       t.setContent(`## ⚙️ ${g.title}\n-# ${meeting.title} · ${m.status[meeting.status]}${state.notice ? `\n\n${state.notice}` : ''}`),
     );
@@ -57,7 +58,7 @@ export function renderMeetingManager(
     return container.toJSON();
   }
   const main = new ActionRowBuilder<ButtonBuilder>();
-  if (open) main.addComponents(button('meeting.edit', g.edit, '✏️', ButtonStyle.Primary));
+  if (open) main.addComponents(button('meeting.edit', g.edit, '✏️'));
   main.addComponents(button('meeting.duplicate', g.duplicate, '📄'));
   if (open) main.addComponents(button('meeting.autoRecord', meeting.autoRecord ? g.autoOff : g.autoOn, meeting.autoRecord ? '⏸️' : '🔴'));
   rows.push(main);
@@ -66,7 +67,7 @@ export function renderMeetingManager(
   if (open) {
     rows.push(
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        state.recording ? button('rec.stop', g.recStop, '⏹️', ButtonStyle.Danger) : button('rec.start', g.recStart, '🔴', ButtonStyle.Success),
+        state.recording ? button('rec.stop', g.recStop, '⏹️', ButtonStyle.Danger) : button('rec.start', g.recStart, '🔴', ButtonStyle.Primary),
       ),
     );
   }
@@ -76,7 +77,7 @@ export function renderMeetingManager(
       state.confirmEnd
         ? new ActionRowBuilder<ButtonBuilder>().addComponents(
             button('meeting.endConfirm', g.endConfirm, '⏹️', ButtonStyle.Danger),
-            button('meeting.manage', g.back, '↩️'),
+            button('meeting.manage', m.buttons.cancel, '✖️'),
           )
         : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.end', g.end, '⏹️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
     );
@@ -86,9 +87,9 @@ export function renderMeetingManager(
       state.confirmRegenAll
         ? new ActionRowBuilder<ButtonBuilder>().addComponents(
             button('meeting.regenAllConfirm', g.regenAllConfirm, '🔁', ButtonStyle.Danger),
-            button('meeting.manage', g.back, '↩️'),
+            button('meeting.manage', m.buttons.cancel, '✖️'),
           )
-        : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.regen', g.regen, '📝'), button('meeting.regenAll', g.regenAll, '🔁')),
+        : new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.regen', g.regen, '🔄'), button('meeting.regenAll', g.regenAll, '🔁')),
     );
   }
   for (const row of rows) container.addActionRowComponents(row);
@@ -100,24 +101,25 @@ export function renderMeetingManager(
 /** Choix personnel d'enregistrement (message éphémère). */
 export function renderConsent(state: { refused: boolean; notice?: string | undefined }, m: Messages): APIContainerComponent {
   const c = m.consent;
-  const container = new ContainerBuilder().setAccentColor(state.refused ? 0x95a5a6 : 0xed4245);
+  const container = new ContainerBuilder().setAccentColor(state.refused ? Accent.muted : Accent.brand);
   container.addTextDisplayComponents((t) =>
     t.setContent(`## 🎙️ ${c.title}\n${state.refused ? c.statusRefused : c.statusAccepted}\n-# ${c.explain}${state.notice ? `\n\n${state.notice}` : ''}`),
   );
   container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
     row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(encode({ type: 'consent.refuse' }))
-        .setLabel(c.refuse)
-        .setEmoji('🔇')
-        .setStyle(state.refused ? ButtonStyle.Secondary : ButtonStyle.Danger)
-        .setDisabled(state.refused),
+      // Choix actif marqué ✓ et désactivé ; refuser n'a rien de destructif (pas de rouge).
       new ButtonBuilder()
         .setCustomId(encode({ type: 'consent.accept' }))
-        .setLabel(c.accept)
+        .setLabel(state.refused ? c.accept : `✓ ${c.accept}`)
         .setEmoji('🎙️')
-        .setStyle(state.refused ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary)
         .setDisabled(!state.refused),
+      new ButtonBuilder()
+        .setCustomId(encode({ type: 'consent.refuse' }))
+        .setLabel(state.refused ? `✓ ${c.refuse}` : c.refuse)
+        .setEmoji('🔇')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(state.refused),
     ),
   );
   return container.toJSON();

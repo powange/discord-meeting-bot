@@ -2,9 +2,12 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   EmbedBuilder,
+  MessageFlags,
   StringSelectMenuBuilder,
   type APIActionRowComponent,
+  type APIContainerComponent,
   type APIComponentInMessageActionRow,
   type APIEmbed,
 } from 'discord.js';
@@ -16,6 +19,7 @@ import { discordTimestamp } from '../../domain/time.js';
 import type { AgendaItem, MeetingStatus, Rsvp } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
 import { joinLinesWithin, truncate } from '../../lib/text.js';
+import { Accent, statusAccent } from '../ui/palette.js';
 
 export interface CardMeeting {
   id: string;
@@ -35,14 +39,6 @@ export interface RenderedMessage {
   embeds: APIEmbed[];
   components: APIActionRowComponent<APIComponentInMessageActionRow>[];
 }
-
-const COLORS: Record<MeetingStatus, number> = {
-  scheduled: 0x5865f2,
-  live: 0x57f287,
-  ended: 0x95a5a6,
-  cancelled: 0xed4245,
-  polling: 0xfee75c,
-};
 
 // Budget de caractères par zone, pour rester sous les 6000 caractères par message.
 const DESCRIPTION_BUDGET = 2000;
@@ -73,14 +69,14 @@ export function renderMeetingCard(
 
   const embed = new EmbedBuilder()
     .setTitle(truncate(meeting.title, 256))
-    .setColor(COLORS[meeting.status])
+    .setColor(statusAccent(meeting.status))
     .addFields(
       { name: m.card.when, value: `${discordTimestamp(meeting.startsAt, 'F')}\n${discordTimestamp(meeting.startsAt, 'R')}`, inline: true },
       { name: m.card.duration, value: m.card.minutes(meeting.durationMin), inline: true },
       { name: m.card.voice, value: !meeting.voiceChannelId ? m.card.voicePending : meeting.voiceDeletedAt ? m.card.voiceDeleted : `<#${meeting.voiceChannelId}>`, inline: true },
       { name: m.card.organizer, value: `<@${meeting.organizerId}>`, inline: true },
       { name: `✅ ${m.rsvp.yes} (${groups.yes.length})`, value: mentions(groups.yes), inline: false },
-      { name: `❔ ${m.rsvp.maybe} (${groups.maybe.length})`, value: mentions(groups.maybe), inline: true },
+      { name: `🟡 ${m.rsvp.maybe} (${groups.maybe.length})`, value: mentions(groups.maybe), inline: true },
       { name: `❌ ${m.rsvp.no} (${groups.no.length})`, value: mentions(groups.no), inline: true },
     )
     .setFooter({ text: m.card.footer(m.status[meeting.status]) })
@@ -119,7 +115,7 @@ export function renderPollCard(meeting: CardMeeting, poll: PollView, m: Messages
   const intro = [p.cardIntro(poll.closesAt ? discordTimestamp(poll.closesAt, 'f') : '—'), `-# ${p.legend}`, truncate(meeting.description, DESCRIPTION_BUDGET)];
   const embed = new EmbedBuilder()
     .setTitle(truncate(meeting.title, 256))
-    .setColor(COLORS.polling)
+    .setColor(Accent.pending)
     .setDescription(intro.filter(Boolean).join('\n\n'))
     .addFields(...pollFields(poll.slots, (s) => (best?.slotId === s.slotId ? '⭐ ' : ''), m), { name: m.card.organizer, value: `<@${meeting.organizerId}>`, inline: true })
     .setFooter({ text: `${m.card.footer(m.status.polling)} · ${people ? p.respondents(people) : p.noAnswers}` });
@@ -145,7 +141,7 @@ export function renderPollResults(title: string, slots: PollView['slots'], chose
   const note = (s: SlotTally) => (s.slotId === chosenSlotId ? ` · **${p.chosen}**` : s.slotId === suggestedSlotId ? ` · **${p.suggested}**` : '');
   const embed = new EmbedBuilder()
     .setTitle(truncate(`🗳️ ${p.resultsTitle} · ${title}`, 256))
-    .setColor(COLORS.polling)
+    .setColor(Accent.pending)
     .setDescription(`-# ${p.legend}`)
     .addFields(...pollFields(slots, mark, m, note))
     .setFooter({ text: people ? p.respondents(people) : p.noAnswers });
@@ -181,7 +177,7 @@ export function renderAgendaMessage(
   const open = isOpen(meeting.status);
   const embed = new EmbedBuilder()
     .setTitle(`📋 ${meeting.agendaLocked ? m.card.agendaLocked : m.card.agenda}`)
-    .setColor(COLORS[meeting.status])
+    .setColor(statusAccent(meeting.status))
     .setDescription(agendaText(agenda, m).text);
   if (open && !meeting.agendaLocked) embed.setFooter({ text: m.card.agendaHint });
   const truncated = agendaText(agenda, m).truncated;
@@ -210,7 +206,7 @@ export function rsvpButtons(meetingId: string, m: Messages, counts?: Record<'yes
   const n = (k: 'yes' | 'maybe' | 'no') => (counts ? ` (${counts[k].length})` : '');
   return [
     rsvpButton(meetingId, 'yes', `${m.rsvp.yes}${n('yes')}`, ButtonStyle.Success, '✅', enabled),
-    rsvpButton(meetingId, 'maybe', `${m.rsvp.maybe}${n('maybe')}`, ButtonStyle.Secondary, '❔', enabled),
+    rsvpButton(meetingId, 'maybe', `${m.rsvp.maybe}${n('maybe')}`, ButtonStyle.Secondary, '🟡', enabled),
     rsvpButton(meetingId, 'no', `${m.rsvp.no}${n('no')}`, ButtonStyle.Secondary, '❌', enabled),
   ];
 }
@@ -270,7 +266,7 @@ export function agendaText(agenda: readonly AgendaItem[], m: Messages): { text: 
 
 /** Vue éphémère de gestion de l'ODJ (réservée aux gestionnaires). */
 export function renderAgendaManager(
-  meeting: { id: string; agendaLocked: boolean },
+  meeting: { id: string; agendaLocked: boolean; title?: string },
   agenda: readonly AgendaItem[],
   selectedId: number | null,
   m: Messages,
@@ -278,8 +274,16 @@ export function renderAgendaManager(
   mode: 'manager' | 'author' = 'manager',
   /** Retrait du point sélectionné demandé : bouton de confirmation à la place des actions. */
   confirmRemove = false,
-): { content: string; components: APIActionRowComponent<APIComponentInMessageActionRow>[] } {
+): { components: APIContainerComponent[]; flags: MessageFlags.IsComponentsV2 } {
   const rows: APIActionRowComponent<APIComponentInMessageActionRow>[] = [];
+  // Panneau Components V2, même en-tête que les autres panneaux privés.
+  const panel = (title: string, text: string) => {
+    const container = new ContainerBuilder()
+      .setAccentColor(Accent.brand)
+      .addTextDisplayComponents((t) => t.setContent(`## 🗂️ ${title}${meeting.title ? `\n-# ${truncate(meeting.title, 120)}` : ''}${text ? `\n${text}` : ''}`));
+    for (const row of rows) container.addActionRowComponents(row as never);
+    return { components: [container.toJSON()], flags: MessageFlags.IsComponentsV2 as MessageFlags.IsComponentsV2 };
+  };
   const selectedIndex = selectedId === null ? -1 : agenda.findIndex((i) => i.id === selectedId);
   const selected = selectedIndex >= 0 ? agenda[selectedIndex] : undefined;
 
@@ -307,8 +311,7 @@ export function renderAgendaManager(
       .setStyle(ButtonStyle.Primary);
   if (mode === 'author') {
     if (selected) rows.push(buttons.addComponents(editButton(selected)).toJSON());
-    const content = [`**${m.agendaManager.titleAuthor}**`, selected ? m.agendaManager.selected(selected.title) : m.agendaManager.pickOwn].join('\n');
-    return { content, components: rows };
+    return panel(m.agendaManager.titleAuthor, selected ? m.agendaManager.selected(selected.title) : m.agendaManager.pickOwn);
   }
   if (selected && confirmRemove) {
     rows.push(
@@ -321,13 +324,13 @@ export function renderAgendaManager(
             .setStyle(ButtonStyle.Danger),
           new ButtonBuilder()
             .setCustomId(encode({ type: 'agenda.manage', meetingId: meeting.id }))
-            .setLabel(m.manage.back)
-            .setEmoji('↩️')
+            .setLabel(m.buttons.cancel)
+            .setEmoji('✖️')
             .setStyle(ButtonStyle.Secondary),
         )
         .toJSON(),
     );
-    return { content: [`**${m.agendaManager.title}**`, m.agendaManager.removeAsk(selected.title)].join('\n'), components: rows };
+    return panel(m.agendaManager.title, `⚠️ ${m.agendaManager.removeAsk(selected.title)}`);
   }
   if (selected) {
     buttons.addComponents(
@@ -360,8 +363,5 @@ export function renderAgendaManager(
   );
   rows.push(buttons.toJSON());
 
-  const content = [`**${m.agendaManager.title}**`, agenda.length === 0 ? m.agendaManager.empty : selected ? m.agendaManager.selected(selected.title) : '']
-    .filter(Boolean)
-    .join('\n');
-  return { content, components: rows };
+  return panel(m.agendaManager.title, agenda.length === 0 ? m.agendaManager.empty : selected ? m.agendaManager.selected(selected.title) : '');
 }

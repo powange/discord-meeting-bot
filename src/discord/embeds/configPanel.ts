@@ -16,6 +16,7 @@ import { encode, type CfgAction } from '../../domain/customId.js';
 import { formatOffset } from '../../domain/reminders.js';
 import type { StorageProvider } from '../../domain/storage.js';
 import type { Messages } from '../../i18n/index.js';
+import { Accent } from '../ui/palette.js';
 
 export const CONFIG_SECTIONS = ['forum', 'voice', 'roles', 'reminders', 'general', 'recording', 'transcription', 'summary', 'storage', 'alerts'] as const;
 export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
@@ -132,7 +133,7 @@ export function renderConfigHome(c: ConfigContext, m: Messages): APIContainerCom
     s.managerRoleIds.length === 0 && t.todo.managers,
   ].filter((x): x is string => Boolean(x));
   const container = new ContainerBuilder()
-    .setAccentColor(todo.length && !s.forumChannelId ? 0xfee75c : 0x5865f2)
+    .setAccentColor(todo.length && !s.forumChannelId ? Accent.pending : Accent.brand)
     .addTextDisplayComponents((x) => x.setContent(`## ⚙️ ${t.title}${c.notice ? `\n${c.notice}` : ''}`));
   if (todo.length) container.addTextDisplayComponents((x) => x.setContent(`**${t.todo.title}**\n${todo.map((line, i) => `${i + 1}. ${line}`).join('\n')}`));
   container
@@ -149,7 +150,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
   const s = c.settings;
   const meta = t.sections[section];
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(Accent.brand)
     .addTextDisplayComponents((x) =>
       x.setContent(`## ${meta.emoji} ${meta.label}\n${meta.help.split('\n').map((line) => `-# ${line}`).join('\n')}\n\n${t.current} : ${sectionSummary(section, c, m)}${c.notice ? `\n\n${c.notice}` : ''}`),
     )
@@ -337,7 +338,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
           rows.push(
             new ActionRowBuilder<ButtonBuilder>().addComponents(
               btn('llmDeleteConfirm', t.llmDeleteConfirm, '🗑️', ButtonStyle.Danger).setCustomId(cfg('llmDeleteConfirm', arg)),
-              btn('llmCancel', t.llmCancel, '↩️').setCustomId(cfg('llmCancel', arg)),
+              btn('llmCancel', t.llmCancel, '✖️').setCustomId(cfg('llmCancel', arg)),
             ),
           );
         } else {

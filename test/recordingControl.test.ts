@@ -50,7 +50,7 @@ describe('messages de l’enregistrement (embeds)', () => {
     expect(labels(c)).toContain('Point suivant : fin de l’ordre du jour');
     const frozen = renderLiveControl(id, { agenda, markers }, m, true);
     expect(frozen.components).toEqual([]);
-    expect(shown(frozen)).toMatchObject({ color: 0x99aab5 });
+    expect(shown(frozen)).toMatchObject({ color: 0x95a5a6 });
     expect(shown(frozen).description).toContain('▶️ Dernier point : **2. Fête**');
   });
 
@@ -72,6 +72,6 @@ describe('messages de l’enregistrement (embeds)', () => {
   it('message dépassé (figé) : gris, sans boutons ; la session devient « Enregistrement terminé, de … à … »', () => {
     const frozen = renderRecordingControl(id, rec({ endedAt: new Date('2026-10-15T16:45:00Z') }), m, true);
     expect(frozen.components).toEqual([]);
-    expect(shown(frozen)).toMatchObject({ title: e.recordedTitle, description: 'De <t:1792080000:t> à <t:1792082700:t> · lancé par Pierre Comble', color: 0x99aab5 });
+    expect(shown(frozen)).toMatchObject({ title: e.recordedTitle, description: 'De <t:1792080000:t> à <t:1792082700:t> · lancé par Pierre Comble', color: 0x95a5a6 });
   });
 });

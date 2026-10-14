@@ -131,32 +131,37 @@ describe('renderAgendaManager', () => {
     { id: 10, position: 0, title: 'A', detail: '', authorId: '1' },
     { id: 11, position: 1, title: 'B', detail: 'détail', authorId: '1' },
   ];
+  /** Panneau V2 : lignes de composants et texte. */
+  const parts = (view: ReturnType<typeof renderAgendaManager>) => {
+    const inner = view.components[0]!.components as unknown as Array<{ type: number; content?: string; components?: APIButtonComponentWithCustomId[] }>;
+    return { rows: inner.filter((c) => c.type === ComponentType.ActionRow).map((r) => r.components!), text: inner.filter((c) => c.content).map((c) => c.content).join('\n') };
+  };
 
   it('sans sélection : menu + verrou', () => {
-    const view = renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda, null, m);
-    expect(view.components).toHaveLength(2);
-    expect(view.components[1]!.components).toHaveLength(1);
+    const { rows } = parts(renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda, null, m));
+    expect(rows).toHaveLength(2);
+    expect(rows[1]!).toHaveLength(1);
   });
 
   it('premier point sélectionné : « Monter » désactivé', () => {
-    const view = renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda, 10, m);
-    const [edit, up, down, remove] = view.components[1]!.components as APIButtonComponentWithCustomId[];
+    const { rows, text } = parts(renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda, 10, m));
+    const [edit, up, down, remove] = rows[1]!;
     expect(decode(edit!.custom_id)).toEqual({ type: 'agenda.edit', meetingId: meeting.id, itemId: 10 });
     expect([up!.disabled, down!.disabled, remove!.disabled ?? false]).toEqual([true, false, false]);
-    expect(view.content).toContain('**A**');
+    expect(text).toContain('**A**');
   });
 
   it('mode auteur : seulement « Modifier », ni déplacement, ni retrait, ni verrou', () => {
-    const view = renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda.slice(0, 1), 10, m, 'author');
-    const labels = view.components.flatMap((r) => r.components).filter((c) => c.type === ComponentType.Button).map((c) => (c as APIButtonComponentWithCustomId).label);
+    const { rows, text } = parts(renderAgendaManager({ id: meeting.id, agendaLocked: false }, agenda.slice(0, 1), 10, m, 'author'));
+    const labels = rows.flat().filter((c) => c.type === ComponentType.Button).map((c) => c.label);
     expect(labels).toEqual(['Modifier']);
-    expect(view.content).toContain(m.agendaManager.titleAuthor);
+    expect(text).toContain(m.agendaManager.titleAuthor);
   });
 
   it('ODJ vide', () => {
-    const view = renderAgendaManager({ id: meeting.id, agendaLocked: true }, [], null, m);
-    expect(view.components).toHaveLength(1);
-    expect(view.content).toContain(m.agendaManager.empty);
+    const { rows, text } = parts(renderAgendaManager({ id: meeting.id, agendaLocked: true }, [], null, m));
+    expect(rows).toHaveLength(1);
+    expect(text).toContain(m.agendaManager.empty);
   });
 });
 

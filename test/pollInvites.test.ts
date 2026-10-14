@@ -27,7 +27,7 @@ describe('rôles invités à répondre à un sondage', () => {
     expect(decode(select.custom_id)?.type).toBe('meeting.roles');
     expect(select.default_values).toEqual([{ id: '111', type: 'role' }]);
     const everyone = rows.flatMap((r) => r.components).find((c) => c.type === 2 && decode(c.custom_id)?.type === 'meeting.everyone') as unknown as { label: string };
-    expect(everyone.label).toBe(m.invite.everyoneOn);
+    expect(everyone.label).toBe(`✓ ${m.invite.everyoneOn}`); // choix actif marqué, pas seulement par la couleur
   });
 
   function setup(opts: { mentionable: boolean; canMentionAll?: boolean; current?: string[]; status?: string }) {

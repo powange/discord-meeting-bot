@@ -3,6 +3,7 @@ import { encode } from '../../domain/customId.js';
 import { failureCause } from '../../domain/failure.js';
 import type { PipelineStep, StepStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
+import { Accent } from '../ui/palette.js';
 
 export interface StepView {
   step: PipelineStep;
@@ -29,7 +30,7 @@ export function renderPipelineStatus(meetingId: string, steps: readonly StepView
   });
 
   const container = new ContainerBuilder()
-    .setAccentColor(failed ? 0xed4245 : allDone ? 0x57f287 : 0xfee75c)
+    .setAccentColor(failed ? Accent.danger : allDone ? Accent.live : Accent.pending)
     .addTextDisplayComponents((t) => t.setContent(`${p.title}\n${lines.join('\n')}`));
   if (allDone && publishedUrl) container.addTextDisplayComponents((t) => t.setContent(`-# ${p.published(publishedUrl)}`));
   if (failed) {

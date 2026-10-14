@@ -39,11 +39,13 @@ export type Action =
   | { type: 'report.retryNow'; meetingId: string }
   | { type: 'report.correct'; meetingId: string }
   | { type: 'report.regen'; meetingId: string }
+  | { type: 'report.regenConfirm'; meetingId: string }
   | { type: 'report.correctSubmit'; meetingId: string }
   | { type: 'tx'; action: TxAction; backendId: number | null }
   | { type: 'cfg'; action: CfgAction; arg?: string }
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
+  | { type: 'rec.stopConfirm'; meetingId: string }
   | { type: 'rec.next'; meetingId: string }
   | { type: 'rec.goto'; meetingId: string }
   | { type: 'rec.note'; meetingId: string }
@@ -136,6 +138,7 @@ export const MEETING_VERBS = [
   'default',
   'reslot',
   'reslotSelect',
+  'dismiss',
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
 
@@ -283,6 +286,7 @@ export function decode(customId: string): Action | null {
     if (verb === 'retryNow') return { type: 'report.retryNow', meetingId };
     if (verb === 'correct') return { type: 'report.correct', meetingId };
     if (verb === 'regen') return { type: 'report.regen', meetingId };
+    if (verb === 'regenConfirm') return { type: 'report.regenConfirm', meetingId };
     if (verb === 'correctSubmit') return { type: 'report.correctSubmit', meetingId };
     return null;
   }
@@ -291,6 +295,7 @@ export function decode(customId: string): Action | null {
     if (rest.length !== 2) return null;
     if (verb === 'start') return { type: 'rec.start', meetingId };
     if (verb === 'stop') return { type: 'rec.stop', meetingId };
+    if (verb === 'stopConfirm') return { type: 'rec.stopConfirm', meetingId };
     if (verb === 'next') return { type: 'rec.next', meetingId };
     if (verb === 'goto') return { type: 'rec.goto', meetingId };
     if (verb === 'note') return { type: 'rec.note', meetingId };

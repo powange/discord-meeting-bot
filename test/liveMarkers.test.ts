@@ -91,11 +91,17 @@ describe('repères pendant l’enregistrement', () => {
     expect(s.recordings.syncControl).toHaveBeenCalledWith(meetingId); // message resté d'avant un redémarrage : remis à jour
   });
 
-  it('« Arrêter » alors que rien n’enregistre (bot redémarré) : message remis à jour, pas d’erreur', async () => {
-    const s = setup({ recording: false });
+  it('« Arrêter » : confirmation d’abord, rien n’est arrêté avant « Confirmer »', async () => {
+    const s = setup();
     const r = await s.run('rec.stop', 'button');
     expect(r.error).toBeNull();
-    expect(r.text).toBe(m.recording.alreadyStopped);
+    expect(s.recordings.stop).not.toHaveBeenCalled();
+  });
+
+  it('« Arrêter » alors que rien n’enregistre (bot redémarré) : message remis à jour, pas d’erreur', async () => {
+    const s = setup({ recording: false });
+    const r = await s.run('rec.stopConfirm', 'button');
+    expect(r.error).toBeNull();
     expect(s.recordings.syncControl).toHaveBeenCalledWith(meetingId);
   });
 });

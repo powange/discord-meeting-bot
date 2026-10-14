@@ -5,6 +5,7 @@ import { discordTimestamp } from '../../domain/time.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
 import { consentButton } from './meetingManager.js';
+import { Accent } from '../ui/palette.js';
 
 /** Message en embed (comme la carte et l'ordre du jour) ; le texte brut est vidé à l'édition. */
 export interface ControlMessage {
@@ -34,7 +35,7 @@ export const OFF_AGENDA = 'off';
 export const INTERRUPTIONS: readonly string[] = ['shutdown', 'disconnected', 'crash'];
 
 /** Couleurs : en cours (rouge), suivi (bleu), arrêté (vert), interrompu (orange), passé (gris). */
-const COLORS = { rec: 0xed4245, live: 0x5865f2, stopped: 0x57f287, interrupted: 0xe67e22, past: 0x99aab5 } as const;
+const COLORS = { rec: Accent.danger, live: Accent.brand, stopped: Accent.brand, interrupted: Accent.warning, past: Accent.muted } as const;
 const embed = (title: string, description: string, color: number, footer?: string) => {
   const e = new EmbedBuilder().setTitle(title).setDescription(description).setColor(color);
   if (footer) e.setFooter({ text: footer });

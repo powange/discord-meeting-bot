@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, type ModalSubmitInteraction } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, type ModalSubmitInteraction } from 'discord.js';
 import type { AppContext } from '../../context.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { encode, type DraftType } from '../../domain/customId.js';
@@ -7,6 +7,8 @@ import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { defaultInviteState, inviteControls, inviteSummary, nextInviteState, type InviteState } from '../embeds/invite.js';
 import { roleMention } from '../notify.js';
+import { noticeContainer, noticeText } from '../ui/notice.js';
+import { Accent } from '../ui/palette.js';
 import type { ComponentInteraction } from './components.js';
 
 /** Réunion ou sondage validé par le formulaire, pas encore créé : en attente du choix « Qui inviter ? ». */
@@ -42,7 +44,7 @@ export async function askInvites(
   const nudgeRoleId = (await ctx.settings.get(interaction.guildId)).nudgeRoleId;
   const p: Pending = { ...draft, guildId: interaction.guildId, userId: interaction.user.id, state: defaultInviteState(nudgeRoleId), at: now };
   pending.set(id, p);
-  await interaction.editReply({ ...(await render(ctx, id, p)), allowedMentions: { parse: [] } });
+  await interaction.editReply({ ...(await render(ctx, id, p)), flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] } });
 }
 
 async function render(ctx: AppContext, id: string, p: Pending, notice?: string) {
@@ -51,22 +53,20 @@ async function render(ctx: AppContext, id: string, p: Pending, notice?: string) 
   const i = m.invite;
   const nudgeRoleId = settings.nudgeRoleId;
   const ids = (verb: string) => encode({ type: `draft.${verb}` as DraftType, draftId: id });
-  const content = [
-    ...(notice ? [notice, ''] : []),
-    i.draft(p.kind, p.title, p.when, nudgeRoleId ? roleMention(nudgeRoleId, p.guildId) : null),
-    '',
-    i.current(inviteSummary(p.state, p.guildId, nudgeRoleId, m)),
-    i.footer,
-  ].join('\n');
+  const text = i.draft(p.kind, p.title, p.when, nudgeRoleId ? roleMention(nudgeRoleId, p.guildId) : null);
   const actions = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(ids('create')).setLabel(i.create(p.kind)).setEmoji('✅').setStyle(ButtonStyle.Primary),
   );
   if (p.retryId) actions.addComponents(new ButtonBuilder().setCustomId(p.retryId).setLabel(i.edit).setEmoji('✏️').setStyle(ButtonStyle.Secondary));
-  actions.addComponents(new ButtonBuilder().setCustomId(ids('cancel')).setLabel(i.cancel).setStyle(ButtonStyle.Secondary));
-  return {
-    content,
-    components: [...inviteControls({ roles: ids('roles'), everyone: ids('everyone'), default: ids('default'), none: ids('none') }, p.guildId, p.state, nudgeRoleId, m), actions.toJSON()],
-  };
+  actions.addComponents(new ButtonBuilder().setCustomId(ids('cancel')).setLabel(i.cancel).setEmoji('✖️').setStyle(ButtonStyle.Secondary));
+  const container = new ContainerBuilder()
+    .setAccentColor(Accent.brand)
+    .addTextDisplayComponents((t) => t.setContent(`${text.header}${notice ? `\n\n${notice}` : ''}\n\n${i.current(inviteSummary(p.state, p.guildId, nudgeRoleId, m))}`));
+  for (const row of inviteControls({ roles: ids('roles'), everyone: ids('everyone'), default: ids('default'), none: ids('none') }, p.guildId, p.state, nudgeRoleId, m)) {
+    container.addActionRowComponents(row);
+  }
+  container.addActionRowComponents(actions).addTextDisplayComponents((t) => t.setContent(text.help));
+  return { components: [container.toJSON()] };
 }
 
 /** Clics du message « Qui inviter ? ». */
@@ -76,14 +76,14 @@ export async function handleDraft(ctx: AppContext, interaction: ComponentInterac
   const p = pending.get(action.draftId);
   if (!p || p.userId !== interaction.user.id || Date.now() - p.at > TTL_MS) {
     pending.delete(action.draftId);
-    await interaction.update({ content: m.invite.expired, components: [], allowedMentions: { parse: [] } });
+    await interaction.update({ components: [noticeContainer('info', m.invite.expired)], allowedMentions: { parse: [] } });
     return;
   }
   const verb = action.type.split('.')[1] as 'roles' | 'everyone' | 'default' | 'none' | 'create' | 'cancel';
 
   if (verb === 'cancel') {
     pending.delete(action.draftId);
-    await interaction.update({ content: m.invite.cancelled, components: [], allowedMentions: { parse: [] } });
+    await interaction.update({ components: [noticeContainer('info', m.invite.cancelled)], allowedMentions: { parse: [] } });
     return;
   }
 
@@ -95,10 +95,10 @@ export async function handleDraft(ctx: AppContext, interaction: ComponentInterac
       // Invités (le rôle relancé de /config pour « Par défaut ») mentionnés tout de suite ; « Personne » enregistré.
       if (p.state.none || p.state.roleIds.length) await ctx.meetings.inviteRoles(interaction.guild, meeting.id, p.state.roleIds, p.state.none);
       const settings = await ctx.settings.get(p.guildId);
-      await interaction.editReply({ content: m.invite.created(p.kind, meeting.threadId!, inviteSummary(p.state, p.guildId, settings.nudgeRoleId, m)), components: [], allowedMentions: { parse: [] } });
+      await interaction.editReply({ components: [noticeContainer('success', m.invite.created(p.kind, meeting.threadId!, inviteSummary(p.state, p.guildId, settings.nudgeRoleId, m)))], allowedMentions: { parse: [] } });
     } catch (err) {
       if (!(err instanceof UserError)) throw err;
-      await interaction.editReply({ ...(await render(ctx, action.draftId, p, `❌ ${err.message}`)), allowedMentions: { parse: [] } });
+      await interaction.editReply({ ...(await render(ctx, action.draftId, p, noticeText('error', err.message))), allowedMentions: { parse: [] } });
     }
     return;
   }

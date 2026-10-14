@@ -40,7 +40,7 @@ describe('avertissement d’enregistrement', () => {
     expect(m.recording.announce(null)).toContain('· démarrage automatique');
     expect(m.recording.stopped('Pierre Comble', m.recording.reasons.manual!)).toBe('⏹️ **Enregistrement arrêté** · par Pierre Comble');
     expect(m.recording.stopped(null, m.recording.reasons.empty!)).toBe('⏹️ **Enregistrement arrêté** · vocal vide');
-    expect(m.recording.arrival('42')).toMatch(/^⚠️ <@42>, cette réunion est \*\*enregistrée\*\*/);
+    expect(m.recording.arrival('42')).toMatch(/^⚠️ <@42>, cette réunion est enregistrée/); // première ligne sans gras (notification)
   });
 });
 

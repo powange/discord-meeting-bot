@@ -3,6 +3,7 @@ import { encode } from '../../domain/customId.js';
 import type { MeetingSummary, Topic } from '../../ai/llm/schema.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
+import { Accent } from '../ui/palette.js';
 
 /** Texte maximal par message Components V2 (limite Discord : 4000), avec une marge. */
 export const MESSAGE_TEXT_BUDGET = 3800;
@@ -169,7 +170,7 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
   messages.at(-1)!.push(footer);
 
   return messages.map((texts, i) => {
-    const container = new ContainerBuilder().setAccentColor(0x5865f2);
+    const container = new ContainerBuilder().setAccentColor(Accent.brand);
     texts.forEach((text, j) => {
       if (j > 0) container.addSeparatorComponents((s) => s.setSpacing(j === 1 && i === 0 ? SeparatorSpacingSize.Large : SeparatorSpacingSize.Small));
       container.addTextDisplayComponents((t) => t.setContent(text));

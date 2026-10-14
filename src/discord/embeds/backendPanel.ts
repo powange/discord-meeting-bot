@@ -3,6 +3,7 @@ import type { TranscriptionBackendRow } from '../../db/schema.js';
 import { encode, type TxAction } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { truncate } from '../../lib/text.js';
+import { Accent } from '../ui/palette.js';
 
 /**
  * Nombre maximal de serveurs : chaque serveur occupe 8 composants (bloc, texte, bouton
@@ -35,7 +36,7 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
   const p = m.backendPanel;
   const canEdit = state.canEdit ?? true;
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(Accent.brand)
     .addTextDisplayComponents((t) =>
       t.setContent(
         `## ${p.title}\n-# ${p.footer}${canEdit ? '' : `\n-# 🔒 ${p.readOnly}`}\n📖 ${p.vocabularySummary(state.vocabulary ?? [])}${state.notice ? `\n\n${state.notice}` : ''}`,
@@ -66,7 +67,7 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
       // Consultation : le test est dans l'accessoire, pas de rangée d'actions.
     } else if (state.confirmDeleteId === r.id) {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
-        row.addComponents(button('confirmDelete', r.id, '🗑️', p.confirmDelete(truncate(r.name, 40)), ButtonStyle.Danger), button('select', null, '↩️', p.cancel)),
+        row.addComponents(button('confirmDelete', r.id, '🗑️', p.confirmDelete(truncate(r.name, 40)), ButtonStyle.Danger), button('select', null, '✖️', p.cancel)),
       );
     } else {
       container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>

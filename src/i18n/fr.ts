@@ -56,6 +56,8 @@ export const fr = {
     record: 'Enregistrer',
     stopRecording: "Arrêter l'enregistrement",
     resumeRecording: "Reprendre l'enregistrement",
+    cancel: 'Annuler',
+    cancelled: 'Annulé : rien n’a été fait.',
   },
 
   modal: {
@@ -95,7 +97,6 @@ export const fr = {
     manyMembers: (n: number) => `-# ${n} membres invités : ils ne sont pas mentionnés un par un.`,
     roles: 'Choisir des rôles (jusqu’à 5)',
     everyoneOn: 'Tout le monde (@everyone)',
-    everyoneOff: 'Tout le monde (@everyone)',
     defaultButton: 'Par défaut',
     noneButton: 'Personne',
     summaryRoles: (roles: string) => `${roles} : mentionnés à la création, puis relancés s'ils n'ont pas répondu`,
@@ -105,19 +106,16 @@ export const fr = {
     /** Message « Qui inviter ? » avant la création (brouillon). */
     draft: (kind: 'meeting' | 'poll', title: string, when: string, defaultRole: string | null) => {
       const poll = kind === 'poll';
-      const what = poll ? 'le sondage' : 'la réunion';
       const relance = poll ? 'la veille de la fin des réponses' : 'à chaque rappel';
-      return [
-        `## 📣 Qui inviter ?`,
-        `**${title}** · ${when}`,
-        `-# ${poll ? "Le sondage n'est" : "La réunion n'est"} pas encore ${poll ? 'créé' : 'créée'} : choisissez qui prévenir, puis cliquez sur « Créer ${what} ».`,
-        '',
-        `Les personnes invitées sont **mentionnées dès la création** de ${what} : elles reçoivent une notification${poll ? ' pour indiquer leurs disponibilités' : ' pour répondre Présent / Peut-être / Absent'}. Celles qui n'ont pas répondu sont ensuite **relancées ${relance}**.`,
-        `- **Choisir des rôles** (menu ci-dessous) : les membres de ces rôles.`,
-        `- **📣 Tout le monde** : tout le serveur (@everyone ; chaque membre un par un si le bot n'a pas la permission de mentionner @everyone).`,
-        ...(defaultRole ? [`- **↩️ Par défaut** : ${defaultRole}, le rôle relancé de /config.`] : []),
-        `- **🚫 Personne** : aucune mention, aucune relance.${poll ? '' : ' Seuls ceux qui répondent Présent ou Peut-être recevront les rappels.'}`,
-      ].join('\n');
+      // En-tête, puis l'aide en lignes discrètes (lisible sur mobile).
+      return {
+        header: `## 📣 Qui inviter ?\n-# ${title} · ${when}`,
+        help: [
+          `-# ${poll ? "Le sondage n'est" : "La réunion n'est"} pas encore ${poll ? 'créé' : 'créée'}. Les invités sont mentionnés dès la création, puis relancés ${relance} s'ils n'ont pas répondu.`,
+          `-# **Rôles** (menu) : leurs membres · **📣 Tout le monde** : tout le serveur${defaultRole ? ` · **⭐ Par défaut** : ${defaultRole}` : ''} · **🚫 Personne** : ni mention ni relance.`,
+          `-# Brouillon valable 15 min ; les invitations se modifient ensuite dans ⚙️ Gérer.${poll ? '' : ' Sans invité, seuls ceux qui répondent Présent ou Peut-être reçoivent les rappels.'}`,
+        ].join('\n'),
+      };
     },
     current: (summary: string) => `**Choix actuel** : ${summary}`,
     create: (kind: 'meeting' | 'poll') => (kind === 'poll' ? 'Créer le sondage' : 'Créer la réunion'),
@@ -125,7 +123,6 @@ export const fr = {
     cancel: 'Annuler',
     cancelled: 'Création annulée : rien n’a été créé.',
     expired: 'Ce brouillon a expiré (15 min) : recommencez la création.',
-    footer: '-# Brouillon valable 15 min. Les invitations se modifient ensuite dans ⚙️ Gérer.',
     created: (kind: 'meeting' | 'poll', threadId: string, summary: string) => `✅ ${kind === 'poll' ? 'Sondage créé' : 'Réunion créée'} : <#${threadId}>\n📣 ${summary}`,
     /** ⚙️ Gérer : ligne des invitations. */
     manage: (summary: string) => `📣 **Invités** : ${summary}`,
@@ -179,8 +176,9 @@ export const fr = {
     fixedReply: 'Date fixée : la réunion est maintenant planifiée (rappels et événement Discord).',
     fixedAsk: "📅 La date est fixée : indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte).",
     closed: (organizerId: string, best: string | null) =>
-      `⏳ <@${organizerId}> les réponses sont closes : à vous de fixer la date.` +
-      (best ? ` Le créneau le plus disponible est **${best}** (⭐), mais vous pouvez retenir n'importe quel créneau proposé.` : ' Aucun créneau ne se détache.') +
+      // Première ligne sans mise en forme : elle s'affiche telle quelle dans la notification.
+      `⏳ <@${organizerId}> les réponses sont closes : à vous de fixer la date.\n` +
+      (best ? `Le créneau le plus disponible est **${best}** (⭐), mais vous pouvez retenir n'importe quel créneau proposé.` : 'Aucun créneau ne se détache.') +
       `\n-# Bouton ci-dessous ou ⚙️ Gérer → Fixer la date. Les réponses restent possibles d'ici là.`,
     nudge: (title: string, closes: string) => `🗳️ « ${title} » : indiquez vos disponibilités avant ${closes}.`,
     tooManySlots: 'Le sondage a déjà 10 créneaux (limite de Discord pour le panneau de réponse).',
@@ -221,7 +219,7 @@ export const fr = {
     pick: 'Choisir un point…',
     empty: "L'ordre du jour est vide.",
     selected: (title: string) => `Point sélectionné : **${title}**`,
-    removeConfirm: 'Confirmer le retrait',
+    removeConfirm: 'Confirmer : retirer',
     removeAsk: (title: string) => `Retirer le point **${title}** de l'ordre du jour ?`,
   },
 
@@ -257,7 +255,6 @@ export const fr = {
   },
 
   control: {
-    recording: (since: string) => `🔴 **Enregistrement en cours** depuis ${since}.`,
     closed: '🎙️ Réunion close : enregistrement terminé.',
     currentPoint: (position: number, title: string, since: string) => `▶️ Point en cours : **${position}. ${title}** (depuis ${since})`,
     offAgenda: (since: string) => `▶️ Ordre du jour terminé : sujets hors ordre du jour (depuis ${since})`,
@@ -308,7 +305,7 @@ export const fr = {
     stopped: (by: string | null, reason: string) => `⏹️ **Enregistrement arrêté** · ${by ? `par ${by}` : reason}`,
     resumedNotice: "🔄 Le bot a redémarré : l'enregistrement reprend automatiquement (une nouvelle session, réunie aux précédentes dans le compte rendu).",
     arrival: (userId: string) =>
-      `⚠️ <@${userId}>, cette réunion est **enregistrée** : une piste audio par participant, pour rédiger le compte rendu.\n` +
+      `⚠️ <@${userId}>, cette réunion est enregistrée : une piste audio par participant, pour rédiger le compte rendu.\n` +
       "-# Vous ne voulez pas être enregistré ? Bouton « Mon choix d'enregistrement » ci-dessous.",
     reasons: {
       manual: 'arrêt manuel',
@@ -325,6 +322,8 @@ export const fr = {
     retry: 'Réessayer',
     started_reply: 'Enregistrement démarré.',
     stopped_reply: 'Enregistrement arrêté.',
+    stopAsk: "Arrêter l'enregistrement ? Le compte rendu sera préparé avec ce qui a été enregistré ; « Reprendre » relance une nouvelle session.",
+    stopConfirm: 'Confirmer : arrêter',
     alreadyStopped: "L'enregistrement était déjà arrêté (le bot a peut-être redémarré). Le message est à jour : « Reprendre l'enregistrement » relance une session.",
     autoSet: (on: boolean) =>
       on ? 'Enregistrement automatique activé pour cette réunion.' : 'Enregistrement automatique désactivé pour cette réunion.',
@@ -425,6 +424,8 @@ export const fr = {
     agendaLink: 'Ordre du jour',
     correct: 'Corriger',
     regen: 'Régénérer',
+    regenAsk: 'Régénérer le compte rendu ? La version publiée sera remplacée par un nouveau résumé de la même transcription.',
+    regenConfirm: 'Confirmer : régénérer',
     correctModal: 'Corriger le compte rendu',
     correctField: 'Consigne de correction',
     correctHint: 'Ex. « Pol et non Paul », « la décision était de reporter à janvier ». Le résumé sera régénéré.',
@@ -502,7 +503,7 @@ export const fr = {
   },
 
   pipeline: {
-    title: '## 📝 Compte rendu',
+    title: '## ⏳ Préparation du compte rendu',
     steps: { mix: 'Audio complet', transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication', export: 'Copie vers le stockage' } as Record<string, string>,
     progressMix: (duration: string) => `assemblage de ${duration} d'audio`,
     pending: '⬜',
@@ -515,8 +516,8 @@ export const fr = {
     progressTranscribe: (done: number, total: number) => `${done}/${total} prise${total > 1 ? 's' : ''} de parole`,
     progressSummarize: (pass: number, total: number) => `passe ${pass}/${total}`,
     progressSmallerChunks: (tokens: number) => `contexte du modèle trop petit : nouvel essai par morceaux de ${tokens} tokens`,
-    published: (url: string) => `Compte rendu publié : ${url}`,
-    stepTooLong: (min: number) => `Transcription interrompue : elle dépassait la durée maximale (${min} min). Vérifiez que le serveur de transcription répond, puis relancez.`,
+    published: (url: string) => `📝 Compte rendu publié : [l'ouvrir](${url})`,
+    stepTooLong: (min: number) => `Transcription interrompue : elle dépassait la durée maximale (${min} min). Vérifiez que le serveur de transcription répond, puis réessayez.`,
     causes: {
       unreachable: 'serveur injoignable (éteint ou hors réseau ?)',
       timeout: 'le serveur a mis trop de temps à répondre',
@@ -530,14 +531,14 @@ export const fr = {
       unknown: 'erreur inattendue (détail envoyé aux administrateurs)',
     },
     failedNotice: (userIds: readonly string[]) =>
-      `⚠️ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu n'a pas pu être terminé : le message de suivi ci-dessus permet de le relancer.`,
+      `⚠️ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu n'a pas pu être terminé : le message de suivi ci-dessus permet de réessayer.`,
     updatedNotice: (userIds: readonly string[], url: string | null) =>
       `✅ ${userIds.map((id) => `<@${id}>`).join(' ')} le compte rendu est à jour${url ? ` : ${url}` : '.'}`,
-    retried: 'Relance lancée : seules les étapes en échec sont refaites.',
+    retried: 'Nouvel essai lancé : seules les étapes en échec sont refaites.',
     autoRetry: (cause: string, minutes: number, seconds: boolean, attempt: number, max: number) =>
       `${cause} — nouvelle tentative automatique dans ${seconds ? '30 s' : `${minutes} min`} (${attempt}/${max})`,
-    failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut le relancer : seules les étapes en échec sont refaites.",
-    retry: 'Relancer',
+    failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut réessayer : seules les étapes en échec sont refaites.",
+    retry: 'Réessayer',
     retryNow: (step: string) =>
       `Réessayer ${({ transcribe: 'la transcription', summarize: 'le résumé', export: 'la copie vers le stockage' } as Record<string, string>)[step] ?? ''} maintenant`.replace('  ', ' '),
     retriedNow: 'Nouvelle tentative lancée.',
@@ -617,7 +618,6 @@ export const fr = {
     current: 'Actuellement',
     back: 'Retour',
     none: 'non défini',
-    yes: 'Oui',
     no: 'Non',
     sections: {
       forum: { emoji: '📌', label: 'Forum des réunions', hint: 'Où sont publiées les réunions', help: 'Les réunions y sont publiées ; le bot y crée les tags de statut et le post épinglé « Nouvelle réunion ».' },

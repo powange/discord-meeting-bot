@@ -222,7 +222,7 @@ stored_files        id PK, recording_id FK, kind enum(track|mix|transcript), use
                     uploaded_at, expires_at, deleted_at
 ```
 
-- Une seule ligne `pipeline_steps` par étape et par enregistrement. Elle est prise avec `UPDATE … WHERE status IN ('pending','failed') … RETURNING`, avec un bail `locked_until`. « Relancer » remet à `pending` **les étapes en échec** (les suivantes le sont déjà) ; l'audio complet et la transcription tournent en parallèle ; les étapes `done` réutilisent leur `output`.
+- Une seule ligne `pipeline_steps` par étape et par enregistrement. Elle est prise avec `UPDATE … WHERE status IN ('pending','failed') … RETURNING`, avec un bail `locked_until`. « Réessayer » remet à `pending` **les étapes en échec** (les suivantes le sont déjà) ; l'audio complet et la transcription tournent en parallèle ; les étapes `done` réutilisent leur `output`.
 - Chaque étape est idempotente. Exemple : `upload` saute une destination déjà présente dans `stored_files`.
 - Au redémarrage : un enregistrement encore `recording` passe en `interrupted`, et le thread reçoit les boutons « Reprendre » et « Terminer et traiter ».
 
@@ -312,7 +312,7 @@ volumes: { pg: {}, data: {} }
 - Backends `vibe` et `openai` avec health check et bascule (429, timeout, 5xx)
 - Fusion chronologique de la transcription
 - Résumé map-reduce via LiteLLM, avec traçabilité
-- Message de progression et bouton « Relancer »
+- Message de progression et bouton « Réessayer »
 
 **Tests unitaires** : bascule (backends simulés), découpage en chunks, fusion, validation du JSON LLM.
 

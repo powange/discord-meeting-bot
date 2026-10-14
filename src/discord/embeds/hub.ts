@@ -6,6 +6,7 @@ import type { Messages } from '../../i18n/index.js';
 import { joinLinesWithin, truncate } from '../../lib/text.js';
 import { consentButton } from './meetingManager.js';
 import type { RenderedMessage } from './meetingCard.js';
+import { Accent } from '../ui/palette.js';
 
 export interface HubMeeting {
   threadId: string;
@@ -30,7 +31,7 @@ export function renderHub(
 
   const embed = new EmbedBuilder()
     .setTitle(m.hub.title)
-    .setColor(0x5865f2)
+    .setColor(Accent.brand)
     .setDescription(m.hub.intro)
     .addFields({ name: m.hub.upcoming, value: lines.length > 0 ? joinLinesWithin(lines, 1024, m.card.more) : m.hub.none });
   if (polls.length > 0) {
