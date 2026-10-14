@@ -76,7 +76,7 @@ describe('panneau /config', () => {
     ['forum', ['forum', 'home']],
     ['voice', ['voiceMode', 'home']],
     ['alerts', ['alerts', 'home']],
-    ['roles', ['roleManager', 'roleNudge', 'home']],
+    ['roles', ['roleManager', 'roleNudge', 'roleNudgeEveryone', 'home']],
     ['reminders', ['remindersEdit', 'home']],
     ['general', ['generalEdit', 'toggleCreators', 'home']],
     ['recording', ['toggleAutoRecord', 'home']],
@@ -119,6 +119,16 @@ describe('panneau /config', () => {
     expect(category.default_values).toEqual([{ id: '900', type: 'channel' }]);
     expect(category.min_values).toBe(0);
     expect(texts(auto)).toContain('créé automatiquement 30 min avant · catégorie <#900>');
+  });
+
+  it('rôles : @everyone (absent des sélecteurs Discord) proposé par un bouton pour la relance', () => {
+    const everyone = renderConfigSection('roles', { ...c, settings: { ...settings, nudgeRoleId: settings.guildId } }, m);
+    expect(texts(everyone)).toContain(`Relance ${m.config.everyone}`);
+    const button = flatten(everyone).find((x) => x.type === ComponentType.Button && (x.label as string) === m.config.nudgeEveryoneOff);
+    expect(button).toBeDefined();
+    // Le sélecteur de relance n'a pas @everyone comme valeur (Discord le refuserait).
+    const nudge = flatten(everyone).filter((x) => x.type === ComponentType.RoleSelect)[1]!;
+    expect(nudge.default_values ?? []).toEqual([]);
   });
 
   it('rôles : chaque sélecteur peut être vidé pour retirer le rôle', () => {

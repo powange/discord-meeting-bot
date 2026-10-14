@@ -83,7 +83,7 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
       if (s.autoVoice) return t.voiceAutoSummary(s.autoVoiceLeadMin, s.autoVoiceCategoryId);
       return s.voiceChannelId ? `<#${s.voiceChannelId}> · ${t.voiceImposed}` : `*${t.voiceFree}*`;
     case 'roles':
-      return `${t.managerRole} ${s.managerRoleIds.length ? s.managerRoleIds.map((id) => `<@&${id}>`).join(' ') : `*${t.none}*`} · ${t.nudgeRole} ${role(s.nudgeRoleId, m)}`;
+      return `${t.managerRole} ${s.managerRoleIds.length ? s.managerRoleIds.map((id) => `<@&${id}>`).join(' ') : `*${t.none}*`} · ${t.nudgeRole} ${s.nudgeRoleId === s.guildId ? t.everyone : role(s.nudgeRoleId, m)}`;
     case 'reminders':
       return s.reminderOffsetsMin.length ? s.reminderOffsetsMin.map(formatOffset).join(', ') : `*${t.none}*`;
     case 'general':
@@ -221,9 +221,13 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
         if (current.length) select.setDefaultRoles(...current);
         return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select);
       };
+      // @everyone n'est jamais proposé par les sélecteurs de Discord : bouton à part pour la relance
+      // (seuls ceux qui n'ont pas répondu sont mentionnés, un par un).
+      const everyone = s.nudgeRoleId === s.guildId;
       rows.push(
         roleSelect('roleManager', s.managerRoleIds, t.pickManager, 5),
-        roleSelect('roleNudge', s.nudgeRoleId ? [s.nudgeRoleId] : [], t.pickNudge, 1),
+        roleSelect('roleNudge', s.nudgeRoleId && !everyone ? [s.nudgeRoleId] : [], t.pickNudge, 1),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(btn('roleNudgeEveryone', everyone ? t.nudgeEveryoneOff : t.nudgeEveryoneOn, '📣')),
       );
       break;
     }

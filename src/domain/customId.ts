@@ -65,6 +65,7 @@ export const CFG_ACTIONS = [
   'voiceLead',
   'roleManager',
   'roleNudge',
+  'roleNudgeEveryone',
   'remindersEdit',
   'remindersSubmit',
   'generalEdit',

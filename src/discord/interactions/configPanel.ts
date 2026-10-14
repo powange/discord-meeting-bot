@@ -223,6 +223,12 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       await ctx.repos.updateSettings(guildId, { managerRoleIds: [...interaction.roles.keys()].slice(0, 5) });
       return show('roles', t.saved);
     }
+    case 'roleNudgeEveryone': {
+      // Le rôle @everyone a l'identifiant du serveur.
+      const settings = await ctx.settings.get(guildId);
+      await ctx.repos.updateSettings(guildId, { nudgeRoleId: settings.nudgeRoleId === guildId ? null : guildId });
+      return show('roles', t.saved);
+    }
     case 'roleNudge': {
       if (!interaction.isRoleSelectMenu()) return;
       await ctx.repos.updateSettings(guildId, { nudgeRoleId: interaction.roles.first()?.id ?? null });
