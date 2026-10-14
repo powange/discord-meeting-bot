@@ -56,6 +56,8 @@ export interface ConfigContext {
   };
   /** Forum choisi : la création de posts est-elle réservée au bot ? (undefined : forum introuvable). */
   forumPostsReserved?: boolean | undefined;
+  /** Permissions qui manquent au bot sur le forum choisi (vérifiées à chaque ouverture). */
+  forumMissing?: readonly string[];
   notice?: string | undefined;
 }
 
@@ -183,6 +185,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
   switch (section) {
     case 'forum':
       rows.push(...channelRows('forum', s.forumChannelId, t.pickForum, '#'));
+      if (c.forumMissing?.length) container.addTextDisplayComponents((x) => x.setContent(`⚠️ ${m.errors.forumPermissions(c.forumMissing!.join(', '))}`));
       if (s.forumChannelId && c.forumPostsReserved !== undefined) {
         container.addTextDisplayComponents((x) => x.setContent(c.forumPostsReserved ? t.postsReserved : t.postsOpen));
         rows.push(

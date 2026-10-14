@@ -91,6 +91,8 @@ describe('panneau /config', () => {
     expect(texts(open)).toContain(m.config.postsOpen);
     expect(ids(open)).toEqual(['forum', 'forumPosts', 'home']);
     expect(texts(renderConfigSection('forum', { ...withChannels(3), forumPostsReserved: true }, m))).toContain(m.config.postsReserved);
+    // Permission manquante (ex. bot invité avec un ancien lien) : signalée à chaque ouverture.
+    expect(texts(renderConfigSection('forum', { ...withChannels(3), forumMissing: ['ManageMessages'] }, m))).toContain(m.errors.forumPermissions('ManageMessages'));
   });
 
   it('salons homonymes : précédés de leur catégorie ; valeur actuelle présélectionnée', () => {

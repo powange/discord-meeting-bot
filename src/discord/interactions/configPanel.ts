@@ -82,13 +82,15 @@ async function context(ctx: AppContext, guildId: string, m: Messages, notice?: s
     canEditAi: userId ? ctx.owners.isOwner(userId) : false,
     refusals: await ctx.optouts.list(guildId),
     storage: await storageView(ctx, guildId),
-    forumPostsReserved: forumPostsState(ctx, guildId, settings.forumChannelId),
+    ...forumState(ctx, guildId, settings.forumChannelId),
   };
 }
 
-function forumPostsState(ctx: AppContext, guildId: string, forumId: string | null): boolean | undefined {
+/** Forum choisi : création de posts réservée ou non, et permissions qui manquent au bot. */
+function forumState(ctx: AppContext, guildId: string, forumId: string | null): Pick<ConfigContext, 'forumPostsReserved' | 'forumMissing'> {
   const forum = forumId ? ctx.client.guilds.cache.get(guildId)?.channels.cache.get(forumId) : undefined;
-  return forum?.type === ChannelType.GuildForum ? postsReserved(forum as ForumChannel) : undefined;
+  if (forum?.type !== ChannelType.GuildForum) return {};
+  return { forumPostsReserved: postsReserved(forum as ForumChannel), forumMissing: missingForumPermissions(forum as ForumChannel) };
 }
 
 async function storageView(ctx: AppContext, guildId: string): Promise<ConfigContext['storage']> {
