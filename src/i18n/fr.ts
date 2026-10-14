@@ -494,7 +494,7 @@ export const fr = {
     skipped: '⏭️',
     skippedDetail: 'désactivé (aucun modèle configuré)',
     progressExport: (files: number) => `envoi de ${files} fichier${files > 1 ? 's' : ''}`,
-    progressTranscribe: (done: number, total: number) => `${done}/${total} bloc${total > 1 ? 's' : ''}`,
+    progressTranscribe: (done: number, total: number) => `${done}/${total} prise${total > 1 ? 's' : ''} de parole`,
     progressSummarize: (pass: number, total: number) => `passe ${pass}/${total}`,
     progressSmallerChunks: (tokens: number) => `contexte du modèle trop petit : nouvel essai par morceaux de ${tokens} tokens`,
     published: (url: string) => `Compte rendu publié : ${url}`,
