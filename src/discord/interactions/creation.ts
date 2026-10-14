@@ -5,7 +5,7 @@ import type { MeetingRow } from '../../db/schema.js';
 import { encode, type DraftType } from '../../domain/customId.js';
 import type { Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
-import { inviteControls, inviteSummary, nextInviteState, type InviteState } from '../embeds/invite.js';
+import { defaultInviteState, inviteControls, inviteSummary, nextInviteState, type InviteState } from '../embeds/invite.js';
 import { roleMention } from '../notify.js';
 import type { ComponentInteraction } from './components.js';
 
@@ -39,7 +39,8 @@ export async function askInvites(
   const now = Date.now();
   for (const [id, p] of pending) if (now - p.at > TTL_MS) pending.delete(id);
   const id = randomBytes(6).toString('hex');
-  const p: Pending = { ...draft, guildId: interaction.guildId, userId: interaction.user.id, state: { roleIds: [], none: false }, at: now };
+  const nudgeRoleId = (await ctx.settings.get(interaction.guildId)).nudgeRoleId;
+  const p: Pending = { ...draft, guildId: interaction.guildId, userId: interaction.user.id, state: defaultInviteState(nudgeRoleId), at: now };
   pending.set(id, p);
   await interaction.editReply({ ...(await render(ctx, id, p)), allowedMentions: { parse: [] } });
 }
@@ -91,7 +92,7 @@ export async function handleDraft(ctx: AppContext, interaction: ComponentInterac
     try {
       const meeting = await p.create();
       pending.delete(action.draftId);
-      // « Par défaut » : rien à enregistrer, le rôle relancé de /config s'applique.
+      // Invités (le rôle relancé de /config pour « Par défaut ») mentionnés tout de suite ; « Personne » enregistré.
       if (p.state.none || p.state.roleIds.length) await ctx.meetings.inviteRoles(interaction.guild, meeting.id, p.state.roleIds, p.state.none);
       const settings = await ctx.settings.get(p.guildId);
       await interaction.editReply({ content: m.invite.created(p.kind, meeting.threadId!, inviteSummary(p.state, p.guildId, settings.nudgeRoleId, m)), components: [], allowedMentions: { parse: [] } });
@@ -102,12 +103,13 @@ export async function handleDraft(ctx: AppContext, interaction: ComponentInterac
     return;
   }
 
+  const nudgeRoleId = (await ctx.settings.get(p.guildId)).nudgeRoleId;
   if (verb === 'roles') {
     if (!interaction.isRoleSelectMenu()) return;
-    p.state = nextInviteState(p.state, p.guildId, 'roles', [...interaction.roles.keys()]);
+    p.state = nextInviteState(p.state, p.guildId, 'roles', [...interaction.roles.keys()], nudgeRoleId);
   } else {
     if (!interaction.isButton()) return;
-    p.state = nextInviteState(p.state, p.guildId, verb);
+    p.state = nextInviteState(p.state, p.guildId, verb, [], nudgeRoleId);
   }
   await interaction.update({ ...(await render(ctx, action.draftId, p)), allowedMentions: { parse: [] } });
 }

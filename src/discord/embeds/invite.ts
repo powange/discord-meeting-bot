@@ -21,20 +21,31 @@ export interface InviteIds {
   none: string;
 }
 
-export function inviteChoice(state: InviteState, guildId: string): InviteChoice {
+/**
+ * Choix correspondant à l'état. « Par défaut » : le rôle relancé de /config invité comme les autres
+ * (ou, pour une réunion d'avant cette version, aucun rôle enregistré : la relance suit /config).
+ */
+export function inviteChoice(state: InviteState, guildId: string, nudgeRoleId: string | null): InviteChoice {
   if (state.none) return 'none';
   if (state.roleIds.length === 0) return 'default';
+  if (nudgeRoleId && state.roleIds.length === 1 && state.roleIds[0] === nudgeRoleId) return 'default';
   return state.roleIds.length === 1 && state.roleIds[0] === guildId ? 'everyone' : 'roles';
+}
+
+/** État initial du choix « Qui inviter ? » : par défaut, le rôle relancé de /config s'il existe. */
+export function defaultInviteState(nudgeRoleId: string | null): InviteState {
+  return { roleIds: nudgeRoleId ? [nudgeRoleId] : [], none: false };
 }
 
 /** Choix actuel, en clair. */
 export function inviteSummary(state: InviteState, guildId: string, nudgeRoleId: string | null, m: Messages): string {
   const i = m.invite;
-  switch (inviteChoice(state, guildId)) {
+  switch (inviteChoice(state, guildId, nudgeRoleId)) {
     case 'none':
       return i.summaryNone;
     case 'default':
-      return nudgeRoleId ? i.summaryDefault(roleMention(nudgeRoleId, guildId)) : i.summaryNone;
+      if (!nudgeRoleId) return i.summaryNone;
+      return state.roleIds.length ? i.summaryDefault(roleMention(nudgeRoleId, guildId)) : i.summaryDefaultRelanceOnly(roleMention(nudgeRoleId, guildId));
     default:
       return i.summaryRoles(state.roleIds.map((id) => roleMention(id, guildId)).join(' '));
   }
@@ -46,7 +57,7 @@ export function inviteSummary(state: InviteState, guildId: string, nudgeRoleId: 
  */
 export function inviteControls(ids: InviteIds, guildId: string, state: InviteState, nudgeRoleId: string | null, m: Messages) {
   const i = m.invite;
-  const choice = inviteChoice(state, guildId);
+  const choice = inviteChoice(state, guildId, nudgeRoleId);
   const roles = state.roleIds.filter((id) => id !== guildId);
   const select = new RoleSelectMenuBuilder().setCustomId(ids.roles).setPlaceholder(i.roles).setMinValues(0).setMaxValues(5);
   if (roles.length) select.setDefaultRoles(...roles);
@@ -60,7 +71,13 @@ export function inviteControls(ids: InviteIds, guildId: string, state: InviteSta
 }
 
 /** Nouvel état après un clic : rôles choisis (Tout le monde conservé), Tout le monde basculé, Par défaut, Personne. */
-export function nextInviteState(state: InviteState, guildId: string, action: 'roles' | 'everyone' | 'default' | 'none', selected: readonly string[] = []): InviteState {
+export function nextInviteState(
+  state: InviteState,
+  guildId: string,
+  action: 'roles' | 'everyone' | 'default' | 'none',
+  selected: readonly string[] = [],
+  nudgeRoleId: string | null = null,
+): InviteState {
   const everyone = state.roleIds.includes(guildId);
   switch (action) {
     case 'roles':
@@ -68,7 +85,7 @@ export function nextInviteState(state: InviteState, guildId: string, action: 'ro
     case 'everyone':
       return { roleIds: everyone ? state.roleIds.filter((id) => id !== guildId) : [...state.roleIds, guildId], none: false };
     case 'default':
-      return { roleIds: [], none: false };
+      return defaultInviteState(nudgeRoleId);
     case 'none':
       return { roleIds: [], none: true };
   }

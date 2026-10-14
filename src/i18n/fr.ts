@@ -94,7 +94,8 @@ export const fr = {
     defaultButton: 'Par défaut',
     noneButton: 'Personne',
     summaryRoles: (roles: string) => `${roles} : mentionnés à la création, puis relancés s'ils n'ont pas répondu`,
-    summaryDefault: (role: string) => `par défaut : ${role} (rôle relancé de /config) sera relancé, sans mention à la création`,
+    summaryDefault: (role: string) => `par défaut : ${role} (rôle relancé de /config), mentionné à la création, puis relancé s'il n'a pas répondu`,
+    summaryDefaultRelanceOnly: (role: string) => `par défaut : ${role} (rôle relancé de /config) sera relancé`,
     summaryNone: 'personne : aucune mention, aucune relance',
     /** Message « Qui inviter ? » avant la création (brouillon). */
     draft: (kind: 'meeting' | 'poll', title: string, when: string, defaultRole: string | null) => {
@@ -109,7 +110,7 @@ export const fr = {
         `Les personnes invitées sont **mentionnées dès la création** de ${what} : elles reçoivent une notification${poll ? ' pour indiquer leurs disponibilités' : ' pour répondre Présent / Peut-être / Absent'}. Celles qui n'ont pas répondu sont ensuite **relancées ${relance}**.`,
         `- **Choisir des rôles** (menu ci-dessous) : les membres de ces rôles.`,
         `- **📣 Tout le monde** : tout le serveur (@everyone ; chaque membre un par un si le bot n'a pas la permission de mentionner @everyone).`,
-        ...(defaultRole ? [`- **↩️ Par défaut** : personne n'est mentionné à la création ; ${defaultRole} (rôle relancé de /config) est relancé ${relance}.`] : []),
+        ...(defaultRole ? [`- **↩️ Par défaut** : ${defaultRole}, le rôle relancé de /config.`] : []),
         `- **🚫 Personne** : aucune mention, aucune relance.${poll ? '' : ' Seuls ceux qui répondent Présent ou Peut-être recevront les rappels.'}`,
       ].join('\n');
     },

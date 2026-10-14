@@ -342,7 +342,7 @@ export async function handleAction(
       const verb = action.type.split('.')[1] as 'roles' | 'everyone' | 'default' | 'none';
       if (verb === 'roles' ? !interaction.isRoleSelectMenu() : !interaction.isButton()) return;
       const selected = interaction.isRoleSelectMenu() ? [...interaction.roles.keys()] : [];
-      const next = nextInviteState({ roleIds: meeting.targetRoleIds, none: meeting.inviteNone }, interaction.guildId, verb, selected);
+      const next = nextInviteState({ roleIds: meeting.targetRoleIds, none: meeting.inviteNone }, interaction.guildId, verb, selected, scope.settings.nudgeRoleId);
       await interaction.deferUpdate();
       await ctx.meetings.inviteRoles(interaction.guild, meeting.id, next.roleIds, next.none);
       const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;

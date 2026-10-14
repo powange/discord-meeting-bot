@@ -44,7 +44,7 @@ describe('création en deux temps : « Qui inviter ? »', () => {
     expect(s.create).not.toHaveBeenCalled();
     expect(payload.content).toContain('**mentionnées dès la création**');
     expect(payload.content).toContain('**relancées au premier rappel**');
-    expect(payload.content).toContain('**↩️ Par défaut** : personne n\'est mentionné à la création ; <@&r0>');
+    expect(payload.content).toContain('**↩️ Par défaut** : <@&r0>, le rôle relancé de /config.');
     expect(payload.content).toContain('**🚫 Personne** : aucune mention, aucune relance.');
     expect(payload.content).toContain(m.invite.current(m.invite.summaryDefault('<@&r0>')));
     expect(ids.map((id) => decode(id)?.type ?? id)).toEqual(['draft.roles', 'draft.everyone', 'draft.default', 'draft.none', 'draft.create', 'meeting.createRetry', 'draft.cancel']);
@@ -71,7 +71,7 @@ describe('création en deux temps : « Qui inviter ? »', () => {
     expect(done.components).toEqual([]);
   });
 
-  it('Personne : enregistré (aucune relance) ; Par défaut : rien à enregistrer', async () => {
+  it('Personne : enregistré (aucune relance) ; Par défaut (présélectionné) : le rôle relancé de /config, invité et mentionné', async () => {
     const none = setup({ nudgeRoleId: 'r0' });
     await none.start();
     await none.click('none');
@@ -80,7 +80,12 @@ describe('création en deux temps : « Qui inviter ? »', () => {
     const def = setup({ nudgeRoleId: 'r0' });
     await def.start();
     await def.click('create');
-    expect(def.inviteRoles).not.toHaveBeenCalled();
+    expect(def.inviteRoles).toHaveBeenCalledWith(expect.anything(), 'meet1', ['r0'], false);
+    // Sans rôle relancé dans /config, « par défaut » n'invite personne.
+    const empty = setup();
+    await empty.start();
+    await empty.click('create');
+    expect(empty.inviteRoles).not.toHaveBeenCalled();
   });
 
   it('Annuler : rien n’est créé ; brouillon inconnu ou d’une autre personne : expiré', async () => {
@@ -110,5 +115,6 @@ describe('choix des invitations', () => {
     expect(nextInviteState(s, 'g', 'roles', ['r2'])).toEqual({ roleIds: ['r2', 'g'], none: false });
     expect(nextInviteState(s, 'g', 'none')).toEqual({ roleIds: [], none: true });
     expect(nextInviteState({ roleIds: [], none: true }, 'g', 'default')).toEqual({ roleIds: [], none: false });
+    expect(nextInviteState({ roleIds: [], none: true }, 'g', 'default', [], 'r0')).toEqual({ roleIds: ['r0'], none: false });
   });
 });
