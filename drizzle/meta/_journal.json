@@ -232,6 +232,20 @@
       "when": 1792016739587,
       "tag": "0032_poll_followups",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792019012707,
+      "tag": "0033_drop_legacy_llm",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792019466265,
+      "tag": "0034_guild_left_at",
+      "breakpoints": true
     }
   ]
 }

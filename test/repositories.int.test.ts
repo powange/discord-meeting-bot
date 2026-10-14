@@ -217,12 +217,11 @@ describe.skipIf(!url)('Repositories (PostgreSQL)', () => {
 
   it('clés d’API en clair chiffrées au démarrage, une seule fois', async () => {
     await repos.getSettings('gk', { timezone: 'Europe/Paris', locale: 'fr', reminderOffsetsMin: [], defaultDurationMin: 60, autoRecordDefault: false });
-    await repos.updateSettings('gk', { llmApiKey: 'sk-clair' });
     await repos.addBackend({ guildId: 'gk', name: 'srv', type: 'openai', url: 'http://s/v1', apiKey: 'k-clair' });
     const encrypt = (v: string) => `enc:v1:test:${v}`;
-    expect(await repos.encryptPlaintextSecrets(encrypt)).toBeGreaterThanOrEqual(2);
+    expect(await repos.encryptPlaintextSecrets(encrypt)).toBeGreaterThanOrEqual(1);
     expect(await repos.encryptPlaintextSecrets(encrypt)).toBe(0);
-    expect((await repos.getSettings('gk', {} as never)).llmApiKey).toBe('enc:v1:test:sk-clair');
+    expect((await repos.listBackends('gk'))[0]!.apiKey).toBe('enc:v1:test:k-clair');
   });
 
   it('refus d’enregistrement : par serveur, idempotents', async () => {

@@ -25,7 +25,7 @@ Chaque compte rendu est copié dans `<dossier>/<date heure - titre>/` : compte r
 - Dropbox le limite à `Applications/<nom de l'application>` ;
 - OneDrive n'a pas de réglage équivalent qui marche partout : l'accès porte sur le OneDrive, le bot n'écrit que dans son dossier.
 
-Les jetons sont chiffrés avec `APP_SECRET_KEY`. Les règles de confidentialité sont sur https://meeting-recorder.powange.com/confidentialite.html.
+Les jetons sont chiffrés avec `APP_SECRET_KEY` : **sans cette variable, la connexion d'un stockage n'est pas proposée**. Déconnecter le stockage révoque l'accès chez Google et Dropbox. Les règles de confidentialité sont sur https://meeting-recorder.powange.com/confidentialite.html.
 
 ## Pour l'opérateur du bot : créer les applications OAuth
 

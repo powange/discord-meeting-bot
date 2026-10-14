@@ -42,7 +42,7 @@ services:
       # défaut (LiteLLM de la stack : http://litellm:4000/v1 ; Ollama : http://hôte:11434/v1).
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       # Avec LiteLLM : une clé virtuelle limitée au modèle « summary » (voir docs/ia.md) plutôt que la clé maîtresse.
-      LLM_API_KEY: ${LLM_API_KEY:-${LITELLM_MASTER_KEY:-}}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       # Stockages que chaque serveur Discord peut connecter (/config → Stockage) : applications OAuth
       # de l'opérateur, voir docs/stockage.md. Un service sans identifiant n'est pas proposé.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

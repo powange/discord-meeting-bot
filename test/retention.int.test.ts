@@ -60,7 +60,7 @@ describe.skipIf(!url)('Rétention (PostgreSQL + fichiers)', () => {
 
     const config = buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' }, dataDir: dir }, {});
     const report = await new RetentionService(repos, config, pino({ level: 'silent' })).purge(now);
-    expect(report).toEqual({ rawRecordings: 2, mixes: 2 }); // l'audio complet de « ouverte » a 400 j : purgé aussi (copie locale)
+    expect(report).toEqual({ rawRecordings: 2, mixes: 2, guilds: 0 }); // l'audio complet de « ouverte » a 400 j : purgé aussi (copie locale)
     expect(existsSync(abandoned.recDir)).toBe(false);
 
     expect(existsSync(old.recDir)).toBe(false);
@@ -72,6 +72,28 @@ describe.skipIf(!url)('Rétention (PostgreSQL + fichiers)', () => {
     expect(existsSync(recent.mixFile)).toBe(true);
 
     // Idempotent : une seconde purge ne fait rien.
-    expect(await new RetentionService(repos, config, pino({ level: 'silent' })).purge(now)).toEqual({ rawRecordings: 0, mixes: 0 });
+    expect(await new RetentionService(repos, config, pino({ level: 'silent' })).purge(now)).toEqual({ rawRecordings: 0, mixes: 0, guilds: 0 });
+  });
+
+  it('serveur qui a retiré le bot : tout est supprimé après 30 jours, rien avant', async () => {
+    const config = buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' }, dataDir: dir }, {});
+    const seedGuild = async (guildId: string, leftDaysAgo: number) => {
+      await repos.getSettings(guildId, { timezone: 'Europe/Paris', locale: 'fr', reminderOffsetsMin: [], defaultDurationMin: 60, autoRecordDefault: false });
+      await repos.markGuildLeft(guildId, daysAgo(leftDaysAgo));
+      const meeting = await repos.insertMeeting({ guildId, organizerId: 'o', title: guildId, startsAt: daysAgo(40), durationMin: 60, voiceChannelId: 'v' });
+      await mkdir(join(dir, 'recordings', guildId), { recursive: true });
+      await writeFile(join(dir, 'recordings', guildId, 'seg.ogg'), 'x');
+      return meeting;
+    };
+    const gone = await seedGuild('parti', 31);
+    const recent = await seedGuild('parti-hier', 1);
+
+    const report = await new RetentionService(repos, config, pino({ level: 'silent' })).purge(now);
+    expect(report.guilds).toBe(1);
+    expect(await repos.getMeeting(gone.id)).toBeUndefined();
+    expect(existsSync(join(dir, 'recordings', 'parti'))).toBe(false);
+    expect((await repos.listGuildIds()).map((g) => g.guildId)).not.toContain('parti');
+    expect(await repos.getMeeting(recent.id)).toBeDefined();
+    expect(existsSync(join(dir, 'recordings', 'parti-hier'))).toBe(true);
   });
 });

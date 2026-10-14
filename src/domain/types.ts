@@ -35,7 +35,7 @@ export const RECORDING_STATUSES = ['recording', 'stopped', 'interrupted', 'faile
 export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
 
 /** Raison de fin d'un enregistrement. */
-export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disconnected';
+export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disconnected' | 'moved';
 
 /**
  * Étapes du traitement post-réunion, dans l'ordre d'exécution. Le mix passe en premier : l'audio

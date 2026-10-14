@@ -21,13 +21,11 @@ export const stepStatus = pgEnum('step_status', STEP_STATUSES);
 /** Réglages Discord d'un serveur, modifiés via /config. */
 export const guildSettings = pgTable('guild_settings', {
   guildId: text().primaryKey(),
+  /** Bot retiré du serveur : ses données sont supprimées 30 jours après (sauf retour du bot). */
+  leftAt: timestamp({ withTimezone: true }),
   forumChannelId: text(),
   /** Post épinglé du forum : bouton « Nouvelle réunion » et liste des prochaines réunions. */
   hubThreadId: text(),
-  /** LLM des résumés réglé depuis Discord (/config → Résumé) ; null = valeurs du YAML. */
-  llmBaseUrl: text(),
-  llmModel: text(),
-  llmApiKey: text(),
   /** Résumé désactivé pour ce serveur (transcription et audio seulement). */
   llmEnabled: boolean().notNull().default(true),
   /** Salon où le bot signale les problèmes qui demandent une action (traitement en échec, disque…). */

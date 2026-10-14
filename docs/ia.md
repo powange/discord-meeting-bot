@@ -42,11 +42,11 @@ Côté machine : **LM Studio** (Context Length 16384 ; GPU Offload au maximum ; 
 
 LiteLLM répartit les appels entre plusieurs machines. Copier [config/litellm.example.yaml](../config/litellm.example.yaml) sur l'hôte (`/srv/meeting-bot/litellm.yaml`), puis ajouter `COMPOSE_PROFILES=litellm` et `LITELLM_MASTER_KEY` dans les variables de la stack. Sans LiteLLM, il suffit de régler le serveur dans `/config` → Résumé.
 
-Le bot n'a pas besoin de la clé maîtresse : créer une clé virtuelle limitée au modèle de résumé et la donner au bot dans `LLM_API_KEY` (sinon, la clé maîtresse est utilisée par défaut) :
+Le bot n'a pas besoin de la clé maîtresse, et ne la reçoit plus par défaut : créer une clé virtuelle limitée au modèle de résumé et la donner au bot dans `LLM_API_KEY` :
 
 ```bash
 curl -s http://<hôte-litellm>:4000/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H 'content-type: application/json' -d '{"models": ["summary"], "key_alias": "meeting-recorder"}'
 ```
 
-Les clés virtuelles demandent une base de données côté LiteLLM (`DATABASE_URL` dans sa configuration) ; sans elle, garder la clé maîtresse.
+Les clés virtuelles demandent une base de données côté LiteLLM (`DATABASE_URL` dans sa configuration) ; sans elle, mettre la clé maîtresse dans `LLM_API_KEY` (en connaissance de cause : elle permet d'administrer LiteLLM).

@@ -14,7 +14,7 @@ Chaque installation du bot est exploitée par une personne ou une association (�
 - **Enregistrements** : la voix des participants, uniquement pendant une réunion enregistrée et pour les personnes qui n'ont pas refusé l'enregistrement. Les personnes qui le refusent ne sont jamais enregistrées.
 - **Transcriptions et comptes rendus** produits à partir de ces enregistrements.
 - **Identifiants Discord** (identifiant et nom affiché) des participants.
-- **Accès au stockage connecté** : jetons OAuth chiffrés (AES-256-GCM), et adresse ou nom du compte connecté, affiché aux administrateurs du serveur.
+- **Accès au stockage connecté** : jetons OAuth chiffrés (AES-256-GCM, clé `APP_SECRET_KEY` de l'opérateur ; sans cette clé, la connexion d'un stockage n'est pas proposée), et adresse ou nom du compte connecté, affiché aux administrateurs du serveur.
 
 ## Utilisation des données Google (et des autres stockages)
 
@@ -37,7 +37,8 @@ Les données ne sont transmises qu'aux services choisis par l'opérateur ou par 
 ## Conservation et suppression
 
 - Les fichiers audio locaux sont supprimés automatiquement après la durée de conservation réglée par l'opérateur.
-- Un administrateur peut déconnecter le stockage à tout moment dans `/config` → Stockage : les jetons sont effacés. Les fichiers déjà copiés restent dans le stockage, où leur propriétaire peut les supprimer.
+- Un administrateur peut déconnecter le stockage à tout moment dans `/config` → Stockage : l'accès est révoqué chez Google et Dropbox (Microsoft ne le permet pas à une application : voir ci-dessous), puis les jetons sont effacés. Les fichiers déjà copiés restent dans le stockage, où leur propriétaire peut les supprimer.
+- Quand le bot est retiré d'un serveur, l'accès au stockage est révoqué aussitôt, et toutes les données du serveur (réunions, transcriptions, comptes rendus, fichiers audio, réglages) sont supprimées 30 jours plus tard, sauf si le bot y revient entre-temps.
 - L'accès peut aussi être retiré depuis le compte concerné : https://myaccount.google.com/permissions pour Google, https://account.microsoft.com/privacy/app-access pour Microsoft, et les paramètres « Applications connectées » pour Dropbox.
 
 ## Contact

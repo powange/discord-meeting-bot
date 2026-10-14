@@ -95,7 +95,7 @@ describe('repères pendant l’enregistrement', () => {
     const s = setup();
     const r = await s.run('rec.stop', 'button');
     expect(r.error).toBeNull();
-    expect(s.recordings.stop).not.toHaveBeenCalled();
+    expect(s.recordings.calls()).not.toContain('stop');
   });
 
   it('« Arrêter » alors que rien n’enregistre (bot redémarré) : message remis à jour, pas d’erreur', async () => {

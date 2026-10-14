@@ -313,6 +313,7 @@ export const fr = {
       meeting_end: 'réunion close',
       shutdown: 'redémarrage du bot',
       disconnected: 'déconnexion du vocal',
+      moved: 'bot déplacé dans un autre salon',
       crash: 'arrêt inattendu du bot',
     } as Record<string, string>,
     interrupted: "⚠️ L'enregistrement a été interrompu. Les prises de parole déjà captées sont conservées.",
@@ -766,6 +767,7 @@ export const fr = {
     storageEmoji: { google: '🟢', onedrive: '🔵', dropbox: '🔷' } as Record<string, string>,
     storageNone: 'aucun',
     storageUnavailable: "aucun service proposé (l'opérateur du bot doit les activer, voir docs/stockage.md du dépôt)",
+    storageNeedsKey: "indisponible : l'opérateur du bot doit d'abord définir APP_SECRET_KEY, pour que les accès au stockage soient chiffrés",
     storageSummary: (provider: string, account: string, folder: string) => `${provider} · ${account} · 📁 ${folder}`,
     storageStatus: (folder: string, lastOk: Date | null, lastError: string | null) =>
       [

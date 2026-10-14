@@ -22,7 +22,10 @@ owners: []
 # Noms exacts, *.domaine, IPv4 ou plages CIDR. Vérifié à l'enregistrement et à chaque appel,
 # après résolution DNS ; aucune redirection n'est suivie.
 ai:
-  allowedHosts: []
+  # Hôtes que le bot peut appeler (serveurs de transcription et de résumé), séparés par des
+  # virgules : la variable AI_ALLOWED_HOSTS de la stack reste prise en compte avec ce fichier.
+  # Vide = aucune restriction (avertissement au démarrage).
+  allowedHosts: ${AI_ALLOWED_HOSTS:-}
   # allowedHosts: ["*.tailnet.ts.net", "192.168.1.0/24", "100.64.0.0/10"]
 
 # Données locales (pistes audio). Dans Docker : /data (volume).

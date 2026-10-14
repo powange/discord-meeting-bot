@@ -1,0 +1,1 @@
+ALTER TABLE "guild_settings" ADD COLUMN "left_at" timestamp with time zone;

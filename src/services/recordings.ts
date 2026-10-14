@@ -339,7 +339,7 @@ export class RecordingService {
     await this.repos.saveCaptureStats(entry.recordingId, entry.session.captureStats()).catch((err) => this.warn(meetingId, 'Statistiques de capture non enregistrées', err));
     const endedAt = new Date();
     await this.repos.closePresence(entry.recordingId, endedAt);
-    const interrupted = reason === 'shutdown' || reason === 'disconnected';
+    const interrupted = reason === 'shutdown' || reason === 'disconnected' || reason === 'moved';
     await this.repos.updateRecording(entry.recordingId, {
       endedAt,
       status: interrupted ? 'interrupted' : 'stopped',
@@ -357,7 +357,7 @@ export class RecordingService {
       await this.syncControl(meetingId).catch((err) => this.warn(meetingId, 'Mise à jour du contrôle impossible', err));
     }
     if (!interrupted) await this.onStopped(meetingId).catch((err) => this.warn(meetingId, 'Lancement du compte rendu impossible', err));
-    if (reason === 'disconnected') await this.alertInterrupted(meetingId, reason);
+    if (reason === 'disconnected' || reason === 'moved') await this.alertInterrupted(meetingId, reason);
     return true;
   }
 
@@ -435,6 +435,12 @@ export class RecordingService {
     const entry = this.active.get(newState.guild.id);
     if (!entry) return;
     const member = newState.member ?? oldState.member;
+    // Le bot déplacé dans un autre salon (par un modérateur) y capterait des personnes qui n'ont
+    // reçu aucun avertissement : l'enregistrement s'arrête (reprise possible depuis le post).
+    if (member && member.id === this.client.user?.id && oldState.channelId === entry.channelId && newState.channelId && newState.channelId !== entry.channelId) {
+      void this.stop(entry.meetingId, 'moved').catch((err) => this.warn(entry.meetingId, 'Arrêt après déplacement impossible', err));
+      return;
+    }
     if (!member || member.user.bot) return;
     const joined = oldState.channelId !== entry.channelId && newState.channelId === entry.channelId;
     const left = oldState.channelId === entry.channelId && newState.channelId !== entry.channelId;

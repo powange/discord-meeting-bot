@@ -66,7 +66,10 @@ async function main(): Promise<void> {
     const encrypted = await repos.encryptPlaintextSecrets(encryptSecret);
     if (encrypted > 0) log.info({ count: encrypted }, 'Clés d’API chiffrées en base');
   } else {
-    log.warn('APP_SECRET_KEY absente : les clés d’API saisies dans /config sont stockées en clair');
+    log.warn('APP_SECRET_KEY absente : les clés d’API saisies dans /config sont stockées en clair, et la connexion d’un stockage est désactivée');
+  }
+  if (config.ai.allowedHosts.length === 0) {
+    log.warn('AI_ALLOWED_HOSTS vide : les propriétaires du bot peuvent faire appeler n’importe quelle adresse (serveurs d’IA) ; restreindre au réseau local ou à Tailscale est conseillé');
   }
   const settings = new SettingsService(repos, config);
   const cards = new CardService(client, repos, settings, log);
@@ -127,6 +130,18 @@ async function main(): Promise<void> {
     );
     await step('registerCommands', () => registerCommands(ready, config.discord.commandGuildIds, log));
     await step('cleanTemp', () => retention.cleanTemp());
+    // Bot retiré pendant qu'il était éteint : seulement marqué (suppression dans 30 jours). Pas de
+    // révocation ici : un bot démarré par erreur sur une autre base ne doit rien casser d'irréversible.
+    await step('leftGuilds', async () => {
+      for (const { guildId, leftAt } of await repos.listGuildIds()) {
+        if (ready.guilds.cache.has(guildId)) {
+          if (leftAt) await repos.markGuildLeft(guildId, null);
+        } else if (!leftAt) {
+          await repos.markGuildLeft(guildId, new Date());
+          log.warn({ guildId }, 'Serveur absent au démarrage : marqué quitté, données supprimées dans 30 jours sauf retour du bot');
+        }
+      }
+    });
     await step('pipelineResume', () => pipeline.resume());
     await step('hubWatchdog', () => hub.startWatchdog());
     // Une nouvelle version peut changer la carte (ex. bouton d'enregistrement) : on régénère celles
@@ -146,7 +161,18 @@ async function main(): Promise<void> {
   // Arrivée sur un nouveau serveur : la marche à suivre au propriétaire (message privé), sinon
   // dans le salon système. Sans cela, le bot arrive sans un mot et rien ne marche tant que le
   // forum n'est pas choisi.
+  // Bot retiré d'un serveur : accès au stockage révoqué tout de suite, données supprimées 30 jours
+  // plus tard (rétention) sauf s'il revient.
+  client.on(Events.GuildDelete, (guild) => {
+    if (!guild.available) return; // panne Discord, pas un départ
+    void (async () => {
+      await repos.markGuildLeft(guild.id, new Date());
+      await storage.disconnect(guild.id);
+      log.info({ guildId: guild.id }, 'Bot retiré du serveur : stockage déconnecté, données supprimées dans 30 jours');
+    })().catch((err) => log.warn({ guildId: guild.id, err }, 'Départ du serveur non enregistré'));
+  });
   client.on(Events.GuildCreate, (guild) => {
+    void repos.markGuildLeft(guild.id, null).catch(() => undefined);
     void (async () => {
       const m = await settings.messages(guild.id);
       const owner = await guild.fetchOwner().catch(() => null);

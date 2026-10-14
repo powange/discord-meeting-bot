@@ -50,6 +50,8 @@ export interface ConfigContext {
   /** Stockage du serveur : services proposés, celui connecté, connexion en cours. */
   storage?: {
     available: readonly StorageProvider[];
+    /** Services configurés mais indisponibles : APP_SECRET_KEY absente. */
+    needsSecretKey?: boolean;
     connected?: { provider: StorageProvider; account: string; folder: string; rootUrl?: string | null; lastOkAt: Date | null; lastError: string | null } | undefined;
     /** Connexion par code (Google, OneDrive) ou par lien (Dropbox) en cours. */
     pending?: { provider: StorageProvider; url: string; code?: string } | undefined;
@@ -104,7 +106,7 @@ export function sectionSummary(section: ConfigSection, c: ConfigContext, m: Mess
     case 'storage': {
       const st = c.storage;
       if (st?.connected) return t.storageSummary(t.storageProviders[st.connected.provider]!, st.connected.account, st.connected.folder);
-      return st?.available.length ? `*${t.storageNone}*` : `*${t.storageUnavailable}*`;
+      return st?.available.length ? `*${t.storageNone}*` : `*${st?.needsSecretKey ? t.storageNeedsKey : t.storageUnavailable}*`;
     }
     case 'summary': {
       const l = c.llm;
@@ -295,6 +297,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
         rows.push(row);
         break;
       }
+      if (st?.needsSecretKey) container.addTextDisplayComponents((x) => x.setContent(`⚠️ ${t.storageNeedsKey}`));
       if (st?.available.length) {
         container.addTextDisplayComponents((x) => x.setContent(t.storagePickHint));
         rows.push(
@@ -316,7 +319,7 @@ export function renderConfigSection(section: Exclude<ConfigSection, 'transcripti
       const canEdit = c.canEditAi ?? false;
       const servers = l?.servers ?? [];
       const list = servers.length
-        ? servers.map((sv, i) => `${sv.enabled ? '🟢' : '⚪'} **${i + 1}. ${sv.name}** · ${sv.model}${sv.hasKey ? ' · 🔑' : ''}${sv.thinking ? ` · 🧠 ${t.llmThinkingShort}` : ''}\n-# \`${sv.url.slice(0, 120)}\``).join('\n')
+        ? servers.map((sv, i) => `${sv.enabled ? '🟢' : '⚪'} **${i + 1}. ${sv.name}** · ${sv.model}${sv.hasKey ? ' · 🔑' : ''}${sv.thinking ? ` · 🧠 ${t.llmThinkingShort}` : ''}${canEdit ? `\n-# \`${sv.url.slice(0, 120)}\`` : ''}`).join('\n')
         : t.llmNoServer;
       container.addTextDisplayComponents((x) => x.setContent(`${list}${l?.source === 'yaml' && servers.length ? `\n-# ${t.llmFromYaml}` : ''}`));
       const listed = servers.filter((sv): sv is typeof sv & { id: number } => sv.id !== undefined);

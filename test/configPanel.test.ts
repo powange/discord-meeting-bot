@@ -8,11 +8,9 @@ import { messages } from '../src/i18n/index.js';
 const m = messages('fr');
 const settings: GuildSettingsRow = {
   guildId: 'g',
+  leftAt: null,
   forumChannelId: '111',
   alertChannelId: null,
-  llmBaseUrl: null,
-  llmModel: null,
-  llmApiKey: null,
   llmEnabled: true,
   hubThreadId: null,
   voiceChannelId: null,

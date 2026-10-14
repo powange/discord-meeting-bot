@@ -23,7 +23,7 @@
     <li><strong>Enregistrements</strong> : la voix des participants, uniquement pendant une réunion enregistrée et pour les personnes qui n'ont pas refusé l'enregistrement. Les personnes qui le refusent ne sont jamais enregistrées.</li>
     <li><strong>Transcriptions et comptes rendus</strong> produits à partir de ces enregistrements.</li>
     <li><strong>Identifiants Discord</strong> (identifiant et nom affiché) des participants.</li>
-    <li><strong>Accès au stockage connecté</strong> : jetons OAuth chiffrés (AES-256-GCM), et adresse ou nom du compte connecté, affiché aux administrateurs du serveur.</li>
+    <li><strong>Accès au stockage connecté</strong> : jetons OAuth chiffrés (AES-256-GCM, clé <code>APP_SECRET_KEY</code> de l'opérateur ; sans cette clé, la connexion d'un stockage n'est pas proposée), et adresse ou nom du compte connecté, affiché aux administrateurs du serveur.</li>
   </ul>
   <h2>Utilisation des données Google (et des autres stockages)</h2>
   <p>Lorsqu'un administrateur connecte un Google Drive, le bot demande uniquement la portée <code>https://www.googleapis.com/auth/drive.file</code>. Il ne peut donc voir et modifier <strong>que les fichiers et dossiers qu'il a lui-même créés</strong>. Il n'a pas accès aux autres fichiers du Drive.</p>
@@ -40,7 +40,8 @@
   <h2>Conservation et suppression</h2>
   <ul>
     <li>Les fichiers audio locaux sont supprimés automatiquement après la durée de conservation réglée par l'opérateur.</li>
-    <li>Un administrateur peut déconnecter le stockage à tout moment dans <code>/config</code> → Stockage : les jetons sont effacés. Les fichiers déjà copiés restent dans le stockage, où leur propriétaire peut les supprimer.</li>
+    <li>Un administrateur peut déconnecter le stockage à tout moment dans <code>/config</code> → Stockage : l'accès est révoqué chez Google et Dropbox (Microsoft ne le permet pas à une application : voir ci-dessous), puis les jetons sont effacés. Les fichiers déjà copiés restent dans le stockage, où leur propriétaire peut les supprimer.</li>
+    <li>Quand le bot est retiré d'un serveur, l'accès au stockage est révoqué aussitôt, et toutes les données du serveur (réunions, transcriptions, comptes rendus, fichiers audio, réglages) sont supprimées 30 jours plus tard, sauf si le bot y revient entre-temps.</li>
     <li>L'accès peut aussi être retiré depuis le compte concerné : <a href="https://myaccount.google.com/permissions">https://myaccount.google.com/permissions</a> pour Google, <a href="https://account.microsoft.com/privacy/app-access">https://account.microsoft.com/privacy/app-access</a> pour Microsoft, et les paramètres « Applications connectées » pour Dropbox.</li>
   </ul>
   <h2>Contact</h2>

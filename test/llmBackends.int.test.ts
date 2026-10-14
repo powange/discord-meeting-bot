@@ -54,15 +54,4 @@ describe.skipIf(!url)('Serveurs de résumé (PostgreSQL)', () => {
       ['eteint', 1],
     ]);
   });
-
-  it('migration : le serveur réglé avant (un seul) devient « principal », premier de la liste', async () => {
-    const settings = await new SettingsService(repos, config).get('g3');
-    await repos.updateSettings(settings.guildId, { llmBaseUrl: 'http://ancien:1234/v1', llmModel: 'qwen2.5', llmApiKey: 'enc:v1:x' });
-    const sql = await readFile(new URL('../drizzle/0021_llm_backends.sql', import.meta.url), 'utf8');
-    const insert = sql.split('--> statement-breakpoint').find((part) => part.includes('INSERT INTO'))!;
-    await ctx.pool.query(`${insert.trim()} AND "guild_id" = 'g3'`.replace(';', ''));
-    expect((await repos.listLlmBackends('g3')).map((r) => [r.name, r.url, r.model, r.apiKey, r.position, r.enabled])).toEqual([
-      ['principal', 'http://ancien:1234/v1', 'qwen2.5', 'enc:v1:x', 0, true],
-    ]);
-  });
 });

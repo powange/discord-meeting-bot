@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { AppConfig } from '../config/index.js';
 import type { StorageProvider } from '../domain/storage.js';
-import { requestJson, StorageHttpError } from './http.js';
+import { request, requestJson, StorageHttpError } from './http.js';
 import type { Tokens } from './types.js';
 
 /**
@@ -113,6 +113,25 @@ export class OAuthApps {
       attempts: 1,
     });
     return toTokens(r);
+  }
+
+  /**
+   * Accès retiré chez le fournisseur (déconnexion depuis /config) : le jeton de renouvellement ne
+   * sert plus, même s'il traîne dans une sauvegarde. Google et Dropbox seulement ; Microsoft n'a
+   * pas de révocation pour une application publique (accès retiré par l'utilisateur sur son
+   * compte). Renvoie false si rien n'a été révoqué.
+   */
+  async revoke(provider: StorageProvider, tokens: Tokens): Promise<boolean> {
+    if (provider === 'google') {
+      await request('https://oauth2.googleapis.com/revoke', { method: 'POST', body: form({ token: tokens.refreshToken }), attempts: 1 });
+      return true;
+    }
+    if (provider === 'dropbox') {
+      const access = tokens.expiresAt - 60_000 > Date.now() ? tokens.accessToken : (await this.refresh(provider, tokens.refreshToken)).accessToken;
+      await request('https://api.dropboxapi.com/2/auth/token/revoke', { method: 'POST', headers: { Authorization: `Bearer ${access}` }, attempts: 1 });
+      return true;
+    }
+    return false;
   }
 
   /** Nouveau jeton d'accès (Microsoft renvoie aussi un nouveau jeton de renouvellement). */

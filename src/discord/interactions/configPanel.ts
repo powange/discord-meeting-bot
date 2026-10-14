@@ -37,6 +37,11 @@ type Section = Exclude<ConfigSection, 'transcription'>;
 /** `/config` : ouvre le panneau de configuration (message éphémère). */
 export async function openConfigPanel(ctx: AppContext, interaction: ChatInputCommandInteraction<'cached'>): Promise<void> {
   const m = await ctx.settings.messages(interaction.guildId);
+  // Même contrôle que les actions : la permission par défaut de la commande peut être élargie
+  // par un admin (Intégrations), le panneau montrerait alors refus d'enregistrement et stockage.
+  if (!ctx.owners.isOwner(interaction.user.id) && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    throw new UserError(m.backendPanel.forbidden);
+  }
   await interaction.reply({
     components: [renderConfigHome(await context(ctx, interaction.guildId, m, undefined, interaction.user.id), m)],
     flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2,
@@ -103,6 +108,7 @@ async function storageView(ctx: AppContext, guildId: string): Promise<ConfigCont
   const row = await ctx.storage.get(guildId);
   return {
     available: ctx.storage.available(),
+    needsSecretKey: ctx.storage.blockedBySecretKey(),
     connected: row ? { provider: row.provider, account: row.account, folder: row.folder, rootUrl: row.rootUrl, lastOkAt: row.lastOkAt, lastError: row.lastError } : undefined,
   };
 }

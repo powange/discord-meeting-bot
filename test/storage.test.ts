@@ -277,8 +277,33 @@ describe('StorageService', () => {
     return { service, repos, client, tokens, row: () => row };
   }
 
+  it('déconnexion : accès révoqué chez Google, puis jetons supprimés ; un échec de révocation n’empêche pas la déconnexion', async () => {
+    const calls = fakeFetch(() => ({ status: 200 }));
+    const ok = setup({ expiresAt: Date.now() + 3_600_000 });
+    await ok.service.disconnect('g');
+    expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([['POST', 'https://oauth2.googleapis.com/revoke', 'token=r']]);
+    expect(ok.row()).toBeUndefined();
+
+    fakeFetch(() => ({ status: 500 }));
+    const ko = setup({ expiresAt: Date.now() + 3_600_000 });
+    await ko.service.disconnect('g');
+    expect(ko.row()).toBeUndefined();
+  });
+
   it('services proposés selon la configuration de l’opérateur', () => {
     expect(setup().service.available()).toEqual(['google', 'dropbox']);
+    expect(setup().service.blockedBySecretKey()).toBe(false);
+  });
+
+  it('sans APP_SECRET_KEY : aucun service proposé (jetons en clair sinon), et le panneau dit pourquoi', () => {
+    const { service } = setup(); // setup() règle la clé : on la retire ensuite
+    configureSecrets(undefined);
+    try {
+      expect(service.available()).toEqual([]);
+      expect(service.blockedBySecretKey()).toBe(true);
+    } finally {
+      configureSecrets('secret');
+    }
   });
 
   it('jeton expiré : renouvelé avant l’envoi et réenregistré chiffré ; copie réussie notée', async () => {

@@ -63,17 +63,40 @@ export class Repositories {
     return created!;
   }
 
+  /** Bot retiré du serveur (ou revenu : null). */
+  async markGuildLeft(guildId: string, at: Date | null): Promise<void> {
+    await this.db.update(guildSettings).set({ leftAt: at }).where(eq(guildSettings.guildId, guildId));
+  }
+
+  /** Serveurs connus en base (réglages créés). */
+  async listGuildIds(): Promise<Array<{ guildId: string; leftAt: Date | null }>> {
+    return this.db.select({ guildId: guildSettings.guildId, leftAt: guildSettings.leftAt }).from(guildSettings);
+  }
+
+  async listGuildsLeftBefore(before: Date): Promise<string[]> {
+    const rows = await this.db.select({ guildId: guildSettings.guildId }).from(guildSettings).where(lt(guildSettings.leftAt, before));
+    return rows.map((r) => r.guildId);
+  }
+
+  /**
+   * Toutes les données d'un serveur quitté : réunions (et en cascade enregistrements,
+   * transcriptions, résumés, réponses, échéances…), refus d'enregistrement, serveurs d'IA,
+   * stockage, réglages. Les fichiers sont supprimés par l'appelant.
+   */
+  async purgeGuild(guildId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx.delete(meetings).where(eq(meetings.guildId, guildId));
+      await tx.delete(recordingOptouts).where(eq(recordingOptouts.guildId, guildId));
+      await tx.delete(llmBackends).where(eq(llmBackends.guildId, guildId));
+      await tx.delete(transcriptionBackends).where(eq(transcriptionBackends.guildId, guildId));
+      await tx.delete(guildStorage).where(eq(guildStorage.guildId, guildId));
+      await tx.delete(guildSettings).where(eq(guildSettings.guildId, guildId));
+    });
+  }
+
   /** Chiffre les clés d'API encore stockées en clair (APP_SECRET_KEY ajoutée après coup). Renvoie leur nombre. */
   async encryptPlaintextSecrets(encrypt: (plain: string) => string): Promise<number> {
     let count = 0;
-    const settings = await this.db
-      .select({ guildId: guildSettings.guildId, key: guildSettings.llmApiKey })
-      .from(guildSettings)
-      .where(and(isNotNull(guildSettings.llmApiKey), sql`${guildSettings.llmApiKey} not like 'enc:%'`));
-    for (const row of settings) {
-      await this.db.update(guildSettings).set({ llmApiKey: encrypt(row.key!) }).where(eq(guildSettings.guildId, row.guildId));
-      count++;
-    }
     const llms = await this.db
       .select({ id: llmBackends.id, key: llmBackends.apiKey })
       .from(llmBackends)

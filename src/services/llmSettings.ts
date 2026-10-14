@@ -14,22 +14,14 @@ export interface EffectiveLlm {
   config: LlmConfig;
 }
 
-/** LLM des résumés d'un serveur : réglage Discord s'il existe, sinon YAML ; désactivable. */
+/**
+ * LLM des résumés du fichier de configuration (YAML), utilisé quand /config → Résumé n'a aucun
+ * serveur ; désactivable par serveur. L'ancien réglage unique de /config (colonnes llm_* de
+ * guild_settings, repris dans la liste par la migration 0021) a été supprimé (migration 0033) :
+ * il revenait en silence quand on retirait le dernier serveur de la liste.
+ */
 export function effectiveLlm(settings: GuildSettingsRow, config: AppConfig): EffectiveLlm {
-  const yaml = config.guild(settings.guildId).llm;
-  // Le modèle se règle indépendamment de l'adresse : choisir un modèle ne recopie pas en base
-  // l'adresse ni la clé du fichier de configuration.
-  const model = settings.llmModel ?? yaml.model;
-  if (settings.llmBaseUrl) {
-    const { apiKey: _ignored, ...rest } = yaml;
-    const apiKey = decryptSecret(settings.llmApiKey);
-    return {
-      source: 'discord',
-      enabled: settings.llmEnabled,
-      config: { ...rest, baseUrl: settings.llmBaseUrl, model, ...(apiKey ? { apiKey } : {}) },
-    };
-  }
-  return { source: settings.llmModel ? 'discord' : 'yaml', enabled: settings.llmEnabled, config: { ...yaml, model } };
+  return { source: 'yaml', enabled: settings.llmEnabled, config: config.guild(settings.guildId).llm };
 }
 
 export interface LlmServer {

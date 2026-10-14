@@ -4,7 +4,7 @@ import type { GuildStorageRow } from '../db/schema.js';
 import { rootFolderName, type StorageProvider } from '../domain/storage.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
-import { decryptSecret, encryptSecret } from '../lib/secrets.js';
+import { decryptSecret, encryptSecret, secretsEnabled } from '../lib/secrets.js';
 import { Dropbox } from '../storage/dropbox.js';
 import { GoogleDrive } from '../storage/google.js';
 import { OAuthApps, OAuthDenied, type DevicePoll, type DeviceStart } from '../storage/oauth.js';
@@ -57,8 +57,17 @@ export class StorageService {
     this.apps = new OAuthApps(config.storage);
   }
 
+  /**
+   * Services proposés. Sans APP_SECRET_KEY, aucun : les jetons de renouvellement (accès durable
+   * au Drive) seraient stockés en clair, dans la base comme dans les sauvegardes.
+   */
   available(): StorageProvider[] {
-    return this.apps.available();
+    return secretsEnabled() ? this.apps.available() : [];
+  }
+
+  /** Services configurés par l'opérateur mais bloqués faute d'APP_SECRET_KEY. */
+  blockedBySecretKey(): boolean {
+    return !secretsEnabled() && this.apps.available().length > 0;
   }
 
   get(guildId: string): Promise<GuildStorageRow | undefined> {
@@ -182,8 +191,17 @@ export class StorageService {
     return folder;
   }
 
+  /** Déconnexion : accès révoqué chez le fournisseur (au mieux), puis jetons supprimés. */
   async disconnect(guildId: string): Promise<void> {
     this.cancel(guildId);
+    const row = await this.repos.getStorage(guildId);
+    const plain = row ? decryptSecret(row.credentials) : null;
+    if (row && plain) {
+      await this.apps
+        .revoke(row.provider, JSON.parse(plain) as Tokens)
+        .then((revoked) => revoked && this.log.info({ guildId, provider: row.provider }, 'Accès au stockage révoqué'))
+        .catch((err) => this.log.warn({ guildId, provider: row.provider, err: errorMessage(err) }, 'Révocation de l’accès au stockage impossible'));
+    }
     await this.repos.removeStorage(guildId);
   }
 

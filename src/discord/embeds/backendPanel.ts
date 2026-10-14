@@ -46,7 +46,7 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
   if (rows.length === 0) {
     const fallback = state.yamlFallback ?? [];
     container.addTextDisplayComponents((t) =>
-      t.setContent(fallback.length ? [p.fromYaml, ...fallback.map((b, i) => `🟢 **${i + 1}. ${b.name}** · ${b.type} · \`${b.url}\``)].join('\n') : p.empty),
+      t.setContent(fallback.length ? [p.fromYaml, ...fallback.map((b, i) => `🟢 **${i + 1}. ${b.name}** · ${b.type}${canEdit ? ` · \`${b.url}\`` : ''}`)].join('\n') : p.empty),
     );
   }
 
@@ -54,7 +54,8 @@ export function renderBackendPanel(rows: readonly TranscriptionBackendRow[], sta
     const notice = state.notices?.get(r.id);
     const text = [
       `${r.enabled ? '🟢' : '⚪'} **${i + 1}. ${truncate(r.name, 40)}** · ${r.type}${r.enabled ? '' : ` · *${p.disabled}*`}`,
-      `-# \`${truncate(r.url, 120)}\`${r.type === 'openai' ? ` · ${truncate(r.model, 60)}` : ''}${r.apiKey ? ` · ${p.withKey}` : ''}`,
+      // Adresses internes (réseau local, Tailscale) : montrées aux seuls propriétaires du bot.
+      `-# ${canEdit ? `\`${truncate(r.url, 120)}\`` : r.type}${r.type === 'openai' ? ` · ${truncate(r.model, 60)}` : ''}${r.apiKey ? ` · ${p.withKey}` : ''}`,
       ...(notice ? [notice] : []),
     ].join('\n');
     container.addSectionComponents((s) =>

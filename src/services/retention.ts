@@ -10,7 +10,11 @@ import type { Logger } from '../lib/logger.js';
 export interface PurgeReport {
   rawRecordings: number;
   mixes: number;
+  guilds: number;
 }
+
+/** Délai avant la suppression des données d'un serveur qui a retiré le bot (retour possible d'ici là). */
+export const LEFT_GUILD_DAYS = 30;
 
 /**
  * Rétention des fichiers locaux : purge quotidienne des pistes brutes et des audios complets
@@ -44,7 +48,7 @@ export class RetentionService {
   }
 
   async purge(now = new Date()): Promise<PurgeReport> {
-    const report: PurgeReport = { rawRecordings: 0, mixes: 0 };
+    const report: PurgeReport = { rawRecordings: 0, mixes: 0, guilds: 0 };
 
     const raw = (await this.repos.listRawPurgeCandidates()).map((r) => ({ ...r, days: this.config.guild(r.guildId).retention.rawTracksDays }));
     const toPurge = new Set(rawTracksToPurge(raw, now));
@@ -99,7 +103,19 @@ export class RetentionService {
       }
     }
 
-    if (report.rawRecordings || report.mixes) this.log.info(report, 'Rétention : fichiers purgés');
+    // Serveurs qui ont retiré le bot depuis plus de LEFT_GUILD_DAYS : tout est supprimé.
+    for (const guildId of await this.repos.listGuildsLeftBefore(new Date(now.getTime() - LEFT_GUILD_DAYS * 86_400_000))) {
+      try {
+        for (const dir of ['recordings', 'meetings']) await rm(join(this.config.dataDir, dir, guildId), { recursive: true, force: true });
+        await this.repos.purgeGuild(guildId);
+        report.guilds++;
+        this.log.info({ guildId }, 'Serveur quitté depuis plus de 30 jours : données supprimées');
+      } catch (err) {
+        this.log.warn({ guildId, err: errorMessage(err) }, 'Suppression des données d’un serveur quitté impossible');
+      }
+    }
+
+    if (report.rawRecordings || report.mixes || report.guilds) this.log.info(report, 'Rétention : données purgées');
     return report;
   }
 

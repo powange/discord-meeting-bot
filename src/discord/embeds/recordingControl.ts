@@ -32,7 +32,7 @@ export type ControlState =
 export const OFF_AGENDA = 'off';
 
 /** Raisons d'arrêt qui sont des interruptions (une reprise est attendue). */
-export const INTERRUPTIONS: readonly string[] = ['shutdown', 'disconnected', 'crash'];
+export const INTERRUPTIONS: readonly string[] = ['shutdown', 'disconnected', 'crash', 'moved'];
 
 /** Couleurs : en cours (rouge), suivi (bleu), arrêté (vert), interrompu (orange), passé (gris). */
 const COLORS = { rec: Accent.danger, live: Accent.brand, stopped: Accent.brand, interrupted: Accent.warning, past: Accent.muted } as const;

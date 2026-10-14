@@ -227,3 +227,22 @@ describe('premier enregistrement : la réunion commence par le point 1', () => {
     expect(resumed.added).toEqual([]);
   });
 });
+
+describe('bot déplacé pendant l’enregistrement', () => {
+  it('déplacé dans un autre salon : enregistrement arrêté (raison « déplacé ») ; autres mouvements ignorés', () => {
+    const svc = service();
+    const internals = svc as unknown as { client: { user?: { id: string } }; active: Map<string, unknown> };
+    internals.client.user = { id: 'bot' };
+    internals.active.set('g', { meetingId: 'm1', guildId: 'g', channelId: 'v' });
+    const stop = vi.spyOn(svc, 'stop').mockResolvedValue(true);
+    const state = (channelId: string | null, id = 'bot') => ({ channelId, guild: { id: 'g' }, member: { id, user: { bot: id === 'bot' } } }) as never;
+
+    svc.onVoiceStateUpdate(state('v'), state('ailleurs'));
+    expect(stop).toHaveBeenCalledWith('m1', 'moved');
+
+    stop.mockClear();
+    svc.onVoiceStateUpdate(state('v'), state(null)); // déconnexion : gérée par la connexion vocale
+    svc.onVoiceStateUpdate(state('autre'), state('ailleurs', 'bot2')); // un autre bot
+    expect(stop).not.toHaveBeenCalled();
+  });
+});
