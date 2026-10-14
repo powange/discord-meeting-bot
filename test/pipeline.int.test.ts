@@ -9,6 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildConfig } from '../src/config/index.js';
 import { freshDatabase } from './helpers/db.js';
 import { createDb, runMigrations, type Db } from '../src/db/client.js';
+import { pipelineSteps } from '../src/db/schema.js';
+import { and, eq } from 'drizzle-orm';
 import { Repositories } from '../src/db/repositories.js';
 import { PipelineService, type StepFn } from '../src/pipeline/runner.js';
 import { createSteps } from '../src/pipeline/steps.js';
@@ -477,6 +479,24 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(alerts).toEqual(['pipeline:export']);
     expect((await repos.listPipeline(meeting.id)).find((r) => r.step === 'export')?.status).toBe('failed');
     await repos.updateStep(meeting.id, 'export', { status: 'done' }); // pas de reprise dans les tests suivants
+  }, 30_000);
+
+  it('correction ou régénération : le nouveau compte rendu est aussi recopié vers le stockage, même pour une réunion d’avant le stockage', async () => {
+    const meeting = await seedMeeting();
+    const calls: string[] = [];
+    const fake = (name: string): StepFn => async (ctx) => {
+      if (ctx.meeting.id === meeting.id) calls.push(name);
+      return {};
+    };
+    const engine = new PipelineService(deps(), { mix: fake('mix'), transcribe: fake('transcribe'), summarize: fake('summarize'), publish: fake('publish'), export: fake('export') });
+    await engine.schedule(meeting.id);
+    await waitIdle(engine, meeting.id);
+    // Réunion traitée avant l'étape de copie : sa ligne n'existe pas encore.
+    await db.delete(pipelineSteps).where(and(eq(pipelineSteps.meetingId, meeting.id), eq(pipelineSteps.step, 'export')));
+    calls.length = 0;
+    await engine.regenerate(meeting.id, false, '555'); // ce que font « Corriger » et « Régénérer »
+    await waitIdle(engine, meeting.id);
+    expect(calls).toEqual(['summarize', 'publish', 'export']);
   }, 30_000);
 
   it('moteur : échec → relance de l’étape seulement ; reprise après arrêt', async () => {
