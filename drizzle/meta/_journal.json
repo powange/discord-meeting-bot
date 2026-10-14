@@ -176,6 +176,13 @@
       "when": 1791935069694,
       "tag": "0024_storage_root",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791952999699,
+      "tag": "0025_meeting_markers",
+      "breakpoints": true
     }
   ]
 }

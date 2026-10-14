@@ -43,6 +43,8 @@ const RULES = `Règles :
 - Tout autre sujet (digression, autre projet, sujet évoqué en passant) est un sujet distinct hors ordre du jour (agendaItemId null), avec un titre court que tu rédiges et ses propres décisions et actions. Ne le fusionne jamais dans un point de l'ordre du jour, même s'il a été évoqué juste après ou par les mêmes personnes.
 - Un point de l'ordre du jour non abordé n'apparaît pas.
 - Une décision est un choix acté par le groupe ; une action est une tâche confiée (who = nom exact d'un participant, ou null).
+- Lignes « ▶️ Point N de l'ordre du jour » : repères posés en direct par l'animateur au moment où la réunion passe à ce point (« Fin de l'ordre du jour » : la suite est hors ordre du jour). Sers-t'en pour rattacher les échanges au bon point, sans en faire un sujet.
+- Lignes « 📝 … notée en direct » : décisions, actions et remarques saisies pendant la réunion par un participant. Reprends chaque décision et chaque action notée (avec son responsable) dans le sujet correspondant, même si la transcription ne la reprend pas mot pour mot.
 - Listes vides si rien de tel n'a été dit.`;
 
 /** Consignes de l'organisateur, placées dans le prompt système (prioritaires). */

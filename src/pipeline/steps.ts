@@ -8,7 +8,8 @@ import { summarizeMeeting } from '../ai/llm/summarize.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
 import { TranscriptionPool } from '../ai/transcription/pool.js';
 import type { MeetingRow } from '../db/schema.js';
-import { renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput } from '../discord/embeds/report.js';
+import { renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput, type TranscriptEntry } from '../discord/embeds/report.js';
+import { interleave, markerText, pointDurations } from '../domain/markers.js';
 import { ensureUnarchived } from '../discord/forum.js';
 import { fetchThread } from '../discord/threads.js';
 import { meetingFolderName } from '../domain/storage.js';
@@ -322,7 +323,11 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
       vocabulary: settings.vocabulary,
       corrections,
     },
-    lines.map((l) => formatLine(l, settings.timezone)),
+    // Repères pris en direct (point en cours, notes) insérés à leur heure dans la transcription.
+    interleave(
+      lines.map((l) => ({ at: l.startAt, value: formatLine(l, settings.timezone) })),
+      (await repos.listMarkers(meeting.id)).map((mk) => ({ at: mk.at, value: `[${formatClock(mk.at, settings.timezone)}] ${markerText(mk, agenda)}` })),
+    ),
     cfg.chunkTokens,
     (pass, total) => ctx.progress(m.pipeline.progressSummarize(pass, total)),
     ctx.signal,
@@ -357,11 +362,14 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
   const summaryDisabled = summarizeStep?.output?.skipped === true;
   // Date de la réunion dans le fuseau du serveur (une réunion à 1 h du matin n'est pas datée de la veille).
   const day = formatWhen(meeting.startsAt, settings.timezone, settings.locale, 'yyyy-MM-dd');
+  const agendaRows = (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title }));
+  const markers = await repos.listMarkers(meeting.id);
   const input: ReportInput = {
     title: meeting.title,
     subtitle,
-    agenda: (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title })),
+    agenda: agendaRows,
     summary: summary.content,
+    durations: pointDurations(markers, new Date(Math.max(...recordings.map((r) => (r.endedAt ?? r.startedAt).getTime())))),
     participants: [...names].map(([id, name]) => ({ id, name })),
     people,
     trace: summaryDisabled
@@ -372,7 +380,10 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
   const markdown = renderTranscriptMarkdown(
     meeting.title,
     subtitle,
-    lines.map((l) => ({ time: formatClock(l.startAt, settings.timezone), name: l.name, text: l.text })),
+    interleave<TranscriptEntry>(
+      lines.map((l) => ({ at: l.startAt, value: { time: formatClock(l.startAt, settings.timezone), name: l.name, text: l.text } })),
+      markers.map((mk) => ({ at: mk.at, value: { time: formatClock(mk.at, settings.timezone), marker: markerText(mk, agendaRows) } })),
+    ),
   );
   return { summary, people, input, markdown, transcriptFile: `transcription-${day}.md`, reportFile: `compte-rendu-${day}.md` };
 }

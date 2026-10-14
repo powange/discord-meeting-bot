@@ -24,4 +24,38 @@ describe('renderRecordingControl', () => {
     expect(c.content).toBe(m.control.closed);
     expect(c.components).toEqual([]);
   });
+
+  describe('pendant l’enregistrement : repères en direct', () => {
+    const since = new Date('2026-10-15T16:00:00Z');
+    const agenda = [
+      { id: 10, title: 'Budget' },
+      { id: 11, title: 'Fête' },
+    ];
+    const ids = (c: ReturnType<typeof renderRecordingControl>) =>
+      c.components.flatMap((row) => row.components as unknown[]).map((x) => decode((x as { custom_id: string }).custom_id)?.type);
+    const labels = (c: ReturnType<typeof renderRecordingControl>) => c.components.flatMap((row) => row.components as unknown[]).map((x) => (x as { label?: string }).label);
+
+    it('aucun repère : invitation à poser le premier, « Point suivant : 1. Budget », note et choix direct', () => {
+      const c = renderRecordingControl({ id, status: 'live' }, since, m, { agenda, markers: [] });
+      expect(c.content).toContain(m.control.noPointYet);
+      expect(ids(c)).toEqual(['rec.stop', 'rec.next', 'rec.note', 'rec.goto']);
+      expect(labels(c)).toContain('Point suivant : 1. Budget');
+    });
+
+    it('point en cours affiché, notes comptées ; au dernier point, le suivant est la fin de l’ordre du jour', () => {
+      const markers = [
+        { kind: 'agenda' as const, at: since, agendaItemId: 11, text: '', who: null },
+        { kind: 'decision' as const, at: since, agendaItemId: null, text: 'ok', who: null },
+      ];
+      const c = renderRecordingControl({ id, status: 'live' }, since, m, { agenda, markers });
+      expect(c.content).toContain('▶️ Point en cours : **2. Fête**');
+      expect(c.content).toContain('📝 1 note prise en direct');
+      expect(labels(c)).toContain('Point suivant : fin de l’ordre du jour');
+    });
+
+    it('sans ordre du jour : seulement la note ; enregistrement arrêté : rien de tout ça', () => {
+      expect(ids(renderRecordingControl({ id, status: 'live' }, since, m, { agenda: [], markers: [] }))).toEqual(['rec.stop', 'rec.note']);
+      expect(ids(renderRecordingControl({ id, status: 'live' }, null, m, { agenda, markers: [] }))).toEqual(['rec.start']);
+    });
+  });
 });

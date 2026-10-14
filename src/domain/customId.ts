@@ -41,6 +41,10 @@ export type Action =
   | { type: 'cfg'; action: CfgAction; arg?: string }
   | { type: 'rec.start'; meetingId: string }
   | { type: 'rec.stop'; meetingId: string }
+  | { type: 'rec.next'; meetingId: string }
+  | { type: 'rec.goto'; meetingId: string }
+  | { type: 'rec.note'; meetingId: string }
+  | { type: 'rec.noteSubmit'; meetingId: string }
   | { type: 'meeting.create' }
   | { type: 'meeting.createSubmit' }
   | { type: 'meeting.createRetry' };
@@ -254,6 +258,10 @@ export function decode(customId: string): Action | null {
     if (rest.length !== 2) return null;
     if (verb === 'start') return { type: 'rec.start', meetingId };
     if (verb === 'stop') return { type: 'rec.stop', meetingId };
+    if (verb === 'next') return { type: 'rec.next', meetingId };
+    if (verb === 'goto') return { type: 'rec.goto', meetingId };
+    if (verb === 'note') return { type: 'rec.note', meetingId };
+    if (verb === 'noteSubmit') return { type: 'rec.noteSubmit', meetingId };
     return null;
   }
 

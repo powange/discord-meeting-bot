@@ -5,6 +5,7 @@ import {
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
   type ButtonInteraction,
@@ -15,12 +16,14 @@ import {
 import type { AppContext } from '../../context.js';
 import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX, canEditItem, checkAddItem, moveItem } from '../../domain/agenda.js';
 import { encode, type Action } from '../../domain/customId.js';
+import { NOTE_KINDS, nextPoint, type NoteKind } from '../../domain/markers.js';
 import { canReschedule, isOpen } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
 import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
+import { OFF_AGENDA } from '../embeds/recordingControl.js';
 import { fetchForum } from '../threads.js';
 import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingDraft, readMeetingModal, type MeetingDraft } from '../modals.js';
 import { renderMeetingManager } from '../embeds/meetingManager.js';
@@ -240,6 +243,69 @@ export async function handleAction(
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const stopped = await ctx.recordings.stop(meeting.id, 'manual');
       await replyEphemeral(interaction, stopped ? m.recording.stopped_reply : m.errors.notRecording);
+      return;
+    }
+
+    // ---------------------------------------------------------------- repères en direct
+
+    case 'rec.next':
+    case 'rec.goto': {
+      // Passage au point suivant (ou au point choisi) : réservé à l'animateur (organisateur, gestionnaire).
+      if (action.type === 'rec.next' ? !interaction.isButton() : !interaction.isStringSelectMenu()) return;
+      requireManager(scope);
+      if (!(await ctx.repos.getActiveRecording(meeting.id))) throw new UserError(m.control.notRecording);
+      const agenda = await ctx.repos.listAgenda(meeting.id);
+      let target: number | null;
+      if (interaction.isStringSelectMenu()) {
+        const value = interaction.values[0] ?? '';
+        target = value === OFF_AGENDA ? null : (agenda.find((a) => String(a.id) === value)?.id ?? null);
+      } else {
+        target = nextPoint(agenda, await ctx.repos.listMarkers(meeting.id));
+      }
+      await ctx.repos.addMarker({ meetingId: meeting.id, kind: 'agenda', at: new Date(), agendaItemId: target, authorId: interaction.user.id });
+      const index = agenda.findIndex((a) => a.id === target);
+      await replyEphemeral(interaction, m.control.pointSet(index >= 0 ? `${index + 1}. ${agenda[index]!.title}` : m.control.offAgendaOption));
+      await ctx.recordings.syncControl(meeting.id);
+      return;
+    }
+
+    case 'rec.note': {
+      if (!interaction.isButton()) return;
+      if (!(await ctx.repos.getActiveRecording(meeting.id))) throw new UserError(m.control.notRecording);
+      const c = m.control;
+      const kind = new StringSelectMenuBuilder()
+        .setCustomId('kind')
+        .addOptions(NOTE_KINDS.map((k) => ({ label: c.noteKinds[k]!, value: k, default: k === 'note' })));
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(encode({ type: 'rec.noteSubmit', meetingId: meeting.id }))
+          .setTitle(c.noteModal)
+          .addLabelComponents(
+            new LabelBuilder().setLabel(c.noteKind).setStringSelectMenuComponent(kind),
+            new LabelBuilder().setLabel(c.noteText).setTextInputComponent(new TextInputBuilder().setCustomId('text').setStyle(TextInputStyle.Paragraph).setMaxLength(500).setRequired(true)),
+            new LabelBuilder().setLabel(c.noteWho).setTextInputComponent(new TextInputBuilder().setCustomId('who').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(false)),
+          ),
+      );
+      return;
+    }
+
+    case 'rec.noteSubmit': {
+      if (!interaction.isModalSubmit()) return;
+      // Horodatée à l'envoi du formulaire. Une note arrivée juste après l'arrêt est gardée : elle
+      // tombe à la fin de la transcription.
+      const value = interaction.fields.getStringSelectValues('kind')[0];
+      const kind: NoteKind = NOTE_KINDS.includes(value as NoteKind) ? (value as NoteKind) : 'note';
+      const who = interaction.fields.getTextInputValue('who').trim();
+      await ctx.repos.addMarker({
+        meetingId: meeting.id,
+        kind,
+        at: new Date(),
+        text: interaction.fields.getTextInputValue('text').trim(),
+        who: kind === 'action' && who ? who : null,
+        authorId: interaction.user.id,
+      });
+      await replyEphemeral(interaction, m.control.noteSaved);
+      await ctx.recordings.syncControl(meeting.id);
       return;
     }
 

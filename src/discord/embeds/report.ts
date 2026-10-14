@@ -13,6 +13,8 @@ export interface ReportInput {
   subtitle: string;
   agenda: ReadonlyArray<{ id: number; title: string }>;
   summary: MeetingSummary;
+  /** Temps passé sur chaque point d'ordre du jour (repères « Point suivant »), par id. */
+  durations?: ReadonlyMap<number, number>;
   /** Personnes présentes dans le vocal pendant l'enregistrement (ordre d'arrivée). */
   participants?: ReadonlyArray<{ id: string; name: string }>;
   /** Nom → id Discord, pour transformer les responsables d'actions en mentions. */
@@ -49,7 +51,10 @@ export function resolvePerson(name: string, people: ReadonlyMap<string, string>)
 
 function topicSection(topic: Topic, index: number, input: ReportInput, m: Messages): string {
   const r = m.report;
-  const lines = [`### ${index}. ${truncate(topic.title, 200)}${topic.agendaItemId === null ? ` *(${r.offAgenda})*` : ''}`];
+  const spent = topic.agendaItemId === null ? undefined : input.durations?.get(topic.agendaItemId);
+  const lines = [
+    `### ${index}. ${truncate(topic.title, 200)}${topic.agendaItemId === null ? ` *(${r.offAgenda})*` : ''}${spent && spent >= 60_000 ? ` · ⏱️ ${m.format.duration(spent)}` : ''}`,
+  ];
   if (topic.summary) lines.push(topic.summary);
   if (topic.decisions.length) lines.push(`**${r.decisions}**`, ...topic.decisions.map((d) => `- ✅ ${d}`));
   if (topic.actions.length) {
@@ -158,9 +163,18 @@ export function renderReport(input: ReportInput, m: Messages): APIContainerCompo
   });
 }
 
+/** Ligne de la transcription : une réplique, ou un repère pris en direct (point en cours, note). */
+export type TranscriptEntry = { time: string; name: string; text: string } | { time: string; marker: string };
+
 /** Transcription complète en Markdown (pièce jointe). */
-export function renderTranscriptMarkdown(title: string, subtitle: string, lines: ReadonlyArray<{ time: string; name: string; text: string }>): string {
-  return [`# Transcription — ${title}`, '', `*${subtitle}*`, '', ...lines.map((l) => `**[${l.time}] ${l.name}** : ${l.text}\n`)].join('\n');
+export function renderTranscriptMarkdown(title: string, subtitle: string, lines: readonly TranscriptEntry[]): string {
+  return [
+    `# Transcription — ${title}`,
+    '',
+    `*${subtitle}*`,
+    '',
+    ...lines.map((l) => ('marker' in l ? `> **[${l.time}] ${l.marker}**\n` : `**[${l.time}] ${l.name}** : ${l.text}\n`)),
+  ].join('\n');
 }
 
 /**

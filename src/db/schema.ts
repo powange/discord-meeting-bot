@@ -128,6 +128,31 @@ export const agendaItems = pgTable(
   (t) => [index().on(t.meetingId, t.position)],
 );
 
+/**
+ * Repères pris en direct pendant l'enregistrement : passage d'un point d'ordre du jour au suivant
+ * (« ▶️ Point suivant ») et notes (décision, action, remarque). Transmis au résumé, et horodatés
+ * comme la transcription.
+ */
+export const meetingMarkers = pgTable(
+  'meeting_markers',
+  {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    meetingId: uuid()
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    kind: text({ enum: ['agenda', 'decision', 'action', 'note'] }).notNull(),
+    at: tz().notNull(),
+    /** Point commencé (repère « agenda ») ; null : fin de l'ordre du jour, hors ODJ. */
+    agendaItemId: integer().references(() => agendaItems.id, { onDelete: 'set null' }),
+    text: text().notNull().default(''),
+    /** Responsable d'une action, tel que saisi. */
+    who: text(),
+    authorId: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.meetingId, t.at)],
+);
+
 /** Créneaux proposés par un sondage de date. */
 export const dateSlots = pgTable(
   'date_slots',
@@ -415,6 +440,7 @@ export type RecordingRow = typeof recordings.$inferSelect;
 export type CaptureStatsRow = typeof captureStats.$inferSelect;
 export type TranscriptionBackendRow = typeof transcriptionBackends.$inferSelect;
 export type GuildStorageRow = typeof guildStorage.$inferSelect;
+export type MeetingMarkerRow = typeof meetingMarkers.$inferSelect;
 export type PipelineStepRow = typeof pipelineSteps.$inferSelect;
 export type TranscriptionBlockRow = typeof transcriptionBlocks.$inferSelect;
 export type TranscriptSegmentRow = typeof transcriptSegments.$inferSelect;

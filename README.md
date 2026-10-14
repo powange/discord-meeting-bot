@@ -5,7 +5,7 @@ Bot Discord **auto-hébergé** qui accompagne les réunions d'une association, d
 ## Ce que fait le bot
 
 - **Organiser les réunions** dans un salon forum : bouton « Nouvelle réunion », sondage de date en grille (façon Framadate), réponses Présent / Peut-être / Absent, ordre du jour participatif, rappels, événement Discord et salon vocal créé automatiquement si besoin.
-- **Enregistrer le vocal**, chaque participant sur sa propre piste, avec l'accord de chacun : ceux qui refusent ne sont jamais enregistrés. L'enregistrement peut démarrer tout seul à l'heure prévue.
+- **Enregistrer le vocal**, chaque participant sur sa propre piste, avec l'accord de chacun : ceux qui refusent ne sont jamais enregistrés. L'enregistrement peut démarrer tout seul à l'heure prévue. Pendant la réunion, l'animateur marque le passage d'un point à l'autre (▶️ Point suivant) et chacun peut noter une décision ou une action en direct.
 - **Rédiger le compte rendu** : audio complet publié dans le post, transcription (Whisper, via Vibe), puis résumé par point d'ordre du jour avec décisions, actions et responsables, liste des présents. Le compte rendu se corrige ou se régénère d'un clic.
 - **Copier le compte rendu** dans le Google Drive, le OneDrive ou le Dropbox du serveur, un dossier par réunion.
 - **Tout se règle depuis Discord** avec une seule commande, `/config`, et des boutons.

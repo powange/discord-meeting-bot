@@ -148,7 +148,10 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await steps.transcribe(ctx);
     expect(hits.speaches).toBe(before);
 
+    // Note prise en direct entre les deux répliques : transmise au résumé à sa place.
+    await repos.addMarker({ meetingId: meeting.id, kind: 'decision', at: new Date('2026-10-15T16:00:05Z'), text: 'Budget adopté', authorId: 'alice' });
     await steps.summarize(ctx);
+    expect(llmPrompts.at(-1)).toContain('[18:00:00] Alice : Bonjour à tous.\n[18:00:05] 📝 Décision notée en direct : Budget adopté\n[18:00:10] Bob');
     const summary = await repos.getSummary(meeting.id);
     expect(summary).toMatchObject({ content: { overview: 'Salutations.' }, passes: 1, llmDeployments: ['qwen3 (ollama-pc1)'], transcriptionBackends: ['speaches (large-v3)'] });
     expect(llmPrompts.at(-1)).toContain('[18:00:00] Alice : Bonjour à tous.');

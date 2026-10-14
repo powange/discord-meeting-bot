@@ -146,6 +146,21 @@ describe('présents dans le vocal', () => {
   });
 });
 
+describe('repères en direct dans le compte rendu', () => {
+  it('temps passé par point (à partir d’une minute), pas pour les sujets hors ODJ', () => {
+    const t = texts(renderReport({ ...base, durations: new Map([[1, 12 * 60_000], [2, 30_000]]) }, m)[0]!);
+    expect(t).toContain('Budget · ⏱️ 12 min');
+    expect(t).not.toMatch(/Fête · ⏱️/);
+  });
+  it('transcription : repères en citation, à leur place', () => {
+    const md = renderTranscriptMarkdown('Bureau', 'x', [
+      { time: '18:00:00', marker: "▶️ Point 1 de l'ordre du jour : Budget" },
+      { time: '18:00:05', name: 'Alice', text: 'Bonjour.' },
+    ]);
+    expect(md).toContain("> **[18:00:00] ▶️ Point 1 de l'ordre du jour : Budget**\n\n**[18:00:05] Alice** : Bonjour.");
+  });
+});
+
 describe('renderReportMarkdown', () => {
   it('fichier lisible hors Discord : titre, sujets dans l’ordre, responsables par leur nom, sans lien ni mention', () => {
     const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x' }, m);

@@ -21,6 +21,7 @@ import {
   recordings,
   guildSettings,
   guildStorage,
+  meetingMarkers,
   meetings,
   rsvps,
   scheduledJobs,
@@ -35,6 +36,7 @@ import {
   type RecordingRow,
   type GuildSettingsRow,
   type GuildStorageRow,
+  type MeetingMarkerRow,
   type DateSlotRow,
   type LlmBackendRow,
   type MeetingRow,
@@ -620,6 +622,17 @@ export class Repositories {
   }
 
   // ---------------------------------------------------------------- serveurs de transcription
+
+  // ---------------------------------------------------------------- repères en direct
+
+  async addMarker(values: Omit<typeof meetingMarkers.$inferInsert, 'id' | 'createdAt'>): Promise<MeetingMarkerRow> {
+    const [row] = await this.db.insert(meetingMarkers).values(values).returning();
+    return row!;
+  }
+
+  async listMarkers(meetingId: string): Promise<MeetingMarkerRow[]> {
+    return this.db.select().from(meetingMarkers).where(eq(meetingMarkers.meetingId, meetingId)).orderBy(asc(meetingMarkers.at), asc(meetingMarkers.id));
+  }
 
   // ---------------------------------------------------------------- stockage du serveur
 

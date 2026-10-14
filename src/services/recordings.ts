@@ -450,7 +450,11 @@ export class RecordingService {
     if (!meeting?.threadId) return;
     const recording = await this.repos.getActiveRecording(meetingId);
     const m = await this.settings.messages(meeting.guildId);
-    const payload = renderRecordingControl(meeting, recording?.startedAt ?? null, m);
+    // Pendant l'enregistrement : point en cours et notes prises en direct.
+    const live = recording
+      ? { agenda: (await this.repos.listAgenda(meetingId)).map((a) => ({ id: a.id, title: a.title })), markers: await this.repos.listMarkers(meetingId) }
+      : undefined;
+    const payload = renderRecordingControl(meeting, recording?.startedAt ?? null, m, live);
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!thread) return;
 
