@@ -66,3 +66,61 @@ export function whisperPrompt(parts: {
   }
   return prompt.slice(0, PROMPT_MAX) || undefined;
 }
+
+export interface Replacement {
+  wrong: string;
+  right: string;
+}
+
+const QUOTES = /^[«"“'‘\s]+|[»"”'’\s.!]+$/gu;
+const QUOTED = /^\s*[«"“].*[»"”][\s.!]*$/u;
+const NEGATION = /^(.+?)(?:\s*,\s*(?:et non|et pas|mais pas|pas|non)|\s+(?:et non|et pas|non pas|mais pas|au lieu de|plutôt que))\s+(.+)$/iu;
+const LEAD = /^(?:c['’]est|il s['’]agit de|il faut écrire|on écrit|écrire|écrit)\s+/iu;
+
+/** Ressemblance de 0 à 1 (distance d'édition rapportée à la longueur). */
+function similarity(a: string, b: string): number {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  let prev = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= y.length; j++) cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (x[i - 1] === y[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return 1 - prev[y.length]! / Math.max(x.length, y.length, 1);
+}
+
+/**
+ * Remplacements sûrs tirés des consignes de la forme « Pol et non Paul », « "cors des vents" et
+ * pas "corps des vents" » : quelques mots de chaque côté, proches l'un de l'autre (faute
+ * d'orthographe ou de transcription) ou cités tous les deux. Le reste (« on vote demain et pas
+ * aujourd'hui ») est laissé au modèle. La dernière consigne sur un même terme l'emporte.
+ */
+export function correctionReplacements(corrections: readonly string[]): Replacement[] {
+  const byWrong = new Map<string, Replacement>();
+  const short = (s: string) => s.length >= 2 && s.length <= 60 && s.split(/\s+/).length <= 5 && !/[,;:?]/.test(s);
+  for (const correction of corrections) {
+    const match = NEGATION.exec(correction.trim());
+    if (!match) continue;
+    const left = match[1]!.replace(LEAD, '');
+    const right = left.replace(QUOTES, '').trim();
+    const wrong = match[2]!.replace(QUOTES, '').trim();
+    if (!short(right) || !short(wrong) || right.toLowerCase() === wrong.toLowerCase()) continue;
+    // Faute d'orthographe ou de transcription (termes proches), ou termes cités tous les deux.
+    if (similarity(right, wrong) < 0.5 && !(QUOTED.test(left) && QUOTED.test(match[2]!))) continue;
+    byWrong.set(wrong.toLowerCase(), { wrong, right });
+  }
+  return [...byWrong.values()];
+}
+
+/** Applique les remplacements (mots entiers, casse ignorée ; majuscule initiale conservée). */
+export function applyReplacements(text: string, replacements: readonly Replacement[]): string {
+  let out = text;
+  for (const { wrong, right } of [...replacements].sort((a, b) => b.wrong.length - a.wrong.length)) {
+    const pattern = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'giu'), (found) =>
+      /^\p{Lu}/u.test(found) && /^\p{Ll}/u.test(right) ? right[0]!.toUpperCase() + right.slice(1) : right,
+    );
+  }
+  return out;
+}

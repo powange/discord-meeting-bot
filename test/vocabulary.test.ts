@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correctionTerms, parseVocabulary, PROMPT_MAX, whisperPrompt } from '../src/domain/vocabulary.js';
+import { applyReplacements, correctionReplacements, correctionTerms, parseVocabulary, PROMPT_MAX, whisperPrompt } from '../src/domain/vocabulary.js';
 
 describe('vocabulaire du serveur', () => {
   it('virgules, points-virgules ou retours à la ligne ; doublons et vides retirés', () => {
@@ -35,5 +35,26 @@ describe('prompt Whisper', () => {
     expect(prompt.endsWith(',')).toBe(false);
     expect(prompt.split(', ').every((t) => /^terme-numero-\d+$/.test(t))).toBe(true);
     expect(whisperPrompt({ vocabulary: [], corrections: [], names: [], agenda: [] })).toBeUndefined();
+  });
+});
+
+describe('remplacements tirés des consignes de correction', () => {
+  it('« X et non Y », guillemets, virgule ; la dernière consigne sur un terme l’emporte', () => {
+    const r = correctionReplacements(['cor des vents et non corps des vents', '"cors des vents" et pas "corps des vents"', 'Pol, pas Paul', "c'est Kévin et non Kevin"]);
+    expect(r).toEqual([
+      { wrong: 'corps des vents', right: 'cors des vents' },
+      { wrong: 'Paul', right: 'Pol' },
+      { wrong: 'Kevin', right: 'Kévin' },
+    ]);
+  });
+
+  it('consignes libres ou termes sans rapport : laissées au modèle', () => {
+    expect(correctionReplacements(['on vote demain et pas aujourd’hui', 'la décision était de reporter à janvier et non de tout annuler', 'il ne faut pas reporter', 'Marie et non Julie'])).toEqual([]);
+    expect(correctionReplacements(['« Marie » et non « Julie »'])).toEqual([{ wrong: 'Julie', right: 'Marie' }]);
+  });
+
+  it('mots entiers, casse ignorée, majuscule initiale conservée', () => {
+    const r = correctionReplacements(['cors des vents et non corps des vents', 'Pol et non Paul']);
+    expect(applyReplacements('Corps des vents : deux corps  des vents ? Paul et Paulette, paul.', r)).toBe('Cors des vents : deux cors des vents ? Pol et Paulette, Pol.');
   });
 });

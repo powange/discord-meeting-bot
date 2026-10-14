@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { chunkLines, estimateTokens } from '../../domain/transcript.js';
+import { applyReplacements, correctionReplacements } from '../../domain/vocabulary.js';
 import type { ChatMessage } from './client.js';
 import type { JsonLlm } from './failover.js';
 import { meetingSummarySchema, type MeetingSummary, type Topic } from './schema.js';
@@ -101,7 +102,12 @@ export async function summarizeMeeting(
     content: `Tu rédiges le compte rendu d'une réunion à partir de sa transcription.\n${RULES}${correctionsBlock(ctx.corrections)}\n\n${FORMAT}`,
   };
 
-  const chunks = chunkLines(lines, chunkTokens);
+  // Consignes « Pol et non Paul » : appliquées par le bot, dans la transcription envoyée et dans
+  // le résumé obtenu ; un petit modèle ne les suit pas toujours, surtout sur plusieurs passes.
+  const replacements = correctionReplacements(ctx.corrections ?? []);
+  const fix = (text: string) => applyReplacements(text, replacements);
+  const finish = (summary: MeetingSummary) => sanitize(replacements.length ? fixStrings(summary, fix) : summary, ctx);
+  const chunks = chunkLines(replacements.length ? lines.map(fix) : lines, chunkTokens);
   // Passes : une par morceau, puis les fusions (estimées pour l'affichage).
   const estimatedTotal = chunks.length === 1 ? 1 : chunks.length + Math.max(1, Math.ceil(chunks.length / 4));
   let pass = 0;
@@ -109,7 +115,7 @@ export async function summarizeMeeting(
   if (chunks.length === 1) {
     onProgress(++pass, estimatedTotal);
     const summary = await run([system, { role: 'user', content: `${contextBlock(ctx)}\n\nTranscription :\n${chunks[0]!.join('\n')}` }]);
-    return { summary: sanitize(summary, ctx), passes: pass, models: [...models] };
+    return { summary: finish(summary), passes: pass, models: [...models] };
   }
 
   // Passe « map » : notes partielles par morceau, gardées au fur et à mesure (reprise).
@@ -166,7 +172,7 @@ export async function summarizeMeeting(
     }
     partials = merged;
   }
-  return { summary: sanitize(partials[0]!, ctx), passes: pass, models: [...models] };
+  return { summary: finish(partials[0]!), passes: pass, models: [...models] };
 }
 
 /**
@@ -176,6 +182,14 @@ export async function summarizeMeeting(
  * dont le titre est celui du point y sont fusionnés, les autres sont des sujets distincts, hors ODJ
  * (un modèle range volontiers une digression dans le point voisin). Les sujets vides sont retirés.
  */
+/** Toutes les chaînes du résumé passées par `fix` (titres, synthèses, décisions, actions…). */
+function fixStrings<T>(value: T, fix: (text: string) => string): T {
+  if (typeof value === 'string') return fix(value) as T;
+  if (Array.isArray(value)) return value.map((v) => fixStrings(v, fix)) as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fixStrings(v, fix)])) as T;
+  return value;
+}
+
 export function sanitize(summary: MeetingSummary, ctx: SummaryContext): MeetingSummary {
   const titleOf = new Map(ctx.agenda.map((a) => [a.id, normalizeTitle(a.title)]));
   const sameTitle = (topicTitle: string, agendaId: number): boolean => {
@@ -212,7 +226,23 @@ export function sanitize(summary: MeetingSummary, ctx: SummaryContext): MeetingS
       topics.push({ ...t, agendaItemId: null });
     }
   }
-  return { overview: summary.overview, topics };
+  return { overview: summary.overview, topics: topics.map(dedupe) };
+}
+
+/**
+ * Doublons retirés (fusion des passes : la même action vue dans deux extraits) : même texte à
+ * la casse, aux accents et à la ponctuation près. Une action en double garde le responsable et
+ * l'échéance de l'une ou l'autre.
+ */
+function dedupe(topic: Topic): Topic {
+  const unique = (items: readonly string[]) => items.filter((item, i) => items.findIndex((other) => normalizeTitle(other) === normalizeTitle(item)) === i);
+  const actions = new Map<string, Topic['actions'][number]>();
+  for (const a of topic.actions) {
+    const key = normalizeTitle(a.what);
+    const seen = actions.get(key);
+    actions.set(key, seen ? { ...seen, who: seen.who || a.who, when: seen.when || a.when } : a);
+  }
+  return { ...topic, decisions: unique(topic.decisions), actions: [...actions.values()], openQuestions: unique(topic.openQuestions) };
 }
 
 /** « L'Apothicaire ! » → « l apothicaire » : casse, accents et ponctuation ignorés. */

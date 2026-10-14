@@ -129,6 +129,22 @@ describe('summarizeMeeting', () => {
     expect(r.models).toEqual(['qwen3:14b (ollama-pc1)']);
   });
 
+  it('doublons de la fusion retirés (casse et ponctuation ignorées), responsable gardé', async () => {
+    const t = { ...topic(1, 'Budget', ['Budget voté', 'budget voté.']), openQuestions: ['Quand ?', 'Quand ?'], actions: [{ what: 'Vérifier la longueur', who: null, when: null }, { what: 'Vérifier la longueur', who: 'Alice', when: null }] };
+    reply = () => JSON.stringify({ overview: '', topics: [t] });
+    const r = await summarizeMeeting(llm(), ctx, ['[18:00:00] Alice : On vote le budget.'], 6000);
+    expect(r.summary.topics[0]).toMatchObject({ decisions: ['Budget voté'], openQuestions: ['Quand ?'], actions: [{ what: 'Vérifier la longueur', who: 'Alice' }] });
+  });
+
+  it('consignes « X et non Y » appliquées par le bot : transcription envoyée et résumé obtenu', async () => {
+    const before = requests.length;
+    reply = () => JSON.stringify({ overview: 'Le corps des vents', topics: [topic(1, 'Budget', ['Deux corps des vents'])] });
+    const r = await summarizeMeeting(llm(), { ...ctx, corrections: ['"cors des vents" et pas "corps des vents"'] }, ['[18:00:00] Alice : Le corps des vents.'], 6000);
+    expect(requests[before]!.body.messages.at(-1)!.content).toContain('Alice : Le cors des vents.');
+    expect(r.summary.overview).toBe('Le cors des vents');
+    expect(r.summary.topics[0]!.decisions).toEqual(['Deux cors des vents']);
+  });
+
   it('réunion longue : passes par morceau puis fusion', async () => {
     const before = requests.length;
     reply = (body) => {
