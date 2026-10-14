@@ -212,7 +212,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     const meeting = await ctx.meetings.createPoll(interaction.guild, interaction.user.id, { title, description, voiceChannelId, slots: parsed.slots, closesAt });
     drafts.delete(interaction.user.id);
     // Le formulaire est plein (5 éléments au plus) : les rôles à inviter se choisissent ici.
-    await interaction.editReply({ content: p.created(meeting.threadId!), components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
+    await interaction.editReply({ content: `${p.created(meeting.threadId!)}\n${m.invite.defaultNudge(settings.nudgeRoleId, interaction.guildId, true)}`, components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
   } catch (err) {
     if (err instanceof UserError) return fail(err.message);
     throw err;

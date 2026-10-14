@@ -438,7 +438,7 @@ export async function handleAction(
         { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
         input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
       );
-      await interaction.editReply({ content: `${m.replies.duplicated(copy.threadId!)}\n${m.invite.afterCreate}`, components: inviteRows(copy.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
+      await interaction.editReply({ content: `${m.replies.duplicated(copy.threadId!)}\n${m.invite.afterCreate}\n${m.invite.defaultNudge(scope.settings.nudgeRoleId, interaction.guildId, false)}`, components: inviteRows(copy.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
       return;
     }
 
@@ -563,7 +563,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     });
     const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
     // Rôles à inviter : choisis juste après (le formulaire de création est plein).
-    await interaction.editReply({ content: m.invite.meetingCreated(meeting.threadId!), components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
+    await interaction.editReply({ content: `${m.invite.meetingCreated(meeting.threadId!)}\n${m.invite.defaultNudge(settings.nudgeRoleId, interaction.guildId, false)}`, components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
   });
 }
 

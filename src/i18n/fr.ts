@@ -92,6 +92,11 @@ export const fr = {
     everyoneOn: 'Inviter tout le monde (@everyone)',
     everyoneOff: 'Ne plus inviter tout le monde',
     meeting: (roles: string) => `📣 ${roles} : vous êtes invités à cette réunion. Indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte ci-dessus).`,
+    /** Ce qui s'applique si aucun rôle n'est invité. */
+    defaultNudge: (roleId: string | null, guildId: string, poll: boolean) =>
+      roleId
+        ? `-# Sans choix ici : ${roleId === guildId ? 'tout le monde (@everyone)' : `<@&${roleId}>`} (rôle relancé de /config) sera relancé ${poll ? 'la veille de la fin des réponses' : 'au premier rappel'}, sans être mentionné maintenant.`
+        : '-# Sans choix ici : personne n\'est relancé (aucun rôle relancé dans /config → Rôles).',
     afterCreate: "📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.",
     meetingCreated: (threadId: string) =>
       `Réunion créée : <#${threadId}>\n📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.`,

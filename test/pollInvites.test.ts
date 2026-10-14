@@ -97,4 +97,11 @@ describe('rôles invités à répondre à un sondage', () => {
     const closed = setup({ mentionable: true, status: 'ended' });
     await expect(closed.service.inviteRoles(closed.guild as never, 'm1', ['r1'])).rejects.toThrow(m.errors.meetingClosed);
   });
+
+  it('confirmation de création : ce qui s’applique sans rôle invité', () => {
+    expect(m.invite.defaultNudge('r9', 'g', true)).toBe('-# Sans choix ici : <@&r9> (rôle relancé de /config) sera relancé la veille de la fin des réponses, sans être mentionné maintenant.');
+    expect(m.invite.defaultNudge('g', 'g', false)).toContain('tout le monde (@everyone)');
+    expect(m.invite.defaultNudge('g', 'g', false)).toContain('au premier rappel');
+    expect(m.invite.defaultNudge(null, 'g', false)).toContain("personne n'est relancé");
+  });
 });
