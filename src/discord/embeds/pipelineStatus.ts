@@ -18,7 +18,7 @@ export interface StepView {
  * Message de suivi du traitement : une ligne par étape, bouton « Relancer » en cas d'échec,
  * « Réessayer … maintenant » pendant l'attente d'une relance automatique de l'étape `waiting`.
  */
-export function renderPipelineStatus(meetingId: string, steps: readonly StepView[], m: Messages, publishedUrl?: string, waiting: PipelineStep | null = null): APIContainerComponent {
+export function renderPipelineStatus(meetingId: string, steps: readonly StepView[], m: Messages, publishedUrl?: string, waiting: PipelineStep | null = null, queued = false): APIContainerComponent {
   const p = m.pipeline;
   const failed = steps.some((s) => s.status === 'failed');
   const allDone = steps.length > 0 && steps.every((s) => s.status === 'done');
@@ -33,6 +33,7 @@ export function renderPipelineStatus(meetingId: string, steps: readonly StepView
     .setAccentColor(failed ? Accent.danger : allDone ? Accent.live : Accent.pending)
     .addTextDisplayComponents((t) => t.setContent(`${p.title}\n${lines.join('\n')}`));
   if (allDone && publishedUrl) container.addTextDisplayComponents((t) => t.setContent(`-# ${p.published(publishedUrl)}`));
+  if (queued) container.addTextDisplayComponents((t) => t.setContent(`-# ${p.queued}`));
   if (failed) {
     container.addTextDisplayComponents((t) => t.setContent(`-# ${p.failedHint}`));
     container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>

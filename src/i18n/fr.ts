@@ -541,6 +541,7 @@ export const fr = {
       `${cause} — nouvelle tentative automatique dans ${seconds ? '30 s' : `${minutes} min`} (${attempt}/${max})`,
     failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut réessayer : seules les étapes en échec sont refaites.",
     retry: 'Réessayer',
+    queued: '⏳ En attente : un autre compte rendu est en cours de préparation, celui-ci suivra.',
     retryNow: (step: string) =>
       `Réessayer ${({ transcribe: 'la transcription', summarize: 'le résumé', export: 'la copie vers le stockage' } as Record<string, string>)[step] ?? ''} maintenant`.replace('  ', ' '),
     retriedNow: 'Nouvelle tentative lancée.',

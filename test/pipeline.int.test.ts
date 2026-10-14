@@ -605,7 +605,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
   }, 30_000);
 
-  it('moteur : audio complet et transcription en parallèle ; un échec du mix laisse finir la transcription', async () => {
+  it('moteur : audio complet et transcription en parallèle ; un échec du mix ne bloque pas le compte rendu, republié avec l’audio ensuite', async () => {
     const meeting = await seedMeeting();
     const calls: string[] = [];
     let mixFails = true;
@@ -636,22 +636,23 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
 
     await engine.schedule(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls.sort()).toEqual(['mix', 'transcribe']);
+    expect([...calls].sort()).toEqual(['export', 'mix', 'publish', 'summarize', 'transcribe']);
     const rows = await repos.listPipeline(meeting.id);
     expect(rows.map((r) => [r.step, r.status])).toEqual([
       ['mix', 'failed'],
       ['transcribe', 'done'],
-      ['summarize', 'pending'],
-      ['publish', 'pending'],
-      ['export', 'pending'],
+      ['summarize', 'done'],
+      ['publish', 'done'],
+      ['export', 'done'],
     ]);
 
-    // Relancer : seul le mix est refait, puis la suite.
+    // Réessayer : le mix est refait, puis le compte rendu republié (avec l'audio) ; pas de nouveau résumé.
     calls.length = 0;
     mixFails = false;
     await engine.retry(meeting.id);
     await waitIdle(engine, meeting.id);
-    expect(calls).toEqual(['mix', 'summarize', 'publish', 'export']);
+    expect(calls).toEqual(['mix', 'publish', 'export']);
+    expect((await repos.listPipeline(meeting.id)).every((r) => r.status === 'done')).toBe(true);
   }, 30_000);
 
   it('moteur : « Relancer » pendant que l’autre étape parallèle tourne : reprise à la fin', async () => {

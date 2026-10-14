@@ -51,6 +51,8 @@ export function waves<T extends { step: PipelineStep }>(rows: readonly T[]): T[]
   return [...(parallel.length ? [parallel] : []), ...rest.map((r) => [r])];
 }
 
+type StepOutcome = 'done' | 'failed' | 'stop';
+
 interface RunContext {
   meeting: MeetingRow;
   settings: GuildSettingsRow;
@@ -241,6 +243,16 @@ export class PipelineService {
       this.enqueuing.delete(meetingId);
     }
     this.pump();
+    // Pas de place tout de suite (traitement d'un autre serveur en cours) : le suivi le dit, au
+    // lieu de rester muet parfois longtemps.
+    if (!this.running.has(meetingId) && this.isQueued(meetingId)) await this.showQueued(meetingId).catch(() => undefined);
+  }
+
+  private async showQueued(meetingId: string): Promise<void> {
+    const meeting = await this.deps.repos.getMeeting(meetingId);
+    if (!meeting?.threadId) return;
+    const m = messages((await this.deps.settings.get(meeting.guildId)).locale);
+    await new StatusMessage(this.deps, meeting, m, () => null, true).update(new Map());
   }
 
   /** Lance des traitements tant qu'il reste de la place et un serveur en attente. */
@@ -296,18 +308,34 @@ export class PipelineService {
     // Audio complet et transcription en même temps (la transcription repart des pistes de chaque
     // personne, pas du mix) ; la suite attend les deux. Une étape arrêtée (échec, relance
     // automatique, arrêt du bot) n'interrompt pas l'autre, mais le traitement s'arrête ensuite.
-    const rows = (await repos.listPipeline(meetingId)).filter((r) => r.status !== 'done');
-    for (const wave of waves(rows)) {
+    const all = await repos.listPipeline(meetingId);
+    const published = all.some((r) => r.step === 'publish' && r.status === 'done');
+    let mixRedone = false;
+    const run = { meeting, settings, m, details, status, plog };
+    for (const wave of waves(all.filter((r) => r.status !== 'done'))) {
       if (this.stopping) return;
-      const outcomes = await Promise.all(wave.map((row) => this.runStep(row, { meeting, settings, m, details, status, plog })));
-      if (outcomes.includes(false)) {
+      const outcomes = await Promise.all(wave.map((row) => this.runStep(row, run)));
+      // L'audio complet en échec ne bloque pas le compte rendu : résumé et publication suivent
+      // sans audio ; « Réessayer » refait le mix, puis republie pour l'ajouter.
+      const blocked = wave.some((row, i) => outcomes[i] !== 'done' && !(row.step === 'mix' && outcomes[i] === 'failed'));
+      if (blocked) {
         await status.update(details); // état final des étapes de la vague (l'autre a pu finir après)
         return;
       }
+      if (wave.some((row, i) => row.step === 'mix' && outcomes[i] === 'done')) mixRedone = true;
       // Nouvelle session arrivée entre-temps : tout sera refait, inutile de résumer et publier l'ancienne.
       if (this.refreshAfterRun.has(meetingId)) return;
     }
+    // Audio complet refait après une publication sans lui : le compte rendu est republié avec.
+    if (mixRedone && published) {
+      await repos.resetSteps(meetingId, ['publish', 'export']);
+      for (const row of (await repos.listPipeline(meetingId)).filter((r) => r.step === 'publish' || r.step === 'export')) {
+        if ((await this.runStep(row, run)) !== 'done') return;
+      }
+    }
     await status.update(details);
+    // Étape encore en échec (audio complet) : l'avis reste, et le mix sans perte est gardé.
+    if ((await repos.listPipeline(meetingId)).some((r) => r.status === 'failed')) return;
     this.autoRetries.delete(meetingId);
     await this.clearFailureNotice(meetingId).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis d’échec non retiré'));
     // Réunion close : plus de nouvelle session possible, le mix sans perte ne sert plus.
@@ -320,15 +348,19 @@ export class PipelineService {
     }
   }
 
-  /** Une étape ; `false` si le traitement doit s'arrêter après elle (échec, relance programmée, arrêt). */
-  private async runStep(row: PipelineStepRow, run: RunContext): Promise<boolean> {
+  /**
+   * Une étape : `done`, `failed` (échec signalé, « Réessayer ») ou `stop` (relance automatique
+   * programmée, arrêt du bot) ; le traitement s'arrête après une étape non terminée, sauf l'audio
+   * complet en échec (voir run).
+   */
+  private async runStep(row: PipelineStepRow, run: RunContext): Promise<StepOutcome> {
     const { repos } = this.deps;
     const { meeting, settings, m, details, status, plog } = run;
     const meetingId = meeting.id;
-    if (this.stopping) return false;
+    if (this.stopping) return 'stop';
     // Étape en échec : refaite seulement après « Relancer » (pas par la relance automatique de
     // l'étape parallèle) ; la vague s'arrête là.
-    if (row.status === 'failed') return false;
+    if (row.status === 'failed') return 'failed';
     await repos.updateStep(meetingId, row.step, { status: 'running', attempts: row.attempts + 1, startedAt: new Date(), error: null });
     await status.update(details);
     plog.info({ step: row.step }, 'Étape démarrée');
@@ -357,7 +389,7 @@ export class PipelineService {
     } catch (err) {
       if (this.abort.signal.aborted) {
         await repos.updateStep(meetingId, row.step, { status: 'pending' }); // reprise au redémarrage
-        return false;
+        return 'stop';
       }
       const message = errorMessage(err);
       // Échec passager d'un serveur : relance automatique plus tard, sans prévenir personne.
@@ -379,7 +411,7 @@ export class PipelineService {
         }, delay);
         this.retryTimers.set(meetingId, { timer, step: row.step });
         await status.update(details); // bouton « Réessayer … maintenant » pendant l'attente
-        return false;
+        return 'stop';
       }
       plog.error({ step: row.step, err }, 'Étape en échec');
       await repos.updateStep(meetingId, row.step, { status: 'failed', finishedAt: new Date(), error: message });
@@ -392,9 +424,9 @@ export class PipelineService {
       await this.deps.alerts
         ?.guild(meeting.guildId, `pipeline:${row.step}`, m.alerts.stepFailed(meeting.title, m.pipeline.steps[row.step] ?? row.step, message.slice(0, 300), url))
         .catch(() => undefined);
-      return false;
+      return 'failed';
     }
-    return true;
+    return 'done';
   }
 
   private async notifyFailure(meeting: MeetingRow, m: Messages): Promise<void> {
@@ -446,6 +478,8 @@ class StatusMessage {
     private readonly m: Messages,
     /** Étape dont la relance automatique est programmée : bouton « Réessayer … maintenant ». */
     private readonly waiting: () => PipelineStep | null = () => null,
+    /** En attente dans la file (traitement d'un autre serveur en cours). */
+    private readonly queued = false,
   ) {}
 
   schedule(details: Map<PipelineStep, string>): void {
@@ -483,7 +517,7 @@ class StatusMessage {
     }));
     const publish = rows.find((r) => r.step === 'publish');
     const url = typeof publish?.output?.url === 'string' ? publish.output.url : undefined;
-    const container = renderPipelineStatus(meeting.id, views, this.m, url, this.waiting());
+    const container = renderPipelineStatus(meeting.id, views, this.m, url, this.waiting(), this.queued);
 
     try {
       const thread = await fetchThread(client, meeting.threadId);
