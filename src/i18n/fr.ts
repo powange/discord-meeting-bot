@@ -91,6 +91,8 @@ export const fr = {
       `Sondage créé : <#${threadId}>\n📣 Vous pouvez inviter des rôles à répondre : ils seront mentionnés dans le sondage, puis relancés la veille de la fin des réponses s'ils n'ont pas répondu.`,
     inviteRoles: 'Inviter des rôles à répondre (facultatif)',
     invitedMembers: 'Invités :',
+    everyoneOn: 'Inviter tout le monde (@everyone)',
+    everyoneOff: 'Ne plus inviter tout le monde',
     invite: (roles: string) => `📣 ${roles} : vous êtes invités à indiquer vos disponibilités (bouton « Indiquer mes disponibilités » sur la carte ci-dessus).`,
     invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés la veille de la fin des réponses.`,
     noInvited: "Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).",

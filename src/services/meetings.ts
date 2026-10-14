@@ -9,7 +9,7 @@ import { canReschedule, isOpen, pollThreadName, threadName } from '../domain/mee
 import { bestSlot, respondents, slotLabel, tallySlots, type SlotInput } from '../domain/datePoll.js';
 import { planJobs, planPollJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
-import { displayName, joinVoiceRows, sendWithMentions, voiceName } from '../discord/notify.js';
+import { displayName, joinVoiceRows, roleMention, sendWithMentions, voiceName } from '../discord/notify.js';
 import { renderPollResults } from '../discord/embeds/meetingCard.js';
 import { nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
@@ -193,7 +193,8 @@ export class MeetingService {
     if (!thread) return;
     const m = await this.settings.messages(guild.id);
     const canMentionAll = guild.members.me?.permissions.has(PermissionFlagsBits.MentionEveryone) ?? false;
-    const pingable = added.filter((id) => canMentionAll || guild.roles.cache.get(id)?.mentionable);
+    // @everyone (identifiant du serveur) : une vraie mention seulement avec la permission « Mentionner @everyone ».
+    const pingable = added.filter((id) => canMentionAll || (id !== guild.id && guild.roles.cache.get(id)?.mentionable));
     const others = added.filter((id) => !pingable.includes(id));
     let members: string[] = [];
     if (others.length) {
@@ -201,8 +202,14 @@ export class MeetingService {
       members = [...new Set(others.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot).keys() ?? [])]))];
     }
     await ensureUnarchived(thread);
-    const roles = (ids: readonly string[]) => ids.map((id) => `<@&${id}>`).join(' ');
-    if (pingable.length) await thread.send({ content: m.datePoll.invite(roles(pingable)), allowedMentions: { roles: pingable } });
+    const roles = (ids: readonly string[]) => ids.map((id) => roleMention(id, guild.id)).join(' ');
+    if (pingable.length) {
+      const everyone = pingable.includes(guild.id);
+      await thread.send({
+        content: m.datePoll.invite(roles(pingable)),
+        allowedMentions: { roles: pingable.filter((id) => id !== guild.id), ...(everyone ? { parse: ['everyone' as const] } : {}) },
+      });
+    }
     // Rôles non mentionnables : le message les nomme, et leurs membres sont mentionnés un par un.
     if (others.length) await sendWithMentions(thread, m.datePoll.invite(roles(others)), m.datePoll.invitedMembers, members);
   }

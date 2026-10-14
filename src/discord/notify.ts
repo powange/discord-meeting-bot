@@ -67,3 +67,8 @@ export async function sendWithMentions(
     await thread.send({ content: batch.content, allowedMentions: { users: batch.users }, ...(i === 0 ? { components } : {}) });
   }
 }
+
+/** Mention d'un rôle ; le rôle @everyone a l'identifiant du serveur et s'écrit à part. */
+export function roleMention(roleId: string, guildId: string): string {
+  return roleId === guildId ? '@everyone' : `<@&${roleId}>`;
+}

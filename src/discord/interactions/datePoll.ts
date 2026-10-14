@@ -24,6 +24,7 @@ import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderPollPanel, renderSlotChoice } from '../embeds/datePoll.js';
+import { roleMention } from '../notify.js';
 import { fetchForum } from '../threads.js';
 import { meetingScope, replyEphemeral, requireManager } from './common.js';
 import type { ComponentInteraction } from './components.js';
@@ -56,16 +57,25 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
   if (meeting.status !== 'polling') throw new UserError(p.notPolling);
 
   switch (action.type) {
-    case 'poll.roles': {
-      if (!interaction.isRoleSelectMenu()) return;
+    case 'poll.roles':
+    case 'poll.everyone': {
       requireManager(scope);
-      const roleIds = [...interaction.roles.keys()].filter((id) => id !== interaction.guildId).slice(0, 5);
+      const everyone = meeting.targetRoleIds.includes(interaction.guildId);
+      let roleIds: string[];
+      if (action.type === 'poll.roles') {
+        if (!interaction.isRoleSelectMenu()) return;
+        // Le sélecteur ne connaît pas @everyone : il est conservé s'il était invité.
+        roleIds = [...[...interaction.roles.keys()].filter((id) => id !== interaction.guildId).slice(0, 5), ...(everyone ? [interaction.guildId] : [])];
+      } else {
+        if (!interaction.isButton()) return;
+        roleIds = everyone ? meeting.targetRoleIds.filter((id) => id !== interaction.guildId) : [...meeting.targetRoleIds, interaction.guildId];
+      }
       await interaction.deferUpdate();
       await ctx.meetings.inviteRoles(interaction.guild, meeting.id, roleIds);
-      const text = roleIds.length ? p.invitedReply(roleIds.map((id) => `<@&${id}>`).join(' ')) : p.noInvited;
+      const text = roleIds.length ? p.invitedReply(roleIds.map((id) => roleMention(id, interaction.guildId)).join(' ')) : p.noInvited;
       // Depuis ⚙️ Gérer (panneau Components V2) : réponse dans le même format ; depuis la confirmation de création : texte.
       if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) await interaction.editReply({ components: [notice(text)], allowedMentions: { parse: [] } });
-      else await interaction.editReply({ content: text, components: [inviteRow(meeting.id, roleIds, m)], allowedMentions: { parse: [] } });
+      else await interaction.editReply({ content: text, components: inviteRows(meeting.id, interaction.guildId, roleIds, m), allowedMentions: { parse: [] } });
       return;
     }
     case 'poll.answer': {
@@ -152,11 +162,21 @@ function rankById<T extends { id: number; yes: number; maybe: number }>(choices:
   return [...choices].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
 }
 
-/** Sélecteur des rôles invités à répondre (jusqu'à 5). */
-function inviteRow(meetingId: string, current: readonly string[], m: Messages) {
+/**
+ * Rôles invités à répondre : sélecteur (jusqu'à 5) et bouton @everyone, que les sélecteurs de
+ * Discord ne proposent jamais.
+ */
+export function inviteRows(meetingId: string, guildId: string, current: readonly string[], m: Messages) {
+  const roles = current.filter((id) => id !== guildId);
   const select = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId })).setPlaceholder(m.datePoll.inviteRoles).setMinValues(0).setMaxValues(5);
-  if (current.length) select.setDefaultRoles(...current);
-  return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON();
+  if (roles.length) select.setDefaultRoles(...roles);
+  const everyone = current.includes(guildId);
+  const button = new ButtonBuilder()
+    .setCustomId(encode({ type: 'poll.everyone', meetingId }))
+    .setLabel(everyone ? m.datePoll.everyoneOff : m.datePoll.everyoneOn)
+    .setEmoji('📣')
+    .setStyle(everyone ? ButtonStyle.Secondary : ButtonStyle.Primary);
+  return [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON(), new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON()];
 }
 
 function notice(text: string) {
@@ -230,7 +250,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     const meeting = await ctx.meetings.createPoll(interaction.guild, interaction.user.id, { title, description, voiceChannelId, slots: parsed.slots, closesAt });
     drafts.delete(interaction.user.id);
     // Le formulaire est plein (5 éléments au plus) : les rôles à inviter se choisissent ici.
-    await interaction.editReply({ content: p.created(meeting.threadId!), components: [inviteRow(meeting.id, [], m)], allowedMentions: { parse: [] } });
+    await interaction.editReply({ content: p.created(meeting.threadId!), components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
   } catch (err) {
     if (err instanceof UserError) return fail(err.message);
     throw err;

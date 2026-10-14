@@ -20,7 +20,7 @@ type MeetingAction = Extract<Action, { meetingId: string }>['type'];
 
 /** Panneau « Gérer » d'une réunion (organisateur et gestionnaires) : remplace les sous-commandes /reunion. */
 export function renderMeetingManager(
-  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean; targetRoleIds?: readonly string[] },
+  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean; guildId?: string; targetRoleIds?: readonly string[] },
   state: ManagerState,
   m: Messages,
 ): APIContainerComponent {
@@ -49,9 +49,15 @@ export function renderMeetingManager(
     );
     for (const row of rows) container.addActionRowComponents(row);
     // Rôles invités à répondre : mentionnés à l'ajout, relancés la veille de la fin des réponses.
+    // @everyone (identifiant du serveur) n'est jamais proposé par le sélecteur : bouton à part.
+    const everyone = meeting.guildId !== undefined && (meeting.targetRoleIds ?? []).includes(meeting.guildId);
+    const roles = (meeting.targetRoleIds ?? []).filter((id) => id !== meeting.guildId);
     const invite = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'poll.roles', meetingId: meeting.id })).setPlaceholder(p.inviteRoles).setMinValues(0).setMaxValues(5);
-    if (meeting.targetRoleIds?.length) invite.setDefaultRoles(...meeting.targetRoleIds);
+    if (roles.length) invite.setDefaultRoles(...roles);
     container.addActionRowComponents((row: ActionRowBuilder<RoleSelectMenuBuilder>) => row.addComponents(invite));
+    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
+      row.addComponents(button('poll.everyone', everyone ? p.everyoneOff : p.everyoneOn, '📣', everyone ? ButtonStyle.Secondary : ButtonStyle.Primary)),
+    );
     return container.toJSON();
   }
   const main = new ActionRowBuilder<ButtonBuilder>();

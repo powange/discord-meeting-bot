@@ -20,11 +20,14 @@ describe('rôles invités à répondre à un sondage', () => {
   });
 
   it('⚙️ Gérer d’un sondage : sélecteur des rôles invités, valeurs actuelles présélectionnées', () => {
-    const panel = renderMeetingManager({ id: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', title: 'AG', status: 'polling', autoRecord: false, targetRoleIds: ['111'] }, { hasRecording: false }, m);
+    // @everyone (identifiant du serveur, « g ») : bouton à part, jamais dans le sélecteur.
+    const panel = renderMeetingManager({ id: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', guildId: 'g', title: 'AG', status: 'polling', autoRecord: false, targetRoleIds: ['111', 'g'] }, { hasRecording: false }, m);
     const rows = panel.components.filter((c) => c.type === 1) as Array<{ components: Array<{ type: number; custom_id: string; default_values?: Array<{ id: string }> }> }>;
     const select = rows.flatMap((r) => r.components).find((c) => c.type === 6)!;
     expect(decode(select.custom_id)?.type).toBe('poll.roles');
     expect(select.default_values).toEqual([{ id: '111', type: 'role' }]);
+    const everyone = rows.flatMap((r) => r.components).find((c) => c.type === 2 && decode(c.custom_id)?.type === 'poll.everyone') as unknown as { label: string };
+    expect(everyone.label).toBe(m.datePoll.everyoneOff);
   });
 
   function setup(opts: { mentionable: boolean; canMentionAll?: boolean; current?: string[] }) {
@@ -72,5 +75,18 @@ describe('rôles invités à répondre à un sondage', () => {
     await s.service.inviteRoles(s.guild as never, 'm1', []);
     expect(s.meeting().targetRoleIds).toEqual([]);
     expect(s.t.sent).toHaveLength(1);
+  });
+
+  it('@everyone avec la permission « Mentionner @everyone » : une vraie mention @everyone', async () => {
+    const s = setup({ mentionable: false, canMentionAll: true });
+    await s.service.inviteRoles(s.guild as never, 'm1', ['g']);
+    expect(s.t.sent).toEqual([{ content: m.datePoll.invite('@everyone'), allowedMentions: { roles: [], parse: ['everyone'] } }]);
+  });
+
+  it('@everyone sans la permission : les membres (hors bots) un par un, jamais de mention générale', async () => {
+    const s = setup({ mentionable: true });
+    await s.service.inviteRoles(s.guild as never, 'm1', ['g']);
+    expect(s.t.sent).toHaveLength(1);
+    expect(s.t.sent[0]).toMatchObject({ content: `${m.datePoll.invite('@everyone')}\n${m.datePoll.invitedMembers} <@111111111111111111>`, allowedMentions: { users: ['111111111111111111'] } });
   });
 });

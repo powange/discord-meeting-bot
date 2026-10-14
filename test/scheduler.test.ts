@@ -10,7 +10,7 @@ import { fakeThread } from './helpers/discordFakes.js';
 const m = messages('fr');
 const now = new Date('2026-10-14T16:00:00Z');
 const meeting = {
-  id: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', guildId: 'g', threadId: 'thread1', title: 'Bureau', status: 'scheduled', organizerId: '900', targetRoleIds: [],
+  id: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', guildId: 'g', threadId: 'thread1', title: 'Bureau', status: 'scheduled', organizerId: '900', targetRoleIds: [] as string[],
   startsAt: new Date('2026-10-15T16:00:00Z'), durationMin: 60, voiceChannelId: 'voice1',
 } as MeetingRow;
 const settings = {
