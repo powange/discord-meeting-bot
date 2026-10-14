@@ -77,7 +77,10 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
     case 'poll.remove': {
       if (!interaction.isButton()) return;
       requireManager(scope);
-      const choices = await ctx.meetings.slotChoices(meeting);
+      const all = await ctx.meetings.slotChoices(meeting);
+      // Fixer la date : seulement un créneau à venir (retirer reste possible pour tous).
+      const choices = action.type === 'poll.fix' ? all.filter((c) => !c.past) : all;
+      if (choices.length === 0) throw new UserError(m.datePoll.allSlotsPast);
       const ordered = action.type === 'poll.fix' ? rankById(choices) : choices;
       const panel = renderSlotChoice(meeting, ordered, action.type === 'poll.fix' ? 'fix' : 'remove', m);
       // Depuis ⚙️ Gérer (privé) : le panneau est remplacé ; depuis le message public de clôture : réponse privée.

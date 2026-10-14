@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatOffset, isReminderStale, parseOffsets, planJobs } from '../src/domain/reminders.js';
+import { formatOffset, isReminderStale, parseOffsets, planJobs, planPollJobs } from '../src/domain/reminders.js';
 
 const startsAt = new Date('2026-10-15T16:00:00Z');
 const meeting = { startsAt, durationMin: 60, status: 'scheduled' as const };
@@ -47,6 +47,36 @@ describe('planJobs', () => {
   it('réunion close ou annulée : rien', () => {
     expect(planJobs({ ...meeting, status: 'ended' }, [15], at('2026-10-12T10:00:00Z'))).toEqual([]);
     expect(planJobs({ ...meeting, status: 'cancelled' }, [15], at('2026-10-12T10:00:00Z'))).toEqual([]);
+  });
+});
+
+describe('rappels et changement d’heure', () => {
+  it('rappel J-1 à la même heure de la veille, même à travers le passage à l’heure d’hiver', () => {
+    // Dimanche 25/10/2026 18h à Paris (heure d'hiver, UTC+1) ; la veille, samedi 18h, est à l'heure d'été (UTC+2).
+    const meeting = { startsAt: new Date('2026-10-25T17:00:00Z'), durationMin: 60, status: 'scheduled' as const };
+    const now = new Date('2026-10-20T10:00:00Z');
+    const withZone = planJobs(meeting, [1440], now, 0, 15, 'Europe/Paris').find((j) => j.kind === 'reminder')!;
+    expect(withZone.dueAt.toISOString()).toBe('2026-10-24T16:00:00.000Z'); // samedi 18h heure de Paris
+    const raw = planJobs(meeting, [1440], now).find((j) => j.kind === 'reminder')!;
+    expect(raw.dueAt.toISOString()).toBe('2026-10-24T17:00:00.000Z'); // 24 h avant : 19h
+  });
+});
+
+describe('sondage non tranché', () => {
+  const slots = [new Date('2026-10-20T16:00:00Z'), new Date('2026-10-22T16:00:00Z')];
+  it('réponses closes : relance de l’organisateur la veille du premier créneau, annulation après le dernier', () => {
+    const now = new Date('2026-10-16T12:00:00Z');
+    expect(planPollJobs(new Date('2026-10-16T10:00:00Z'), now, slots).map((j) => [j.kind, j.dueAt.toISOString()])).toEqual([
+      ['poll_remind', '2026-10-19T16:00:00.000Z'],
+      ['poll_expire', '2026-10-22T16:00:00.000Z'],
+    ]);
+  });
+  it('réponses encore ouvertes : relance des non-répondants et clôture, comme avant', () => {
+    expect(planPollJobs(new Date('2026-10-18T10:00:00Z'), new Date('2026-10-16T09:00:00Z'), slots).map((j) => j.kind)).toEqual(['poll_nudge', 'poll_close']);
+  });
+  it('tous les créneaux passés : annulation tout de suite', () => {
+    const now = new Date('2026-10-23T12:00:00Z');
+    expect(planPollJobs(new Date('2026-10-16T10:00:00Z'), now, slots)).toEqual([{ kind: 'poll_expire', offsetMin: 0, dueAt: now }]);
   });
 });
 

@@ -18,9 +18,12 @@ const settings = {
 } as unknown as GuildSettingsRow;
 const job = (offsetMin: number) => ({ id: 1, kind: 'reminder', meetingId: '3f2b8c1e-9a4d-4e2f-8b1a-0c9d8e7f6a5b', offsetMin }) as ScheduledJobRow;
 
-function setup(opts: { meeting?: MeetingRow; settings?: GuildSettingsRow; rsvps?: Array<{ userId: string; status: string }>; guild?: unknown } = {}) {
+function setup(opts: { meeting?: MeetingRow; settings?: GuildSettingsRow; rsvps?: Array<{ userId: string; status: string }>; guild?: unknown; voiceFails?: boolean } = {}) {
   const { thread, sent } = fakeThread();
-  const ensureVoice = vi.fn(async () => ({ ...meeting, voiceChannelId: 'created' }));
+  const ensureVoice = vi.fn(async () => {
+    if (opts.voiceFails) throw new Error('Missing Permissions');
+    return { ...meeting, voiceChannelId: 'created' };
+  });
   const ctx = {
     config: buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
     log: pino({ level: 'silent' }),
@@ -60,6 +63,33 @@ describe('rappels', () => {
     }
   });
 
+  it('salon impossible à créer : le rappel part quand même, sans bouton « Rejoindre »', async () => {
+    const pending = { ...meeting, voiceChannelId: null, startsAt: new Date(now.getTime() + 10 * 60_000) } as MeetingRow;
+    const { scheduler, sent } = setup({ meeting: pending, voiceFails: true });
+    await scheduler.run(job(15), now);
+    expect(sent).toHaveLength(1);
+    expect(customIds(sent[0]!).some((id) => id.startsWith('https://'))).toBe(false);
+  });
+
+  it('plus de 50 personnes sans réponse : le rôle est mentionné s’il peut l’être, sinon leur nombre', async () => {
+    const all = new Map(Array.from({ length: 60 }, (_, i) => [String(1000 + i), { id: String(1000 + i), user: { bot: false } }]));
+    const role = { mentionable: false, members: Object.assign(all, { filter: (fn: (v: { user: { bot: boolean } }) => boolean) => new Map([...all].filter(([, v]) => fn(v))) }) };
+    const roleSettings = { ...settings, nudgeRoleId: 'role' } as GuildSettingsRow;
+    const guild = { id: 'g', memberCount: 60, members: { cache: { size: 60 }, fetch: vi.fn() }, roles: { cache: new Map([['role', role]]) } };
+    const { scheduler, sent } = setup({ settings: roleSettings, guild });
+    await scheduler.run(job(1440), now);
+    expect(guild.members.fetch).not.toHaveBeenCalled(); // cache complet : pas de téléchargement
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.content).toContain('60 personnes invitées');
+    expect(sent[1]!.allowedMentions).toEqual({ parse: [] });
+
+    role.mentionable = true;
+    const again = setup({ settings: roleSettings, guild });
+    await again.scheduler.run(job(1440), now);
+    expect(again.sent[1]!.content).toContain('<@&role>');
+    expect(again.sent[1]!.allowedMentions).toEqual({ roles: ['role'] });
+  });
+
   it('salon créé automatiquement : créé avant le rappel qui tombe dans la fenêtre, pour le bouton « Rejoindre »', async () => {
     const pending = { ...meeting, voiceChannelId: null, startsAt: new Date(now.getTime() + 10 * 60_000) } as MeetingRow;
     const { scheduler, sent, ensureVoice } = setup({ meeting: pending });
@@ -69,7 +99,7 @@ describe('rappels', () => {
   });
 
   it('relance des non-répondants en échec (intent manquant) : le rappel part quand même', async () => {
-    const guild = { members: { fetch: async () => Promise.reject(new Error('Used disallowed intents')) }, roles: { cache: new Map() } };
+    const guild = { memberCount: 1, members: { cache: new Map(), fetch: async () => Promise.reject(new Error('Used disallowed intents')) }, roles: { cache: new Map() } };
     const { scheduler, sent } = setup({ settings: { ...settings, nudgeRoleId: 'role' } as GuildSettingsRow, guild });
     await scheduler.run(job(1440), now);
     expect(sent).toHaveLength(1);
@@ -80,7 +110,7 @@ describe('rappels', () => {
     // Collection discord.js simulée : une Map avec filter().
     const all = new Map([member('101'), member('900'), member('104'), member('105', true)]);
     const role = { members: Object.assign(all, { filter: (fn: (v: { user: { bot: boolean } }) => boolean) => new Map([...all].filter(([, v]) => fn(v))) }) };
-    const guild = { members: { fetch: async () => undefined }, roles: { cache: new Map([['role', role]]) } };
+    const guild = { id: 'g', memberCount: 1, members: { cache: new Map(), fetch: async () => undefined }, roles: { cache: new Map([['role', role]]) } };
     const nudging = { ...settings, nudgeRoleId: 'role' } as GuildSettingsRow;
     const first = setup({ settings: nudging, guild, rsvps: [{ userId: '101', status: 'yes' }] });
     await first.scheduler.run(job(1440), now);
@@ -89,5 +119,24 @@ describe('rappels', () => {
     const later = setup({ settings: nudging, guild, rsvps: [{ userId: '101', status: 'yes' }] });
     await later.scheduler.run(job(15), new Date('2026-10-15T15:45:00Z'));
     expect(later.sent.at(-1)!.allowedMentions).toEqual({ users: ['104'] }); // toujours sans réponse : relancé de nouveau
+  });
+});
+
+describe('passage du planificateur', () => {
+  it('rappels dus ensemble (bot éteint) : seul le plus proche du début part, les autres sont soldés', async () => {
+    const { thread, sent } = fakeThread();
+    const completeJob = vi.fn(async () => undefined);
+    const ctx = {
+      config: buildConfig({ discord: { token: 'x' }, database: { url: 'postgres://a@b/c' } }, {}),
+      log: pino({ level: 'silent' }),
+      repos: { getMeeting: async () => ({ ...meeting, startsAt: new Date(Date.now() + 10 * 60_000) }), listRsvps: async () => [], completeJob, failJob: vi.fn() },
+      settings: { get: async () => settings },
+      client: { channels: { fetch: async () => thread }, guilds: { fetch: async () => undefined } },
+      meetings: { ensureVoice: vi.fn() },
+    };
+    const scheduler = new Scheduler(ctx as never) as unknown as { runMeetingJobs(jobs: ScheduledJobRow[]): Promise<void> };
+    await scheduler.runMeetingJobs([{ ...job(1440), id: 1 }, { ...job(15), id: 2 }]);
+    expect(sent).toHaveLength(1);
+    expect(completeJob.mock.calls.map((c) => (c as unknown[])[0])).toEqual([1, 2]);
   });
 });

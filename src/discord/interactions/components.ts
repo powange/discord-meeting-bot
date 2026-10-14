@@ -386,7 +386,8 @@ export async function handleAction(
       if (meeting.status !== 'scheduled') throw new UserError(m.errors.meetingClosed);
       if (action.type === 'meeting.reslot') {
         if (!interaction.isButton()) return;
-        const choices = [...(await ctx.meetings.slotChoices(meeting))].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
+        const choices = (await ctx.meetings.slotChoices(meeting)).filter((c) => !c.past).sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
+        if (choices.length === 0) throw new UserError(m.datePoll.allSlotsPast);
         await interaction.update({ components: [renderSlotChoice(meeting, choices, 'reslot', m)], allowedMentions: { parse: [] } });
         return;
       }

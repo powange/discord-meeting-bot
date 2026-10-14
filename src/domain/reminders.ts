@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import type { JobKind, MeetingStatus } from './types.js';
 
 export interface PlannedJob {
@@ -19,6 +20,8 @@ export function planJobs(
   recordLeadMin = 0,
   /** Avance de la création du salon vocal temporaire (réunion sans salon). */
   voiceLeadMin = 15,
+  /** Fuseau du serveur : un rappel en jours tombe à la même heure de la veille, changement d'heure compris. */
+  timezone?: string,
 ): PlannedJob[] {
   // La clôture n'est pas planifiée : elle dépend de la présence dans le vocal (MeetingWatcher).
   const jobs: PlannedJob[] = [];
@@ -26,7 +29,10 @@ export function planJobs(
   if (meeting.status !== 'scheduled') return [];
 
   for (const offset of [...new Set(reminderOffsetsMin)].filter((o) => o > 0).sort((a, b) => b - a)) {
-    const dueAt = new Date(start - offset * 60_000);
+    const dueAt =
+      timezone && offset % 1440 === 0
+        ? DateTime.fromJSDate(meeting.startsAt, { zone: timezone }).minus({ days: offset / 1440 }).toJSDate()
+        : new Date(start - offset * 60_000);
     if (dueAt.getTime() > now.getTime()) jobs.push({ kind: 'reminder', offsetMin: offset, dueAt });
   }
   if (meeting.voiceChannelId === null) {
@@ -96,10 +102,19 @@ export function formatOffset(min: number): string {
 
 /**
  * Échéances d'un sondage de date : relance des non-répondants la veille de la fin des
- * réponses (si elle est à plus d'un jour), puis clôture à la fin des réponses.
+ * réponses (si elle est à plus d'un jour), puis clôture à la fin des réponses. Une fois les
+ * réponses closes, si la date n'est toujours pas fixée : l'organisateur est relancé la veille du
+ * premier créneau à venir, et le sondage est annulé quand le dernier créneau est passé.
  */
-export function planPollJobs(closesAt: Date, now: Date): PlannedJob[] {
+export function planPollJobs(closesAt: Date, now: Date, slotStarts: readonly Date[] = []): PlannedJob[] {
   const jobs: PlannedJob[] = [];
+  if (closesAt.getTime() <= now.getTime()) {
+    const upcoming = slotStarts.map((d) => d.getTime()).filter((t) => t > now.getTime()).sort((a, b) => a - b);
+    const remindAt = (upcoming[0] ?? 0) - 24 * 3_600_000;
+    if (remindAt > now.getTime()) jobs.push({ kind: 'poll_remind', offsetMin: 1440, dueAt: new Date(remindAt) });
+    jobs.push({ kind: 'poll_expire', offsetMin: 0, dueAt: new Date(Math.max(upcoming.at(-1) ?? 0, now.getTime())) });
+    return jobs;
+  }
   const nudgeAt = closesAt.getTime() - 24 * 3_600_000;
   if (nudgeAt > now.getTime()) jobs.push({ kind: 'poll_nudge', offsetMin: 1440, dueAt: new Date(nudgeAt) });
   jobs.push({ kind: 'poll_close', offsetMin: 0, dueAt: new Date(Math.max(closesAt.getTime(), now.getTime())) });

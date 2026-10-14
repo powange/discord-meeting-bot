@@ -92,6 +92,7 @@ export const fr = {
 
   /** Qui inviter à une réunion ou à un sondage (rôles mentionnés à la création, puis relancés). */
   invite: {
+    manyMembers: (n: number) => `-# ${n} membres invités : ils ne sont pas mentionnés un par un.`,
     roles: 'Choisir des rôles (jusqu’à 5)',
     everyoneOn: 'Tout le monde (@everyone)',
     everyoneOff: 'Tout le monde (@everyone)',
@@ -186,6 +187,11 @@ export const fr = {
     duplicateSlot: 'Ce créneau est déjà proposé.',
     lastSlot: 'Impossible de retirer le dernier créneau : annulez plutôt la réunion.',
     slotGone: "Ce créneau n'existe plus.",
+    slotPast: 'Ce créneau est déjà passé : choisissez-en un autre.',
+    remindOrganizer: (organizerId: string, when: string) =>
+      `📅 <@${organizerId}> la date n'est toujours pas fixée, et le premier créneau à venir est ${when}. Choisissez-la, ou annulez le sondage depuis ⚙️ Gérer.`,
+    expired: 'tous les créneaux proposés sont passés sans que la date soit fixée',
+    allSlotsPast: 'Tous les créneaux proposés sont passés. Ajoutez-en un (➕) ou modifiez la réunion.',
     notPolling: "La date de cette réunion n'est plus à choisir.",
     hubSection: 'Dates à choisir',
     resultsTitle: 'Résultat du sondage',
@@ -243,6 +249,7 @@ export const fr = {
     reminderTargets: 'Participants attendus :',
     responders: 'Ont répondu :',
     nudge: "Pas encore de réponse — merci d'indiquer votre présence :",
+    manyPending: (n: number) => `${n} personnes invitées n'ont pas encore répondu.`,
     voiceFallback: 'le salon vocal',
     voicePending: 'un salon créé peu avant le début',
     voiceCreateFailed: (organizerId: string) =>
@@ -438,6 +445,18 @@ export const fr = {
   },
 
   alerts: {
+    jobAbandoned: (title: string, kind: string, error: string, url: string) =>
+      `« ${title} » : ${kind} a échoué 5 fois et ne sera plus tenté (${error}). Vérifiez les permissions du bot, puis modifiez la réunion pour replanifier. ${url}`,
+    jobKinds: {
+      reminder: 'le rappel',
+      start: 'le démarrage de la réunion',
+      record_start: "le démarrage automatique de l'enregistrement",
+      voice_create: 'la création du salon vocal',
+      poll_nudge: 'la relance du sondage',
+      poll_close: 'la clôture du sondage',
+      poll_remind: "la relance de l'organisateur du sondage",
+      poll_expire: "l'annulation du sondage expiré",
+    } as Record<string, string>,
     stepFailed: (title: string, step: string, error: string, url: string) => `Compte rendu de « ${title} » : l'étape ${step} a échoué (${error}). ${url}`,
     recordingInterrupted: (title: string, reason: string, url: string) => `Enregistrement de « ${title} » interrompu (${reason}). Reprise possible depuis le post : ${url}`,
     voiceCreateFailed: (title: string, error: string) =>

@@ -93,6 +93,7 @@ async function main(): Promise<void> {
   const owners = new OwnersService(config.owners);
   const ctx: AppContext = { config, client, log, repos, settings, cards, hub, meetings, recordings, pipeline, owners, optouts, storage };
   const scheduler = new Scheduler(ctx);
+  scheduler.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
   const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));
   await hub.load();

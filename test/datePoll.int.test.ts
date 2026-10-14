@@ -21,7 +21,7 @@ describe.skipIf(!url)('Sondage de date : du sondage à la réunion planifiée', 
   let repos: Repositories;
   let service: MeetingService;
   const threads: Array<ReturnType<typeof fakeThread>> = [];
-  const guild = { id: 'g', scheduledEvents: { create: vi.fn(async () => ({ id: 'event1' })), edit: vi.fn() }, members: { fetch: vi.fn(async () => ({ displayName: 'Orga' })) }, roles: { cache: new Map() } };
+  const guild = { id: 'g', scheduledEvents: { create: vi.fn(async () => ({ id: 'event1' })), edit: vi.fn() }, memberCount: 1, members: { cache: new Map(), fetch: vi.fn(async () => ({ displayName: 'Orga' })) }, roles: { cache: new Map() } };
 
   beforeAll(async () => {
     ctx = createDb(await freshDatabase(url!, 'datepoll'));

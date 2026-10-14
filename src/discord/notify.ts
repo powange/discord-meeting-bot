@@ -2,6 +2,9 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionFlagsBits,
+  type Guild,
+  type MessageMentionOptions,
   type APIActionRowComponent,
   type APIComponentInMessageActionRow,
   type Client,
@@ -65,6 +68,49 @@ export async function sendWithMentions(
   const batches = mentionBatches(userIds.length > 0 ? `${text}\n${label} ` : text, userIds);
   for (const [i, batch] of batches.entries()) {
     await thread.send({ content: batch.content, allowedMentions: { users: batch.users }, ...(i === 0 ? { components } : {}) });
+  }
+}
+
+/**
+ * Au-delà, les personnes sans réponse ne sont plus mentionnées une par une (dizaines de messages
+ * et de notifications à chaque rappel sur un gros serveur) : le rôle invité est mentionné s'il
+ * peut l'être, sinon le message donne leur nombre.
+ */
+export const MAX_INDIVIDUAL_MENTIONS = 50;
+
+/** Rôles que le bot peut réellement mentionner (@everyone : permission « Mentionner @everyone »). */
+export function pingableRoles(guild: Guild, roleIds: readonly string[]): string[] {
+  const canMentionAll = guild.members.me?.permissions.has(PermissionFlagsBits.MentionEveryone) ?? false;
+  return roleIds.filter((id) => canMentionAll || (id !== guild.id && guild.roles.cache.get(id)?.mentionable));
+}
+
+/** Messages de relance : mentions une par une jusqu'au plafond, puis rôles mentionnables ou nombre. */
+export function nudgeMessages(
+  prefix: string,
+  userIds: readonly string[],
+  roles: { guildId: string; pingable: readonly string[] },
+  m: Messages,
+): Array<{ content: string; allowedMentions: MessageMentionOptions }> {
+  if (userIds.length <= MAX_INDIVIDUAL_MENTIONS) {
+    return mentionBatches(prefix, userIds).map((b) => ({ content: b.content, allowedMentions: { users: b.users } }));
+  }
+  if (roles.pingable.length) {
+    const everyone = roles.pingable.includes(roles.guildId);
+    return [
+      {
+        content: `${prefix}${roles.pingable.map((id) => roleMention(id, roles.guildId)).join(' ')}`,
+        allowedMentions: { roles: roles.pingable.filter((id) => id !== roles.guildId), ...(everyone ? { parse: ['everyone' as const] } : {}) },
+      },
+    ];
+  }
+  return [{ content: `${prefix.trimEnd()} ${m.thread.manyPending(userIds.length)}`, allowedMentions: { parse: [] } }];
+}
+
+/** Comme `sendWithMentions`, avec le plafond des relances (`nudgeMessages`). */
+export async function sendNudge(thread: ThreadChannel, guild: Guild, roleIds: readonly string[], text: string, label: string, userIds: readonly string[], m: Messages): Promise<void> {
+  const pingable = pingableRoles(guild, roleIds);
+  for (const message of nudgeMessages(userIds.length > 0 ? `${text}\n${label} ` : text, userIds, { guildId: guild.id, pingable }, m)) {
+    await thread.send(message);
   }
 }
 

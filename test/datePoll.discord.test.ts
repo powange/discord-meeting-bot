@@ -107,7 +107,7 @@ function context(over: Partial<GuildSettingsRow> = {}) {
     settings: { get: async () => settings, messages: async () => m },
     client: { channels: { fetch: async () => ({ type: 15 }) } },
     repos,
-    meetings: spyObject({ slotChoices: async () => [] }),
+    meetings: spyObject({ slotChoices: async () => [{ id: 1, label: 'Mar. 20/10 · 18h00-19h00', yes: 0, maybe: 0, no: 0, past: false }] }),
     cards: spyObject(),
   };
   return { ctx, repos };

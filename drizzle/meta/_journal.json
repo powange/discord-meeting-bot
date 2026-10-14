@@ -225,6 +225,13 @@
       "when": 1792010500665,
       "tag": "0031_llm_thinking",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792016739587,
+      "tag": "0032_poll_followups",
+      "breakpoints": true
     }
   ]
 }

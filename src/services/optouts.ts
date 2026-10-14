@@ -1,5 +1,6 @@
 import type { Client } from 'discord.js';
 import type { Repositories } from '../db/repositories.js';
+import { loadMembers } from '../discord/members.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 
@@ -46,7 +47,7 @@ export class OptoutService {
     for (const { guildId, optoutRoleId } of guilds) {
       try {
         const guild = await client.guilds.fetch(guildId);
-        await guild.members.fetch();
+        await loadMembers(guild);
         const members = guild.roles.cache.get(optoutRoleId)?.members ?? new Map();
         for (const id of members.keys()) await this.repos.setOptout(guildId, id, true);
         await clearRole(guildId);

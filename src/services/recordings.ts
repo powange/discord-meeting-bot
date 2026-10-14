@@ -90,7 +90,15 @@ export class RecordingService {
     if (!meeting?.autoRecord || !isOpen(meeting.status) || this.isRecording(meetingId)) return;
     try {
       await this.start(meetingId, null);
+      this.autoStartFailed.delete(meetingId);
     } catch (err) {
+      // Deux essais par réunion (record_start avant l'heure, puis au passage « En cours ») : une
+      // cause persistante (permission, disque) n'est signalée qu'une fois.
+      if (this.autoStartFailed.has(meetingId)) {
+        this.log.warn({ meetingId, err: errorMessage(err) }, 'Démarrage automatique de nouveau impossible (déjà signalé)');
+        return;
+      }
+      this.autoStartFailed.add(meetingId);
       // Les refus expliqués (permissions, vocal occupé, disque…) sont déjà lisibles ; le reste est technique.
       const m = await this.settings.messages(meeting.guildId);
       const reason = err instanceof UserError ? err.message : m.recording.autoStartUnknown;
@@ -109,6 +117,8 @@ export class RecordingService {
   }
 
   private alert: (guildId: string, cause: string, message: string) => Promise<unknown> = async () => undefined;
+  /** Réunions dont l'échec du démarrage automatique a déjà été signalé. */
+  private readonly autoStartFailed = new Set<string>();
 
   setAlert(fn: (guildId: string, cause: string, message: string) => Promise<unknown>): void {
     this.alert = fn;

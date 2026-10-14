@@ -9,7 +9,8 @@ import { canReschedule, isOpen, pollThreadName, threadName } from '../domain/mee
 import { bestSlot, respondents, slotLabel, tallySlots, type SlotInput } from '../domain/datePoll.js';
 import { planJobs, planPollJobs } from '../domain/reminders.js';
 import { formatWhen } from '../domain/time.js';
-import { displayName, joinVoiceRows, roleMention, sendWithMentions, voiceName } from '../discord/notify.js';
+import { loadMembers } from '../discord/members.js';
+import { displayName, joinVoiceRows, MAX_INDIVIDUAL_MENTIONS, roleMention, sendNudge, sendWithMentions, voiceName } from '../discord/notify.js';
 import { renderPollResults } from '../discord/embeds/meetingCard.js';
 import { nudgeRoles, reminderTargets } from '../domain/rsvp.js';
 import type { MeetingStatus } from '../domain/types.js';
@@ -202,7 +203,7 @@ export class MeetingService {
     const others = added.filter((id) => !pingable.includes(id));
     let members: string[] = [];
     if (others.length) {
-      await guild.members.fetch().catch((err) => this.log.warn({ meetingId, err: errorMessage(err) }, 'Membres des rôles invités introuvables'));
+      await loadMembers(guild).catch((err) => this.log.warn({ meetingId, err: errorMessage(err) }, 'Membres des rôles invités introuvables'));
       members = [...new Set(others.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot).keys() ?? [])]))];
     }
     await ensureUnarchived(thread);
@@ -215,8 +216,12 @@ export class MeetingService {
         allowedMentions: { roles: pingable.filter((id) => id !== guild.id), ...(everyone ? { parse: ['everyone' as const] } : {}) },
       });
     }
-    // Rôles non mentionnables : le message les nomme, et leurs membres sont mentionnés un par un.
-    if (others.length) await sendWithMentions(thread, invite(roles(others)), m.datePoll.invitedMembers, members);
+    // Rôles non mentionnables : le message les nomme, et leurs membres sont mentionnés un par un
+    // (au-delà du plafond, le message donne seulement leur nombre).
+    if (others.length) {
+      if (members.length <= MAX_INDIVIDUAL_MENTIONS) await sendWithMentions(thread, invite(roles(others)), m.datePoll.invitedMembers, members);
+      else await thread.send({ content: `${invite(roles(others))}\n${m.invite.manyMembers(members.length)}`, allowedMentions: { parse: [] } });
+    }
   }
 
   /** Créneau ajouté à un sondage en cours. */
@@ -227,6 +232,7 @@ export class MeetingService {
     if (slots.length >= 10) throw new UserError(m.datePoll.tooManySlots);
     if (slots.some((s) => s.startsAt.getTime() === slot.startsAt.getTime())) throw new UserError(m.datePoll.duplicateSlot);
     await this.repos.insertSlots(meeting.id, [slot]);
+    await this.replan(meeting, await this.settings.get(meeting.guildId)); // relance et fin du sondage suivent les créneaux
     await this.cards.refreshNow(meeting.id);
   }
 
@@ -236,6 +242,7 @@ export class MeetingService {
     const m = await this.settings.messages(meeting.guildId);
     if ((await this.repos.listSlots(meeting.id)).length <= 1) throw new UserError(m.datePoll.lastSlot);
     await this.repos.deleteSlot(meeting.id, slotId);
+    await this.replan(meeting, await this.settings.get(meeting.guildId));
     await this.cards.refreshNow(meeting.id);
   }
 
@@ -250,6 +257,8 @@ export class MeetingService {
     const slots = await this.repos.listSlots(meetingId);
     const slot = slots.find((s) => s.id === slotId);
     if (!slot) throw new UserError(m.datePoll.slotGone);
+    // Un créneau passé lancerait aussitôt la réunion (mentions, salon) sans événement Discord.
+    if (slot.startsAt.getTime() <= Date.now()) throw new UserError(m.datePoll.slotPast);
     const tally = tallySlots(slots, await this.repos.listVotes(meetingId));
     const chosen = tally.find((t) => t.slotId === slotId)!;
     const current = await this.requirePolling(meetingId);
@@ -287,7 +296,7 @@ export class MeetingService {
         this.warn(meeting!, 'Invités sans réponse introuvables', err);
         return [];
       });
-      if (missing.length) await sendWithMentions(thread, m.datePoll.fixedAsk, m.thread.nudge, missing).catch((err) => this.warn(meeting!, 'Relance après la date fixée impossible', err));
+      if (missing.length) await sendNudge(thread, guild, nudgeRoles(meeting, settings), m.datePoll.fixedAsk, m.thread.nudge, missing, m).catch((err) => this.warn(meeting!, 'Relance après la date fixée impossible', err));
     }
     await this.cards.refreshNow(meeting.id);
     this.onChange(meeting.guildId);
@@ -322,6 +331,39 @@ export class MeetingService {
       components: [fix.toJSON()],
       allowedMentions: { users: [meeting.organizerId] },
     });
+    // Suite si personne ne tranche : relance de l'organisateur, puis annulation (planPollJobs).
+    await this.replan(meeting, settings);
+  }
+
+  /** Veille du premier créneau à venir, date toujours pas fixée : l'organisateur est relancé. */
+  async remindPoll(meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || meeting.status !== 'polling') return;
+    const settings = await this.settings.get(meeting.guildId);
+    const m = messages(settings.locale);
+    const next = (await this.repos.listSlots(meetingId)).filter((s) => s.startsAt.getTime() > Date.now()).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())[0];
+    const thread = await fetchThread(this.client, meeting.threadId);
+    if (!next || !thread) return;
+    await ensureUnarchived(thread);
+    const fix = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(encode({ type: 'poll.fix', meetingId })).setLabel(m.datePoll.fixDate).setEmoji('📅').setStyle(ButtonStyle.Primary),
+    );
+    await thread.send({
+      content: m.datePoll.remindOrganizer(meeting.organizerId, formatWhen(next.startsAt, settings.timezone, settings.locale, m.format.when)),
+      components: [fix.toJSON()],
+      allowedMentions: { users: [meeting.organizerId] },
+    });
+  }
+
+  /** Dernier créneau passé sans date fixée : le sondage est annulé (il ne reste plus ouvert indéfiniment). */
+  async expirePoll(meetingId: string): Promise<void> {
+    const meeting = await this.repos.getMeeting(meetingId);
+    if (!meeting || meeting.status !== 'polling') return;
+    const settings = await this.settings.get(meeting.guildId);
+    // Créneau ajouté entre-temps : l'échéance suit le nouveau dernier créneau.
+    if ((await this.repos.listSlots(meetingId)).some((s) => s.startsAt.getTime() > Date.now())) return this.replan(meeting, settings);
+    const m = messages(settings.locale);
+    await this.cancel(meetingId, this.client.user?.id ?? meeting.organizerId, m.datePoll.expired);
   }
 
   /** Relance : membres du rôle configuré qui n'ont répondu à aucun créneau. */
@@ -340,22 +382,23 @@ export class MeetingService {
     if (missing.length === 0) return;
     await ensureUnarchived(thread);
     const closes = formatWhen(meeting.pollClosesAt ?? meeting.startsAt, settings.timezone, settings.locale, m.format.when);
-    await sendWithMentions(thread, m.datePoll.nudge(meeting.title, closes), m.thread.nudge, missing);
+    await sendNudge(thread, guild, roleIds, m.datePoll.nudge(meeting.title, closes), m.thread.nudge, missing, m);
   }
 
   /** Membres des rôles (hors bots et organisateur) qui ne figurent pas parmi ceux qui ont répondu. */
   private async silentMembers(guild: Guild, roleIds: readonly string[], answered: ReadonlySet<string>, organizerId: string): Promise<string[]> {
     if (roleIds.length === 0) return [];
-    await guild.members.fetch(); // nécessite l'intent privilégié GuildMembers
+    await loadMembers(guild); // nécessite l'intent privilégié GuildMembers
     const ids = roleIds.flatMap((id) => [...(guild.roles.cache.get(id)?.members.filter((mb) => !mb.user.bot && !answered.has(mb.id) && mb.id !== organizerId).keys() ?? [])]);
     return [...new Set(ids)];
   }
 
   /** Libellés des créneaux d'un sondage, dans le fuseau du serveur. */
-  async slotChoices(meeting: MeetingRow): Promise<Array<{ id: number; label: string; yes: number; maybe: number; no: number }>> {
+  async slotChoices(meeting: MeetingRow): Promise<Array<{ id: number; label: string; yes: number; maybe: number; no: number; past: boolean }>> {
     const settings = await this.settings.get(meeting.guildId);
     const tally = tallySlots(await this.repos.listSlots(meeting.id), await this.repos.listVotes(meeting.id));
-    return tally.map((t) => ({ id: t.slotId, label: slotLabel(t, settings.timezone, settings.locale), yes: t.yes.length, maybe: t.maybe.length, no: t.no.length }));
+    const now = Date.now();
+    return tally.map((t) => ({ id: t.slotId, label: slotLabel(t, settings.timezone, settings.locale), yes: t.yes.length, maybe: t.maybe.length, no: t.no.length, past: t.startsAt.getTime() <= now }));
   }
 
   private async requirePolling(meetingId: string): Promise<MeetingRow> {
@@ -376,6 +419,8 @@ export class MeetingService {
       input.durationMin !== meeting.durationMin ||
       input.voiceChannelId !== meeting.voiceChannelId;
     if (rescheduled && !canReschedule(meeting.status)) throw new UserError(m.errors.cannotReschedule);
+    // Nouvelle date dans le passé (« Autre créneau » choisi trop tard) : la réunion démarrerait aussitôt.
+    if (input.startsAt.getTime() !== meeting.startsAt.getTime() && input.startsAt.getTime() <= Date.now()) throw new UserError(m.errors.datePast);
 
     // Salon remplacé (changement de mode, autre salon choisi) : il n'est plus temporaire, et
     // l'ancien salon temporaire est supprimé. Sinon le nouveau, permanent, le serait en fin de réunion.
@@ -668,11 +713,12 @@ export class MeetingService {
 
   private async replan(meeting: MeetingRow, settings: GuildSettingsRow): Promise<void> {
     if (meeting.status === 'polling') {
-      await this.repos.replaceJobs(meeting.id, meeting.pollClosesAt ? planPollJobs(meeting.pollClosesAt, new Date()) : []);
+      const slots = (await this.repos.listSlots(meeting.id)).map((s) => s.startsAt);
+      await this.repos.replaceJobs(meeting.id, meeting.pollClosesAt ? planPollJobs(meeting.pollClosesAt, new Date(), slots) : []);
       return;
     }
     const lead = this.config.guild(meeting.guildId).recording.autoJoinLeadMin;
-    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead, settings.autoVoiceLeadMin));
+    await this.repos.replaceJobs(meeting.id, planJobs(meeting, settings.reminderOffsetsMin, new Date(), lead, settings.autoVoiceLeadMin, settings.timezone));
   }
 
   /** Carte, tag et message dans le post après un changement de statut. */
