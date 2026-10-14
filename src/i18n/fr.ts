@@ -416,6 +416,7 @@ export const fr = {
       `Transcription : ${transcription} · Résumé : ${llm} · ${passes} passe${passes > 1 ? 's' : ''}`,
     noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
     listen: "Écouter l'audio",
+    agendaLink: 'Ordre du jour',
     correct: 'Corriger',
     regen: 'Régénérer',
     correctModal: 'Corriger le compte rendu',
@@ -519,6 +520,9 @@ export const fr = {
       `${cause} — nouvelle tentative automatique dans ${seconds ? '30 s' : `${minutes} min`} (${attempt}/${max})`,
     failedHint: "Le traitement s'est arrêté. L'organisateur ou un gestionnaire peut le relancer : seules les étapes en échec sont refaites.",
     retry: 'Relancer',
+    retryNow: (step: string) =>
+      `Réessayer ${({ transcribe: 'la transcription', summarize: 'le résumé', export: 'la copie vers le stockage' } as Record<string, string>)[step] ?? ''} maintenant`.replace('  ', ' '),
+    retriedNow: 'Nouvelle tentative lancée.',
     scheduled: 'Compte rendu programmé : il sera publié dans le post, et vous y serez mentionné une fois prêt.',
     nothing: "Aucun enregistrement exploitable pour cette réunion.",
     running_reply: 'Un traitement est déjà en cours pour cette réunion.',

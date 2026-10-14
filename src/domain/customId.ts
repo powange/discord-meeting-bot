@@ -36,6 +36,7 @@ export type Action =
   | { type: 'consent.refuse' }
   | { type: 'consent.accept' }
   | { type: 'report.retry'; meetingId: string }
+  | { type: 'report.retryNow'; meetingId: string }
   | { type: 'report.correct'; meetingId: string }
   | { type: 'report.regen'; meetingId: string }
   | { type: 'report.correctSubmit'; meetingId: string }
@@ -279,6 +280,7 @@ export function decode(customId: string): Action | null {
   if (group === 'report') {
     if (rest.length !== 2) return null;
     if (verb === 'retry') return { type: 'report.retry', meetingId };
+    if (verb === 'retryNow') return { type: 'report.retryNow', meetingId };
     if (verb === 'correct') return { type: 'report.correct', meetingId };
     if (verb === 'regen') return { type: 'report.regen', meetingId };
     if (verb === 'correctSubmit') return { type: 'report.correctSubmit', meetingId };

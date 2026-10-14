@@ -53,6 +53,11 @@ describe('renderReport', () => {
   const out = renderReport(base, m);
   const all = out.map(texts).join('\n');
 
+  it('liens vers l’audio et l’ordre du jour du post', () => {
+    const head = texts(renderReport({ ...base, audioUrl: 'https://discord.com/a', agendaUrl: 'https://discord.com/b' }, m)[0]!);
+    expect(head).toContain(`🎧 [${m.report.listen}](https://discord.com/a) · 📋 [${m.report.agendaLink}](https://discord.com/b)`);
+  });
+
   it('en-tête, synthèse, sujets dans l’ordre de l’ODJ puis hors ODJ', () => {
     expect(all).toContain('## 📝 Compte rendu · Bureau');
     expect(all.indexOf('### 1. Budget')).toBeLessThan(all.indexOf('### 2. Fête'));
@@ -162,21 +167,22 @@ describe('repères en direct dans le compte rendu', () => {
 });
 
 describe('titre des sujets de l’ordre du jour', () => {
-  it('titre exact du point (pas celui du modèle, qui y ajoute la description), description en italique dessous', () => {
+  it('titre exact du point (pas celui du modèle, qui y ajoute la description) ; description en italique dans le fichier seulement', () => {
     const input = {
       ...base,
       agenda: [{ id: 2, title: 'Feux d’artifice', detail: 'Font-ils des dégâts ?\nSur les *chaloupes*' }],
       summary: { overview: '', topics: [{ agendaItemId: 2, title: 'Feux d’artifice — Font-ils des dégâts ?', summary: 'Pas sûr.', decisions: [], actions: [], openQuestions: [] }] },
     };
     const t = texts(renderReport(input, m)[0]!);
-    expect(t).toContain('### 1. Feux d’artifice\n*Font-ils des dégâts ?*\n*Sur les chaloupes*\nPas sûr.');
-    expect(t).not.toContain('— Font-ils');
+    expect(t).toContain('### 1. Feux d’artifice\nPas sûr.');
+    expect(t).not.toContain('Font-ils');
+    expect(renderReportMarkdown(input, m)).toContain('### 1. Feux d’artifice\n*Font-ils des dégâts ?*\n*Sur les chaloupes*\nPas sûr.');
   });
 });
 
 describe('renderReportMarkdown', () => {
   it('fichier lisible hors Discord : titre, sujets dans l’ordre, responsables par leur nom, sans lien ni mention', () => {
-    const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x' }, m);
+    const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x', agendaUrl: 'https://discord.com/y' }, m);
     expect(md.startsWith(`# ${m.report.title} · Bureau\n*lundi 12/10 · 42 min · 3 participants*`)).toBe(true);
     expect(md.indexOf('Budget voté')).toBeLessThan(md.indexOf('Date fixée'));
     expect(md).toContain('Réserver la salle — Marie-Anne · 📅 vendredi');

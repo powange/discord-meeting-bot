@@ -444,6 +444,8 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const pdf = content.input.summaryDisabled ? null : await renderReportPdf(content.input, m);
   const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
+  // Message de l'ordre du jour du post, s'il y a des points.
+  const agendaUrl = content.input.agenda.length && meeting.agendaMessageId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}/${meeting.agendaMessageId}` : undefined;
   const containers = renderReport(
     {
       ...content.input,
@@ -451,6 +453,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       transcriptFile,
       ...(pdf ? { pdfFile } : {}),
       ...(audioUrl ? { audioUrl } : {}),
+      ...(agendaUrl ? { agendaUrl } : {}),
     },
     m,
   );

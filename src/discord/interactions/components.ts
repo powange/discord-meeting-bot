@@ -251,6 +251,14 @@ export async function handleAction(
       return;
     }
 
+    case 'report.retryNow': {
+      if (!interaction.isButton()) return;
+      requireManager(scope);
+      await ctx.pipeline.retryNow(meeting.id);
+      await replyEphemeral(interaction, m.pipeline.retriedNow);
+      return;
+    }
+
     case 'rec.start': {
       if (!interaction.isButton()) return;
       requireManager(scope);

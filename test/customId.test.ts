@@ -20,6 +20,7 @@ describe('customId', () => {
     { type: 'meeting.edit', meetingId: id },
     { type: 'meeting.editSubmit', meetingId: id },
     { type: 'report.retry', meetingId: id },
+    { type: 'report.retryNow', meetingId: id },
     { type: 'report.correct', meetingId: id },
     { type: 'report.regen', meetingId: id },
     { type: 'report.correctSubmit', meetingId: id },

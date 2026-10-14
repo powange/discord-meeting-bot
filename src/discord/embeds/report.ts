@@ -28,6 +28,8 @@ export interface ReportInput {
   pdfFile?: string;
   /** Lien vers le message de l'audio complet. */
   audioUrl?: string;
+  /** Lien vers le message de l'ordre du jour du post (Discord seulement). */
+  agendaUrl?: string;
   /** Aucun LLM configuré : compte rendu réduit (audio et transcription). */
   summaryDisabled?: boolean;
   /** Réunion dont le compte rendu peut être corrigé : bouton « Corriger » sur le dernier message. */
@@ -71,14 +73,15 @@ function italic(text: string): string {
     .join('\n');
 }
 
-function topicSection(topic: Topic, index: number, input: ReportInput, m: Messages): string {
+function topicSection(topic: Topic, index: number, input: ReportInput, m: Messages, plain: boolean): string {
   const r = m.report;
   const spent = topic.agendaItemId === null ? undefined : input.durations?.get(topic.agendaItemId);
   const { title, detail } = topicHeading(topic, input);
   const lines = [
     `### ${index}. ${truncate(title, 200)}${topic.agendaItemId === null ? ` *(${r.offAgenda})*` : ''}${spent && spent >= 60_000 ? ` · ⏱️ ${m.format.duration(spent)}` : ''}`,
   ];
-  if (detail) lines.push(italic(truncate(detail, 1000)));
+  // Description du point : dans le fichier et le PDF ; le message Discord reste concis.
+  if (detail && plain) lines.push(italic(truncate(detail, 1000)));
   if (topic.summary) lines.push(topic.summary);
   if (topic.decisions.length) lines.push(`**${r.decisions}**`, ...topic.decisions.map((d) => `- ✅ ${d}`));
   if (topic.actions.length) {
@@ -129,13 +132,13 @@ function reportSections(input: ReportInput, m: Messages, plain = false): string[
     ? `\n👥 **${r.present}** : ${input.participants.map((p) => (plain ? p.name : `<@${p.id}>`)).join(', ')}`
     : '';
   const sections: string[] = [
-    `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}${present}`,
+    `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}${input.agendaUrl ? ` · 📋 [${r.agendaLink}](${input.agendaUrl})` : ''}${present}`,
   ];
   if (input.summaryDisabled) {
     sections.push(r.disabled);
   } else {
     if (input.summary.overview) sections.push(input.summary.overview);
-    topics.forEach((t, i) => sections.push(topicSection(t, i + 1, input, m)));
+    topics.forEach((t, i) => sections.push(topicSection(t, i + 1, input, m, plain)));
     if (topics.length === 0) sections.push(r.empty);
     if (notCovered.length) sections.push(`### ${r.notCovered}\n${notCovered.map((a) => `- ${a.title}`).join('\n')}`);
   }
@@ -212,7 +215,7 @@ export function renderTranscriptMarkdown(title: string, subtitle: string, lines:
  * Discord, responsables d'actions par leur nom, petits textes Discord (« -# ») en italique.
  */
 export function renderReportMarkdown(input: ReportInput, m: Messages): string {
-  const { audioUrl: _link, ...rest } = input;
+  const { audioUrl: _link, agendaUrl: _agenda, ...rest } = input;
   const sections = reportSections({ ...rest, people: new Map() }, m, true);
   const text = [...sections, `-# ${input.trace}`].join('\n\n');
   return `${text

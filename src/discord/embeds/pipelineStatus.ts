@@ -13,8 +13,11 @@ export interface StepView {
   skipped?: boolean;
 }
 
-/** Message de suivi du traitement : une ligne par étape, bouton « Relancer » en cas d'échec. */
-export function renderPipelineStatus(meetingId: string, steps: readonly StepView[], m: Messages, publishedUrl?: string): APIContainerComponent {
+/**
+ * Message de suivi du traitement : une ligne par étape, bouton « Relancer » en cas d'échec,
+ * « Réessayer … maintenant » pendant l'attente d'une relance automatique de l'étape `waiting`.
+ */
+export function renderPipelineStatus(meetingId: string, steps: readonly StepView[], m: Messages, publishedUrl?: string, waiting: PipelineStep | null = null): APIContainerComponent {
   const p = m.pipeline;
   const failed = steps.some((s) => s.status === 'failed');
   const allDone = steps.length > 0 && steps.every((s) => s.status === 'done');
@@ -33,6 +36,10 @@ export function renderPipelineStatus(meetingId: string, steps: readonly StepView
     container.addTextDisplayComponents((t) => t.setContent(`-# ${p.failedHint}`));
     container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
       row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'report.retry', meetingId })).setLabel(p.retry).setEmoji('🔁').setStyle(ButtonStyle.Primary)),
+    );
+  } else if (waiting) {
+    container.addActionRowComponents((row: ActionRowBuilder<ButtonBuilder>) =>
+      row.addComponents(new ButtonBuilder().setCustomId(encode({ type: 'report.retryNow', meetingId })).setLabel(p.retryNow(waiting)).setEmoji('🔁').setStyle(ButtonStyle.Secondary)),
     );
   }
   return container.toJSON();
