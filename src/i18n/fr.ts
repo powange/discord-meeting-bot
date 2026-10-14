@@ -290,7 +290,6 @@ export const fr = {
     note: 'Note',
     goto: 'Aller directement à un point…',
     offAgendaOption: 'Hors ordre du jour',
-    pointSet: (label: string) => `▶️ Repère posé : ${label}.`,
     noteModal: 'Note en direct',
     noteKind: 'Type',
     noteKinds: { decision: 'Décision', action: 'Action', note: 'Remarque' } as Record<string, string>,

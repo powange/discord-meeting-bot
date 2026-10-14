@@ -57,7 +57,7 @@ function setup(opts: { recording?: boolean; markers?: Array<{ kind: string; agen
 describe('repères pendant l’enregistrement', () => {
   it('« Point suivant » : premier point, puis le suivant ; message d’enregistrement mis à jour', async () => {
     const first = setup();
-    expect((await first.run('rec.next', 'button')).text).toBe('▶️ Repère posé : 1. Budget.');
+    expect((await first.run('rec.next', 'button')).text).toBe(''); // pas d'accusé : le suivi se met à jour sur place
     expect(first.added[0]).toMatchObject({ meetingId, kind: 'agenda', agendaItemId: 10, authorId: 'organizer' });
     expect(first.recordings.syncControl).toHaveBeenCalledWith(meetingId);
     const second = setup({ markers: [{ kind: 'agenda', agendaItemId: 10, at: new Date() }] });

@@ -35,6 +35,7 @@ import { askInvites, handleDraft } from './creation.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
+import { noticeText } from '../ui/notice.js';
 import { handleDatePoll, type PollAction } from './datePoll.js';
 
 export type ComponentInteraction = ButtonInteraction<'cached'> | StringSelectMenuInteraction<'cached'> | RoleSelectMenuInteraction<'cached'> | ModalSubmitInteraction<'cached'>;
@@ -299,9 +300,9 @@ export async function handleAction(
       } else {
         target = nextPoint(agenda, await ctx.repos.listMarkers(meeting.id));
       }
+      // Le suivi se met à jour sur place : pas d'accusé privé (l'animateur en accumulerait un par point).
+      await interaction.deferUpdate();
       await ctx.repos.addMarker({ meetingId: meeting.id, kind: 'agenda', at: new Date(), agendaItemId: target, authorId: interaction.user.id });
-      const index = agenda.findIndex((a) => a.id === target);
-      await replyEphemeral(interaction, m.control.pointSet(index >= 0 ? `${index + 1}. ${agenda[index]!.title}` : m.control.offAgendaOption));
       await ctx.recordings.syncControl(meeting.id);
       return;
     }
@@ -651,7 +652,7 @@ async function withDraft(interaction: ModalSubmitInteraction<'cached'>, m: Messa
     if (!(err instanceof UserError)) throw err;
     drafts.save(interaction.user.id, key, readMeetingDraft(interaction));
     const retry = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(retryId).setLabel(m.modal.retry).setEmoji('✏️').setStyle(ButtonStyle.Primary));
-    const payload = { content: `❌ ${err.message}`, components: [retry], allowedMentions: { parse: [] } };
+    const payload = { content: noticeText('error', err.message), components: [retry], allowedMentions: { parse: [] } };
     if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
     else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
   }

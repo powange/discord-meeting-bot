@@ -4,7 +4,6 @@ import {
   ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
-  ContainerBuilder,
   LabelBuilder,
   MessageFlags,
   ModalBuilder,
@@ -24,6 +23,7 @@ import { formatWhen } from '../../domain/time.js';
 import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
+import { noticeContainer, noticeText } from '../ui/notice.js';
 import { renderPollPanel, renderSlotChoice } from '../embeds/datePoll.js';
 import { fetchForum } from '../threads.js';
 import { meetingScope, replyEphemeral, requireManager } from './common.js';
@@ -99,10 +99,10 @@ export async function handleDatePoll(ctx: AppContext, interaction: ComponentInte
       try {
         if (action.type === 'poll.fixSelect') await ctx.meetings.fixDate(interaction.guild, meeting.id, slotId, interaction.user.id);
         else await ctx.meetings.removeSlot(meeting.id, slotId);
-        await interaction.editReply({ components: [notice(action.type === 'poll.fixSelect' ? p.fixedReply : p.slotRemoved)] });
+        await interaction.editReply({ components: [noticeContainer('success', action.type === 'poll.fixSelect' ? p.fixedReply : p.slotRemoved)] });
       } catch (err) {
         if (!(err instanceof UserError)) ctx.log.error({ err, meetingId: meeting.id }, 'Action du sondage en échec');
-        await interaction.editReply({ components: [notice(`❌ ${err instanceof UserError ? err.message : m.errors.generic('—')}`)] });
+        await interaction.editReply({ components: [noticeContainer('error', err instanceof UserError ? err.message : m.errors.generic('—'))] });
       }
       return;
     }
@@ -146,10 +146,6 @@ async function panel(ctx: AppContext, meeting: { id: string; title: string; guil
 /** Classement (meilleur en tête) appliqué aux choix affichés. */
 function rankById<T extends { id: number; yes: number; maybe: number }>(choices: readonly T[]): T[] {
   return [...choices].sort((a, b) => b.yes - a.yes || b.maybe - a.maybe);
-}
-
-function notice(text: string) {
-  return new ContainerBuilder().setAccentColor(0x57f287).addTextDisplayComponents((t) => t.setContent(text)).toJSON();
 }
 
 async function showCreatePoll(ctx: AppContext, interaction: ButtonInteraction<'cached'>, draft?: { title: string; slots: string; description: string }): Promise<void> {
@@ -202,7 +198,7 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
     const retry = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(encode({ type: 'poll.createRetry' })).setLabel(m.modal.retry).setEmoji('✏️').setStyle(ButtonStyle.Primary),
     );
-    await interaction.editReply({ content: `❌ ${message}`, components: [retry], allowedMentions: { parse: [] } });
+    await interaction.editReply({ content: noticeText('error', message), components: [retry], allowedMentions: { parse: [] } });
   };
   if (!title) return fail(m.errors.titleRequired);
   const now = new Date();

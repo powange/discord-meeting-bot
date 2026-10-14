@@ -12,6 +12,7 @@ import {
   type Guild,
   type Interaction,
 } from 'discord.js';
+import { noticeText } from '../ui/notice.js';
 import { IANAZone } from 'luxon';
 import type { AppContext } from '../../context.js';
 import { pageOf, type ChannelInfo } from '../../domain/channelChoices.js';
@@ -177,7 +178,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const forum = interaction.guild.channels.cache.get(interaction.values[0] ?? '');
       if (!forum || forum.type !== ChannelType.GuildForum) return show('forum');
       const missing = missingForumPermissions(forum as ForumChannel);
-      if (missing.length > 0) return show('forum', `❌ ${m.errors.forumPermissions(missing.join(', '))}`);
+      if (missing.length > 0) return show('forum', noticeText('error', m.errors.forumPermissions(missing.join(', '))));
       await interaction.deferUpdate(); // tags et post épinglé : quelques secondes
       const tagIds = await ensureStatusTags(forum as ForumChannel, m);
       await ctx.repos.updateSettings(guildId, { forumChannelId: forum.id, tagIds });
@@ -193,7 +194,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!forum || forum.type !== ChannelType.GuildForum) return show('forum');
       const reserve = !postsReserved(forum as ForumChannel);
       const ok = await setPostsReserved(forum as ForumChannel, reserve, `/config par ${interaction.user.tag}`);
-      return show('forum', ok ? (reserve ? t.postsReservedDone : t.postsOpenDone) : `❌ ${t.postsNeedPermission}`);
+      return show('forum', ok ? (reserve ? t.postsReservedDone : t.postsOpenDone) : noticeText('error', t.postsNeedPermission));
     }
 
     case 'voice': {
@@ -279,7 +280,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!interaction.isModalSubmit()) return;
       const raw = interaction.fields.getTextInputValue('offsets').trim().replace(/\s+j\b/g, 'j').replace(/\s+h\b/g, 'h');
       const offsets = /^(aucun|non|0)$/i.test(raw) ? [] : parseOffsets(raw);
-      if (!offsets) return show('reminders', `❌ ${m.errors.offsets(raw.slice(0, 100))}`);
+      if (!offsets) return show('reminders', noticeText('error', m.errors.offsets(raw.slice(0, 100))));
       await ctx.repos.updateSettings(guildId, { reminderOffsetsMin: offsets });
       await ctx.meetings.replanGuild(guildId);
       return show('reminders', t.saved);
@@ -310,8 +311,8 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       if (!interaction.isModalSubmit()) return;
       const timezone = interaction.fields.getTextInputValue('timezone').trim();
       const duration = Number(interaction.fields.getTextInputValue('duration').trim());
-      if (!IANAZone.isValidZone(timezone)) return show('general', `❌ ${m.errors.timezone}`);
-      if (!Number.isInteger(duration) || duration < DURATION_MIN || duration > DURATION_MAX) return show('general', `❌ ${m.errors.duration(DURATION_MIN, DURATION_MAX)}`);
+      if (!IANAZone.isValidZone(timezone)) return show('general', noticeText('error', m.errors.timezone));
+      if (!Number.isInteger(duration) || duration < DURATION_MIN || duration > DURATION_MAX) return show('general', noticeText('error', m.errors.duration(DURATION_MIN, DURATION_MAX)));
       await ctx.repos.updateSettings(guildId, { timezone, defaultDurationMin: duration });
       return show('general', t.saved);
     }
@@ -344,7 +345,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
           () => true,
           (err) => (ctx.log.warn({ guildId, channelId, err: errorMessage(err) }, 'Alerte de test impossible à poster'), false),
         ));
-      return show('alerts', sent ? t.alertsTestSent(channelId) : `❌ ${m.errors.alertChannel}`);
+      return show('alerts', sent ? t.alertsTestSent(channelId) : noticeText('error', m.errors.alertChannel));
     }
 
     // ---------------------------------------------------------------- stockage
@@ -467,15 +468,15 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
       const url = interaction.fields.getTextInputValue('url').trim().replace(/\/+$/, '');
       const model = interaction.fields.getTextInputValue('model').trim();
       const keyInput = interaction.fields.getTextInputValue('key').trim();
-      if (!name) return show('summary', `❌ ${m.errors.titleRequired}`);
-      if (!/^https?:\/\/[^\s/]+/.test(url)) return show('summary', `❌ ${m.transcriptionConfig.badUrl}`);
+      if (!name) return show('summary', noticeText('error', m.errors.titleRequired));
+      if (!/^https?:\/\/[^\s/]+/.test(url)) return show('summary', noticeText('error', m.transcriptionConfig.badUrl));
       try {
         await assertUrlAllowed(url, ctx.config.ai.allowedHosts);
       } catch (err) {
-        return show('summary', `❌ ${err instanceof Error ? err.message : err}`);
+        return show('summary', noticeText('error', err instanceof Error ? err.message : String(err)));
       }
       const others = (await ctx.repos.listLlmBackends(guildId)).filter((r) => r.id !== editing?.id);
-      if (others.some((r) => r.name === name)) return show('summary', `❌ ${t.llmExists(name)}`);
+      if (others.some((r) => r.name === name)) return show('summary', noticeText('error', t.llmExists(name)));
       // Clé chiffrée en base ; changer d'hôte sans ressaisir la clé l'efface (elle ne part pas vers un autre serveur).
       const sameHost = editing !== null && hostOf(editing.url) === hostOf(url);
       const apiKey = keyInput && keyInput !== '-' ? encryptSecret(keyInput) : keyInput !== '-' && sameHost ? editing.apiKey : null;
@@ -507,7 +508,7 @@ export async function handleConfigPanel(ctx: AppContext, interaction: CfgInterac
         const models = await listModels(llmRowToConfig(row, ctx.config.guild(guildId).llm), ctx.config.ai.allowedHosts);
         return show('summary', models.length ? undefined : t.noModels, { llmSelected: row.id, models });
       } catch (err) {
-        return show('summary', `❌ ${err instanceof Error ? err.message : err}`, { llmSelected: row.id });
+        return show('summary', noticeText('error', err instanceof Error ? err.message : String(err)), { llmSelected: row.id });
       }
     }
     case 'llmModel': {

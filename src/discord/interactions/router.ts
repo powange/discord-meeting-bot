@@ -9,7 +9,7 @@ import { handleBackendPanel } from './backendPanel.js';
 import { handleConfigPanel } from './configPanel.js';
 import { handleConsent } from './consent.js';
 import { handleAction } from './components.js';
-import { replyEphemeral } from './common.js';
+import { replyNotice } from './common.js';
 
 export async function routeInteraction(ctx: AppContext, interaction: Interaction): Promise<void> {
   if (!interaction.inCachedGuild()) return;
@@ -68,6 +68,6 @@ export async function routeInteraction(ctx: AppContext, interaction: Interaction
       const locale = await ctx.settings.get(interaction.guildId).then((s) => s.locale).catch(() => 'fr');
       text = messages(locale).errors.generic(ref);
     }
-    await replyEphemeral(interaction, text).catch((replyErr) => log.warn({ err: replyErr }, 'Réponse d’erreur impossible'));
+    await replyNotice(interaction, 'error', text).catch((replyErr) => log.warn({ err: replyErr }, 'Réponse d’erreur impossible'));
   }
 }

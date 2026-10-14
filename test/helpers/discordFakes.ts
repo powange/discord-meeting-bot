@@ -112,6 +112,8 @@ export function fakeInteraction(opts: {
     values: opts.values ?? [],
     deferred: false,
     replied: false,
+    /** Comme discord.js : renseigné par reply/deferReply, laissé à null par deferUpdate. */
+    ephemeral: null as boolean | null,
     inCachedGuild: () => true,
     isAutocomplete: () => false,
     isChatInputCommand: () => false,
@@ -133,8 +135,9 @@ export function fakeInteraction(opts: {
       interaction.replied = true;
       replies.push({ how: 'reply', payload });
     }),
-    deferReply: vi.fn(async () => {
+    deferReply: vi.fn(async (options?: { flags?: number }) => {
       interaction.deferred = true;
+      interaction.ephemeral = Boolean((options?.flags ?? 0) & MessageFlags.Ephemeral);
     }),
     deferUpdate: vi.fn(async () => {
       interaction.deferred = true;
