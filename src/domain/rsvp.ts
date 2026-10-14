@@ -24,8 +24,12 @@ export function nonResponders(expected: Iterable<string>, rsvps: readonly Rsvp[]
   return [...new Set(expected)].filter((id) => !answered.has(id) && !excluded.has(id));
 }
 
-/** Rôles relancés : ceux invités pour cette réunion (sondage), sinon le rôle de relance du serveur. */
-export function nudgeRoles(meeting: { targetRoleIds: readonly string[] }, settings: { nudgeRoleId: string | null }): string[] {
+/**
+ * Rôles relancés : ceux invités pour cette réunion, sinon le rôle de relance du serveur ; aucun
+ * si « Personne » a été choisi.
+ */
+export function nudgeRoles(meeting: { targetRoleIds: readonly string[]; inviteNone?: boolean }, settings: { nudgeRoleId: string | null }): string[] {
+  if (meeting.inviteNone) return [];
   if (meeting.targetRoleIds.length) return [...meeting.targetRoleIds];
   return settings.nudgeRoleId ? [settings.nudgeRoleId] : [];
 }

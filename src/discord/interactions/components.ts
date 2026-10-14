@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import type { AppContext } from '../../context.js';
 import { AGENDA_DETAIL_MAX, AGENDA_TITLE_MAX, canEditItem, checkAddItem, moveItem } from '../../domain/agenda.js';
-import { encode, type Action } from '../../domain/customId.js';
+import { encode, type Action, type DraftType } from '../../domain/customId.js';
 import { NOTE_KINDS, nextPoint, type NoteKind } from '../../domain/markers.js';
 import { canReschedule, isOpen } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
@@ -25,10 +25,11 @@ import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderAgendaManager } from '../embeds/meetingCard.js';
 import { OFF_AGENDA } from '../embeds/recordingControl.js';
-import { roleMention } from '../notify.js';
 import { fetchForum } from '../threads.js';
 import { agendaItemModal, duplicateModal, meetingModal, readAgendaItemModal, readDuplicateModal, readMeetingDraft, readMeetingModal, type MeetingDraft } from '../modals.js';
-import { inviteRows, renderMeetingManager } from '../embeds/meetingManager.js';
+import { renderMeetingManager } from '../embeds/meetingManager.js';
+import { inviteSummary, nextInviteState } from '../embeds/invite.js';
+import { askInvites, handleDraft } from './creation.js';
 import { formatWhen } from '../../domain/time.js';
 import type { MeetingRow } from '../../db/schema.js';
 import { meetingScope, replyEphemeral, requireManager, type MeetingScope } from './common.js';
@@ -55,9 +56,10 @@ export async function handleAction(
     return showCreateModal(ctx, interaction, drafts.take(interaction.user.id, 'create'));
   }
   if (rawAction.type.startsWith('poll.')) return handleDatePoll(ctx, interaction, rawAction as PollAction);
+  if (rawAction.type.startsWith('draft.')) return handleDraft(ctx, interaction, rawAction as { type: DraftType; draftId: string });
 
   // Actions portant sur une réunion existante.
-  const action = rawAction as Exclude<typeof rawAction, PollAction | { type: 'meeting.create' | 'meeting.createSubmit' | 'meeting.createRetry' }>;
+  const action = rawAction as Exclude<typeof rawAction, PollAction | { type: DraftType; draftId: string } | { type: 'meeting.create' | 'meeting.createSubmit' | 'meeting.createRetry' }>;
   const scope = await meetingScope(ctx, interaction, action.meetingId);
   const { meeting, m } = scope;
 
@@ -332,29 +334,20 @@ export async function handleAction(
     }
 
     case 'meeting.roles':
-    case 'meeting.everyone': {
+    case 'meeting.everyone':
+    case 'meeting.default':
+    case 'meeting.none': {
       requireManager(scope);
       if (meeting.status !== 'scheduled' && meeting.status !== 'polling') throw new UserError(m.errors.meetingClosed);
-      const guildId = interaction.guildId;
-      const everyone = meeting.targetRoleIds.includes(guildId);
-      let roleIds: string[];
-      if (action.type === 'meeting.roles') {
-        if (!interaction.isRoleSelectMenu()) return;
-        // Le sélecteur ne connaît pas @everyone : il est conservé s'il était invité.
-        roleIds = [...[...interaction.roles.keys()].filter((id) => id !== guildId).slice(0, 5), ...(everyone ? [guildId] : [])];
-      } else {
-        if (!interaction.isButton()) return;
-        roleIds = everyone ? meeting.targetRoleIds.filter((id) => id !== guildId) : [...meeting.targetRoleIds, guildId];
-      }
+      const verb = action.type.split('.')[1] as 'roles' | 'everyone' | 'default' | 'none';
+      if (verb === 'roles' ? !interaction.isRoleSelectMenu() : !interaction.isButton()) return;
+      const selected = interaction.isRoleSelectMenu() ? [...interaction.roles.keys()] : [];
+      const next = nextInviteState({ roleIds: meeting.targetRoleIds, none: meeting.inviteNone }, interaction.guildId, verb, selected);
       await interaction.deferUpdate();
-      await ctx.meetings.inviteRoles(interaction.guild, meeting.id, roleIds);
-      const polling = meeting.status === 'polling';
-      const names = roleIds.map((id) => roleMention(id, guildId)).join(' ');
-      const text = roleIds.length ? (polling ? m.datePoll.invitedReply(names) : m.invite.invitedReply(names)) : polling ? m.datePoll.noInvited : m.invite.noInvited;
+      await ctx.meetings.inviteRoles(interaction.guild, meeting.id, next.roleIds, next.none);
       const updated = (await ctx.repos.getMeeting(meeting.id)) ?? meeting;
-      // Depuis ⚙️ Gérer (Components V2) : le panneau, avec le résultat en tête ; depuis la confirmation de création : texte.
-      if (interaction.message.flags.has(MessageFlags.IsComponentsV2)) await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: text })], allowedMentions: { parse: [] } });
-      else await interaction.editReply({ content: text, components: inviteRows(meeting.id, guildId, roleIds, m), allowedMentions: { parse: [] } });
+      const summary = inviteSummary(next, interaction.guildId, scope.settings.nudgeRoleId, m);
+      await interaction.editReply({ components: [await managerPanel(ctx, updated, { notice: m.invite.updated(summary) })], allowedMentions: { parse: [] } });
       return;
     }
 
@@ -431,14 +424,19 @@ export async function handleAction(
       if (!interaction.isModalSubmit()) return;
       if (!canCreateMeeting(scope.actor, scope.settings)) throw new UserError(m.errors.cannotCreate);
       const input = readDuplicateModal(interaction, m, scope.settings.timezone, meeting.durationMin);
-      const copy = await ctx.meetings.create(
-        interaction.guild,
-        interaction.user.id,
-        // Un salon temporaire appartient à la réunion d'origine (il sera supprimé) : la copie ne le reprend pas.
-        { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
-        input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
-      );
-      await interaction.editReply({ content: `${m.replies.duplicated(copy.threadId!)}\n${m.invite.afterCreate}\n${m.invite.defaultNudge(scope.settings.nudgeRoleId, interaction.guildId, false)}`, components: inviteRows(copy.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
+      await askInvites(ctx, interaction, {
+        kind: 'meeting',
+        title: input.title,
+        when: formatWhen(input.startsAt, scope.settings.timezone, scope.settings.locale, m.format.when),
+        create: () =>
+          ctx.meetings.create(
+            interaction.guild,
+            interaction.user.id,
+            // Un salon temporaire appartient à la réunion d'origine (il sera supprimé) : la copie ne le reprend pas.
+            { title: input.title, description: input.description, startsAt: input.startsAt, durationMin: input.durationMin, voiceChannelId: meeting.voiceTemporary ? null : meeting.voiceChannelId },
+            input.copyAgenda ? { copyAgendaFrom: meeting.id } : {},
+          ),
+      });
       return;
     }
 
@@ -561,9 +559,15 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
       fixedVoiceChannelId: settings.voiceChannelId,
       autoVoice: settings.autoVoice,
     });
-    const meeting = await ctx.meetings.create(interaction.guild, interaction.user.id, input);
-    // Rôles à inviter : choisis juste après (le formulaire de création est plein).
-    await interaction.editReply({ content: `${m.invite.meetingCreated(meeting.threadId!)}\n${m.invite.defaultNudge(settings.nudgeRoleId, interaction.guildId, false)}`, components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
+    // Rien n'est créé avant le choix « Qui inviter ? » ; « Modifier la saisie » rouvre le formulaire prérempli.
+    drafts.save(interaction.user.id, 'create', readMeetingDraft(interaction));
+    await askInvites(ctx, interaction, {
+      kind: 'meeting',
+      title: input.title,
+      when: formatWhen(input.startsAt, settings.timezone, settings.locale, m.format.when),
+      retryId: encode({ type: 'meeting.createRetry' }),
+      create: () => ctx.meetings.create(interaction.guild, interaction.user.id, input),
+    });
   });
 }
 
@@ -602,7 +606,8 @@ async function withDraft(interaction: ModalSubmitInteraction<'cached'>, m: Messa
 async function managerPanel(ctx: AppContext, meeting: MeetingRow, state: { confirmEnd?: boolean; confirmRegenAll?: boolean; notice?: string } = {}) {
   const m = await ctx.settings.messages(meeting.guildId);
   const hasRecording = (await ctx.repos.listRecordingsForMeeting(meeting.id)).length > 0;
-  return renderMeetingManager(meeting, { hasRecording, recording: ctx.recordings.isRecording(meeting.id), ...state }, m);
+  const nudgeRoleId = (await ctx.settings.get(meeting.guildId)).nudgeRoleId;
+  return renderMeetingManager(meeting, { hasRecording, recording: ctx.recordings.isRecording(meeting.id), nudgeRoleId, ...state }, m);
 }
 
 async function updateManager(

@@ -1,8 +1,9 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, RoleSelectMenuBuilder, type APIContainerComponent } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, type APIContainerComponent } from 'discord.js';
 import { encode, type Action } from '../../domain/customId.js';
 import { isOpen } from '../../domain/meeting.js';
 import type { MeetingStatus } from '../../domain/types.js';
 import type { Messages } from '../../i18n/index.js';
+import { inviteControls, inviteSummary } from './invite.js';
 
 export interface ManagerState {
   /** Une session d'enregistrement existe : le compte rendu peut être régénéré. */
@@ -14,13 +15,15 @@ export interface ManagerState {
   /** Enregistrement en cours : bouton Arrêter au lieu d'Enregistrer. */
   recording?: boolean;
   notice?: string | undefined;
+  /** Rôle relancé de /config (bouton « Par défaut » des invitations). */
+  nudgeRoleId?: string | null;
 }
 
 type MeetingAction = Extract<Action, { meetingId: string }>['type'];
 
 /** Panneau « Gérer » d'une réunion (organisateur et gestionnaires) : remplace les sous-commandes /reunion. */
 export function renderMeetingManager(
-  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean; guildId?: string; targetRoleIds?: readonly string[] },
+  meeting: { id: string; title: string; status: MeetingStatus; autoRecord: boolean; guildId?: string; targetRoleIds?: readonly string[]; inviteNone?: boolean },
   state: ManagerState,
   m: Messages,
 ): APIContainerComponent {
@@ -48,7 +51,7 @@ export function renderMeetingManager(
       new ActionRowBuilder<ButtonBuilder>().addComponents(button('meeting.edit', g.edit, '✏️'), button('meeting.cancel', g.cancel, '❌', ButtonStyle.Danger)),
     );
     for (const row of rows) container.addActionRowComponents(row);
-    for (const row of inviteRows(meeting.id, meeting.guildId ?? '', meeting.targetRoleIds ?? [], m)) container.addActionRowComponents(row);
+    addInvites(container, meeting, state, m);
     return container.toJSON();
   }
   const main = new ActionRowBuilder<ButtonBuilder>();
@@ -87,7 +90,7 @@ export function renderMeetingManager(
   }
   for (const row of rows) container.addActionRowComponents(row);
   // Réunion à venir : rôles invités (mentionnés à l'ajout, relancés au premier rappel).
-  if (meeting.status === 'scheduled') for (const row of inviteRows(meeting.id, meeting.guildId ?? '', meeting.targetRoleIds ?? [], m)) container.addActionRowComponents(row);
+  if (meeting.status === 'scheduled') addInvites(container, meeting, state, m);
   return container.toJSON();
 }
 
@@ -122,20 +125,18 @@ export function consentButton(m: Messages): ButtonBuilder {
   return new ButtonBuilder().setCustomId(encode({ type: 'consent.open' })).setLabel(m.consent.open).setEmoji('🎙️').setStyle(ButtonStyle.Secondary);
 }
 
-/**
- * Rôles invités à une réunion ou à un sondage : sélecteur (jusqu'à 5) et bouton @everyone, que
- * les sélecteurs de Discord ne proposent jamais. Ils sont mentionnés à l'invitation, puis
- * relancés à la place du rôle de relance du serveur.
- */
-export function inviteRows(meetingId: string, guildId: string, current: readonly string[], m: Messages) {
-  const roles = current.filter((id) => id !== guildId);
-  const select = new RoleSelectMenuBuilder().setCustomId(encode({ type: 'meeting.roles', meetingId })).setPlaceholder(m.invite.roles).setMinValues(0).setMaxValues(5);
-  if (roles.length) select.setDefaultRoles(...roles);
-  const everyone = current.includes(guildId);
-  const button = new ButtonBuilder()
-    .setCustomId(encode({ type: 'meeting.everyone', meetingId }))
-    .setLabel(everyone ? m.invite.everyoneOff : m.invite.everyoneOn)
-    .setEmoji('📣')
-    .setStyle(everyone ? ButtonStyle.Secondary : ButtonStyle.Primary);
-  return [new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(select).toJSON(), new ActionRowBuilder<ButtonBuilder>().addComponents(button).toJSON()];
+/** Qui inviter (réunion à venir ou sondage) : choix actuel, sélecteur de rôles, Tout le monde / Par défaut / Personne. */
+function addInvites(
+  container: ContainerBuilder,
+  meeting: { id: string; guildId?: string; targetRoleIds?: readonly string[]; inviteNone?: boolean },
+  state: ManagerState,
+  m: Messages,
+): void {
+  const guildId = meeting.guildId ?? '';
+  const invite = { roleIds: meeting.targetRoleIds ?? [], none: meeting.inviteNone ?? false };
+  const id = (type: 'meeting.roles' | 'meeting.everyone' | 'meeting.default' | 'meeting.none') => encode({ type, meetingId: meeting.id });
+  container.addTextDisplayComponents((t) => t.setContent(m.invite.manage(inviteSummary(invite, guildId, state.nudgeRoleId ?? null, m))));
+  for (const row of inviteControls({ roles: id('meeting.roles'), everyone: id('meeting.everyone'), default: id('meeting.default'), none: id('meeting.none') }, guildId, invite, state.nudgeRoleId ?? null, m)) {
+    container.addActionRowComponents(row);
+  }
 }

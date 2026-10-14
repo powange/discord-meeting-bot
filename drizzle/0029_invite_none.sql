@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "invite_none" boolean DEFAULT false NOT NULL;

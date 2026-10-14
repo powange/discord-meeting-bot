@@ -86,31 +86,51 @@ export const fr = {
     `3. Pour les comptes rendus : **Transcription** (serveur Vibe/Whisper) et **Résumé** (LM Studio, Ollama…).\n` +
     `Ensuite, le bouton « Nouvelle réunion » apparaît dans le post épinglé du forum.`,
 
-  /** Rôles invités à une réunion ou à un sondage. */
+  /** Qui inviter à une réunion ou à un sondage (rôles mentionnés à la création, puis relancés). */
   invite: {
-    roles: 'Inviter des rôles (facultatif)',
-    everyoneOn: 'Inviter tout le monde (@everyone)',
-    everyoneOff: 'Ne plus inviter tout le monde',
+    roles: 'Choisir des rôles (jusqu’à 5)',
+    everyoneOn: 'Tout le monde (@everyone)',
+    everyoneOff: 'Tout le monde (@everyone)',
+    defaultButton: 'Par défaut',
+    noneButton: 'Personne',
+    summaryRoles: (roles: string) => `${roles} : mentionnés à la création, puis relancés s'ils n'ont pas répondu`,
+    summaryDefault: (role: string) => `par défaut : ${role} (rôle relancé de /config) sera relancé, sans mention à la création`,
+    summaryNone: 'personne : aucune mention, aucune relance',
+    /** Message « Qui inviter ? » avant la création (brouillon). */
+    draft: (kind: 'meeting' | 'poll', title: string, when: string, defaultRole: string | null) => {
+      const poll = kind === 'poll';
+      const what = poll ? 'le sondage' : 'la réunion';
+      const relance = poll ? 'la veille de la fin des réponses' : 'au premier rappel';
+      return [
+        `## 📣 Qui inviter ?`,
+        `**${title}** · ${when}`,
+        `-# ${poll ? "Le sondage n'est" : "La réunion n'est"} pas encore ${poll ? 'créé' : 'créée'} : choisissez qui prévenir, puis cliquez sur « Créer ${what} ».`,
+        '',
+        `Les personnes invitées sont **mentionnées dès la création** de ${what} : elles reçoivent une notification${poll ? ' pour indiquer leurs disponibilités' : ' pour répondre Présent / Peut-être / Absent'}. Celles qui n'ont pas répondu sont ensuite **relancées ${relance}**.`,
+        `- **Choisir des rôles** (menu ci-dessous) : les membres de ces rôles.`,
+        `- **📣 Tout le monde** : tout le serveur (@everyone ; chaque membre un par un si le bot n'a pas la permission de mentionner @everyone).`,
+        ...(defaultRole ? [`- **↩️ Par défaut** : personne n'est mentionné à la création ; ${defaultRole} (rôle relancé de /config) est relancé ${relance}.`] : []),
+        `- **🚫 Personne** : aucune mention, aucune relance.${poll ? '' : ' Seuls ceux qui répondent Présent ou Peut-être recevront les rappels.'}`,
+      ].join('\n');
+    },
+    current: (summary: string) => `**Choix actuel** : ${summary}`,
+    create: (kind: 'meeting' | 'poll') => (kind === 'poll' ? 'Créer le sondage' : 'Créer la réunion'),
+    edit: 'Modifier la saisie',
+    cancel: 'Annuler',
+    cancelled: 'Création annulée : rien n’a été créé.',
+    expired: 'Ce brouillon a expiré (15 min) : recommencez la création.',
+    footer: '-# Brouillon valable 15 min. Les invitations se modifient ensuite dans ⚙️ Gérer.',
+    created: (kind: 'meeting' | 'poll', threadId: string, summary: string) => `✅ ${kind === 'poll' ? 'Sondage créé' : 'Réunion créée'} : <#${threadId}>\n📣 ${summary}`,
+    /** ⚙️ Gérer : ligne des invitations. */
+    manage: (summary: string) => `📣 **Invités** : ${summary}`,
+    updated: (summary: string) => `✅ Invitations mises à jour : ${summary}`,
     meeting: (roles: string) => `📣 ${roles} : vous êtes invités à cette réunion. Indiquez si vous venez (boutons Présent / Peut-être / Absent sur la carte ci-dessus).`,
-    /** Ce qui s'applique si aucun rôle n'est invité. */
-    defaultNudge: (roleId: string | null, guildId: string, poll: boolean) =>
-      roleId
-        ? `-# Sans choix ici : ${roleId === guildId ? 'tout le monde (@everyone)' : `<@&${roleId}>`} (rôle relancé de /config) sera relancé ${poll ? 'la veille de la fin des réponses' : 'au premier rappel'}, sans être mentionné maintenant.`
-        : '-# Sans choix ici : personne n\'est relancé (aucun rôle relancé dans /config → Rôles).',
-    afterCreate: "📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.",
-    meetingCreated: (threadId: string) =>
-      `Réunion créée : <#${threadId}>\n📣 Vous pouvez inviter des rôles : ils seront mentionnés dans la réunion, puis relancés au premier rappel s'ils n'ont pas répondu.`,
-    invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés au premier rappel.`,
-    noInvited: 'Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).',
   },
 
   datePoll: {
-    created: (threadId: string) =>
-      `Sondage créé : <#${threadId}>\n📣 Vous pouvez inviter des rôles à répondre : ils seront mentionnés dans le sondage, puis relancés la veille de la fin des réponses s'ils n'ont pas répondu.`,
     invitedMembers: 'Invités :',
+    draftWhen: (slots: number, closes: string) => `${slots} créneaux proposés · réponses jusqu'au ${closes}`,
     invite: (roles: string) => `📣 ${roles} : vous êtes invités à indiquer vos disponibilités (bouton « Indiquer mes disponibilités » sur la carte ci-dessus).`,
-    invitedReply: (roles: string) => `✅ Rôles invités : ${roles}. Ceux qui n'ont pas répondu seront relancés la veille de la fin des réponses.`,
-    noInvited: "Plus aucun rôle invité : la relance suit le rôle de relance du serveur (/config → Rôles).",
     hubButton: 'Proposer des dates',
     modalTitle: 'Proposer des dates',
     slotsField: 'Créneaux proposés (un par ligne)',

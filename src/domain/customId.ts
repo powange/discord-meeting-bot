@@ -45,6 +45,7 @@ export type Action =
   | { type: 'rec.goto'; meetingId: string }
   | { type: 'rec.note'; meetingId: string }
   | { type: 'rec.noteSubmit'; meetingId: string }
+  | { type: DraftType; draftId: string }
   | { type: 'meeting.create' }
   | { type: 'meeting.createSubmit' }
   | { type: 'meeting.createRetry' };
@@ -127,8 +128,15 @@ export const MEETING_VERBS = [
   'regenAllConfirm',
   'roles',
   'everyone',
+  'none',
+  'default',
 ] as const;
 type MeetingVerbType = `meeting.${(typeof MEETING_VERBS)[number]}`;
+
+/** Brouillon de création (« Qui inviter ? ») : `draft.<verbe>:<id>`, id de 12 caractères hexadécimaux. */
+export const DRAFT_VERBS = ['roles', 'everyone', 'default', 'none', 'create', 'cancel'] as const;
+export type DraftType = `draft.${(typeof DRAFT_VERBS)[number]}`;
+const DRAFT_ID = /^[0-9a-f]{12}$/;
 
 const POLL_VERBS = ['answer', 'fix', 'fixSelect', 'add', 'addSubmit', 'remove', 'removeSelect'] as const;
 
@@ -175,6 +183,14 @@ export function encode(action: Action): string {
       break;
     case 'poll.vote':
       parts.push('poll', 'vote', action.meetingId, action.slotId);
+      break;
+    case 'draft.roles':
+    case 'draft.everyone':
+    case 'draft.default':
+    case 'draft.none':
+    case 'draft.create':
+    case 'draft.cancel':
+      parts.push('draft', action.type.split('.')[1]!, action.draftId);
       break;
     case 'consent.open':
     case 'consent.refuse':
@@ -231,6 +247,12 @@ export function decode(customId: string): Action | null {
   }
 
   const [verb, meetingId, a, b] = rest;
+  if (group === 'draft') {
+    const draftId = meetingId; // « draft:<verbe>:<id> »
+    if (rest.length !== 2 || !DRAFT_ID.test(draftId ?? '') || !DRAFT_VERBS.includes(verb as (typeof DRAFT_VERBS)[number])) return null;
+    return { type: `draft.${verb as (typeof DRAFT_VERBS)[number]}`, draftId: draftId! };
+  }
+
   if (group === 'consent') {
     const [v] = rest;
     if (rest.length === 1 && (v === 'open' || v === 'refuse' || v === 'accept')) return { type: `consent.${v}` };

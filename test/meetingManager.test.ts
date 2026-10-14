@@ -31,7 +31,8 @@ describe('panneau « Gérer »', () => {
       'rec.start',
       'meeting.end',
       'meeting.cancel',
-      'meeting.everyone', // + sélecteur des rôles invités
+      'meeting.everyone', // + sélecteur des rôles invités ; « Par défaut » seulement avec un rôle relancé dans /config
+      'meeting.none',
     ]);
   });
   it('enregistrement : Enregistrer maintenant, ou Arrêter s’il tourne', () => {

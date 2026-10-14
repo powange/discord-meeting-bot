@@ -184,13 +184,13 @@ export class MeetingService {
    * pas mentionner (non mentionnable, sans la permission « Mentionner @everyone ») : ses membres
    * sont mentionnés un par un.
    */
-  async inviteRoles(guild: Guild, meetingId: string, roleIds: readonly string[]): Promise<void> {
+  async inviteRoles(guild: Guild, meetingId: string, roleIds: readonly string[], none = false): Promise<void> {
     const meeting = await this.repos.getMeeting(meetingId);
     if (!meeting || (meeting.status !== 'scheduled' && meeting.status !== 'polling')) {
       throw new UserError((await this.settings.messages(guild.id)).errors.meetingClosed);
     }
-    const added = roleIds.filter((id) => !meeting.targetRoleIds.includes(id));
-    await this.repos.updateMeeting(meetingId, { targetRoleIds: [...roleIds] });
+    const added = none ? [] : roleIds.filter((id) => !meeting.targetRoleIds.includes(id));
+    await this.repos.updateMeeting(meetingId, { targetRoleIds: none ? [] : [...roleIds], inviteNone: none });
     if (added.length === 0) return;
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!thread) return;

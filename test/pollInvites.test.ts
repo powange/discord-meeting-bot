@@ -27,7 +27,7 @@ describe('rôles invités à répondre à un sondage', () => {
     expect(decode(select.custom_id)?.type).toBe('meeting.roles');
     expect(select.default_values).toEqual([{ id: '111', type: 'role' }]);
     const everyone = rows.flatMap((r) => r.components).find((c) => c.type === 2 && decode(c.custom_id)?.type === 'meeting.everyone') as unknown as { label: string };
-    expect(everyone.label).toBe(m.invite.everyoneOff);
+    expect(everyone.label).toBe(m.invite.everyoneOn);
   });
 
   function setup(opts: { mentionable: boolean; canMentionAll?: boolean; current?: string[]; status?: string }) {
@@ -98,10 +98,4 @@ describe('rôles invités à répondre à un sondage', () => {
     await expect(closed.service.inviteRoles(closed.guild as never, 'm1', ['r1'])).rejects.toThrow(m.errors.meetingClosed);
   });
 
-  it('confirmation de création : ce qui s’applique sans rôle invité', () => {
-    expect(m.invite.defaultNudge('r9', 'g', true)).toBe('-# Sans choix ici : <@&r9> (rôle relancé de /config) sera relancé la veille de la fin des réponses, sans être mentionné maintenant.');
-    expect(m.invite.defaultNudge('g', 'g', false)).toContain('tout le monde (@everyone)');
-    expect(m.invite.defaultNudge('g', 'g', false)).toContain('au premier rappel');
-    expect(m.invite.defaultNudge(null, 'g', false)).toContain("personne n'est relancé");
-  });
 });

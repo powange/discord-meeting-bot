@@ -20,14 +20,15 @@ import { encode, type Action } from '../../domain/customId.js';
 import { DEADLINE_CHOICES_H, parseSlotLine, parseSlots, pollDeadline, slotLabel, type Availability } from '../../domain/datePoll.js';
 import { DESCRIPTION_MAX, TITLE_MAX } from '../../domain/meeting.js';
 import { canCreateMeeting } from '../../domain/permissions.js';
+import { formatWhen } from '../../domain/time.js';
 import { messages, type Messages } from '../../i18n/index.js';
 import { UserError } from '../../lib/errors.js';
 import { actorOf } from '../actor.js';
 import { renderPollPanel, renderSlotChoice } from '../embeds/datePoll.js';
-import { inviteRows } from '../embeds/meetingManager.js';
 import { fetchForum } from '../threads.js';
 import { meetingScope, replyEphemeral, requireManager } from './common.js';
 import type { ComponentInteraction } from './components.js';
+import { askInvites } from './creation.js';
 
 export type PollAction = Extract<Action, { type: `poll.${string}` }>;
 
@@ -208,13 +209,13 @@ async function createSubmit(ctx: AppContext, interaction: ModalSubmitInteraction
   }
   const choice = interaction.fields.getStringSelectValues(F.deadline)[0] ?? '72';
   const closesAt = pollDeadline(choice === 'eve' ? 'eve' : Number(choice), now, parsed.slots[0]!.startsAt);
-  try {
-    const meeting = await ctx.meetings.createPoll(interaction.guild, interaction.user.id, { title, description, voiceChannelId, slots: parsed.slots, closesAt });
-    drafts.delete(interaction.user.id);
-    // Le formulaire est plein (5 éléments au plus) : les rôles à inviter se choisissent ici.
-    await interaction.editReply({ content: `${p.created(meeting.threadId!)}\n${m.invite.defaultNudge(settings.nudgeRoleId, interaction.guildId, true)}`, components: inviteRows(meeting.id, interaction.guildId, [], m), allowedMentions: { parse: [] } });
-  } catch (err) {
-    if (err instanceof UserError) return fail(err.message);
-    throw err;
-  }
+  // Rien n'est créé avant le choix « Qui inviter ? » ; « Modifier la saisie » rouvre le formulaire prérempli.
+  drafts.set(interaction.user.id, { title, slots: slotsText, description, at: Date.now() });
+  await askInvites(ctx, interaction, {
+    kind: 'poll',
+    title,
+    when: p.draftWhen(parsed.slots.length, formatWhen(closesAt, settings.timezone, settings.locale, m.format.when)),
+    retryId: encode({ type: 'poll.createRetry' }),
+    create: () => ctx.meetings.createPoll(interaction.guild, interaction.user.id, { title, description, voiceChannelId, slots: parsed.slots, closesAt }),
+  });
 }

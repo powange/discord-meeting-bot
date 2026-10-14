@@ -102,6 +102,8 @@ export const meetings = pgTable(
     reportRequesters: text().array().notNull().default(sql`'{}'::text[]`),
     /** Rôles invités à répondre (sondage) : mentionnés à l'invitation, relancés à la place du rôle de relance du serveur. */
     targetRoleIds: text().array().notNull().default(sql`'{}'::text[]`),
+    /** « Personne » choisi à la création : aucune relance, même avec un rôle relancé dans /config. */
+    inviteNone: boolean().notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
