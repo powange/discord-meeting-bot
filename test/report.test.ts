@@ -132,6 +132,20 @@ describe('renderTranscriptMarkdown', () => {
   });
 });
 
+describe('présents dans le vocal', () => {
+  const participants = [
+    { id: '111', name: 'Pierre Comble' },
+    { id: '444', name: 'Zoé' },
+  ];
+  it('Discord : mentions dans l’en-tête (sans notification : seuls les responsables sont notifiés) ; fichier : noms', () => {
+    expect(texts(renderReport({ ...base, participants }, m)[0]!)).toContain('👥 **Présents** : <@111>, <@444>');
+    expect(renderReportMarkdown({ ...base, participants }, m)).toContain('👥 **Présents** : Pierre Comble, Zoé');
+  });
+  it('aucune présence connue : pas de ligne', () => {
+    expect(texts(renderReport(base, m)[0]!)).not.toContain('Présents');
+  });
+});
+
 describe('renderReportMarkdown', () => {
   it('fichier lisible hors Discord : titre, sujets dans l’ordre, responsables par leur nom, sans lien ni mention', () => {
     const md = renderReportMarkdown({ ...base, audioUrl: 'https://discord.com/x' }, m);

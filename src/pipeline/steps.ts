@@ -361,6 +361,7 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
     subtitle,
     agenda: (await repos.listAgenda(meeting.id)).map((a) => ({ id: a.id, title: a.title })),
     summary: summary.content,
+    participants: [...names].map(([id, name]) => ({ id, name })),
     people,
     trace: summaryDisabled
       ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')

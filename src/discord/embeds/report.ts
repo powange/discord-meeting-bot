@@ -13,6 +13,8 @@ export interface ReportInput {
   subtitle: string;
   agenda: ReadonlyArray<{ id: number; title: string }>;
   summary: MeetingSummary;
+  /** Personnes présentes dans le vocal pendant l'enregistrement (ordre d'arrivée). */
+  participants?: ReadonlyArray<{ id: string; name: string }>;
   /** Nom → id Discord, pour transformer les responsables d'actions en mentions. */
   people: ReadonlyMap<string, string>;
   /** Trace des modèles utilisés. */
@@ -79,7 +81,7 @@ function splitText(text: string, max: number): string[] {
 }
 
 /** Sections du compte rendu (titre, aperçu, sujets, points non abordés), en Markdown Discord. */
-function reportSections(input: ReportInput, m: Messages): string[] {
+function reportSections(input: ReportInput, m: Messages, plain = false): string[] {
   const r = m.report;
   const order = new Map(input.agenda.map((a, i) => [a.id, i]));
   const topics = [...input.summary.topics].sort(
@@ -88,8 +90,12 @@ function reportSections(input: ReportInput, m: Messages): string[] {
   const covered = new Set(topics.map((t) => t.agendaItemId));
   const notCovered = input.agenda.filter((a) => !covered.has(a.id));
 
+  // Présents : mentions dans Discord (noms à jour, sans notification), noms dans le fichier.
+  const present = input.participants?.length
+    ? `\n👥 **${r.present}** : ${input.participants.map((p) => (plain ? p.name : `<@${p.id}>`)).join(', ')}`
+    : '';
   const sections: string[] = [
-    `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}`,
+    `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}${present}`,
   ];
   if (input.summaryDisabled) {
     sections.push(r.disabled);
@@ -163,7 +169,7 @@ export function renderTranscriptMarkdown(title: string, subtitle: string, lines:
  */
 export function renderReportMarkdown(input: ReportInput, m: Messages): string {
   const { audioUrl: _link, ...rest } = input;
-  const sections = reportSections({ ...rest, people: new Map() }, m);
+  const sections = reportSections({ ...rest, people: new Map() }, m, true);
   const text = [...sections, `-# ${input.trace}`].join('\n\n');
   return `${text
     .replace(/^## 📝 /m, '# ')

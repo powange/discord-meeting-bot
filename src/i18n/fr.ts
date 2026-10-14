@@ -310,6 +310,7 @@ export const fr = {
     actions: 'Actions',
     questions: 'Questions ouvertes',
     notCovered: 'Points non traités',
+    present: 'Présents',
     empty: "Aucun contenu exploitable n'a été retenu de la transcription.",
     subtitle: (when: string, duration: string, people: number) => `${when} · ${duration} · ${people} participant${people > 1 ? 's' : ''}`,
     trace: (transcription: string, llm: string, passes: number) =>
