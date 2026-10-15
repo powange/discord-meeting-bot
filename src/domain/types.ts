@@ -42,7 +42,7 @@ export type StopReason = 'manual' | 'empty' | 'meeting_end' | 'shutdown' | 'disc
  * est publié même si la transcription ou le résumé échouent. La copie vers le stockage du serveur
  * (Google Drive, OneDrive, Dropbox) vient après la publication : un échec ne retarde pas le compte rendu.
  */
-export const PIPELINE_STEPS = ['mix', 'transcribe', 'summarize', 'publish', 'export'] as const;
+export const PIPELINE_STEPS = ['mix', 'transcribe', 'preview', 'summarize', 'publish', 'export'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 
 export const STEP_STATUSES = ['pending', 'running', 'done', 'failed'] as const;

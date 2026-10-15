@@ -8,7 +8,7 @@ import { summarizeMeeting, type SummaryCheckpoint } from '../ai/llm/summarize.js
 import type { MeetingSummary } from '../ai/llm/schema.js';
 import { HttpTranscriptionBackend } from '../ai/transcription/backend.js';
 import { TranscriptionPool } from '../ai/transcription/pool.js';
-import type { MeetingRow } from '../db/schema.js';
+import type { MeetingRow, PipelineStepRow } from '../db/schema.js';
 import { renderReport, renderReportMarkdown, renderTranscriptMarkdown, resolvePerson, type ReportInput, type TranscriptEntry } from '../discord/embeds/report.js';
 import { interleave, markerText, pointDurations } from '../domain/markers.js';
 import { ensureUnarchived } from '../discord/forum.js';
@@ -38,6 +38,7 @@ export function createSteps(deps: PipelineDeps, options: StepOptions = {}): Reco
   return {
     mix: (ctx) => mix(deps, ctx),
     transcribe: (ctx) => transcribe(deps, ctx, options.transcribeMaxMs),
+    preview: (ctx) => preview(deps, ctx),
     summarize: (ctx) => summarize(deps, ctx),
     publish: (ctx) => publish(deps, ctx),
     export: (ctx) => exportFiles(deps, ctx),
@@ -423,13 +424,18 @@ async function summarize(deps: PipelineDeps, ctx: StepContext): Promise<Record<s
 
 // ---------------------------------------------------------------- publication
 
-/** Contenu du compte rendu (publication dans Discord et copie vers le stockage) ; null sans parole. */
-async function reportContent(deps: PipelineDeps, ctx: StepContext) {
+/**
+ * Contenu du compte rendu (publication dans Discord et copie vers le stockage) ; null sans parole.
+ * `pending` : compte rendu provisoire, avant le résumé (transcription seule).
+ */
+async function reportContent(deps: PipelineDeps, ctx: StepContext, pending = false) {
   const { repos } = deps;
   const { meeting, settings, m } = ctx;
-  const summary = await repos.getSummary(meeting.id);
+  const stored = pending ? undefined : await repos.getSummary(meeting.id);
   const { lines, names } = await loadTranscript(deps, meeting);
-  if (!summary || lines.length === 0) return null;
+  if ((!pending && !stored) || lines.length === 0) return null;
+  const backends = [...new Set((await repos.listBlocks(meeting.id)).filter((b) => b.backend).map((b) => `${b.backend} (${b.model})`))];
+  const summary = stored ?? { content: { overview: '', topics: [] }, llmDeployments: [] as string[], llmModel: '-', transcriptionBackends: backends, passes: 0 };
 
   const recordings = await repos.listRecordingsForMeeting(meeting.id);
   const durationMs = recordings.reduce((n, r) => n + ((r.endedAt ?? r.startedAt).getTime() - r.startedAt.getTime()), 0);
@@ -450,10 +456,13 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
     durations: pointDurations(markers, new Date(Math.max(...recordings.map((r) => (r.endedAt ?? r.startedAt).getTime())))),
     participants: [...names].map(([id, name]) => ({ id, name })),
     people,
-    trace: summaryDisabled
-      ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
-      : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
+    trace: pending
+      ? m.report.traceTranscription(summary.transcriptionBackends.join(', ') || '-')
+      : summaryDisabled
+        ? m.report.traceNoSummary(summary.transcriptionBackends.join(', ') || '-')
+        : m.report.trace(summary.transcriptionBackends.join(', ') || '-', llmTrace, summary.passes),
     summaryDisabled,
+    ...(pending ? { summaryPending: true } : {}),
   };
   const markdown = renderTranscriptMarkdown(
     meeting.title,
@@ -466,16 +475,54 @@ async function reportContent(deps: PipelineDeps, ctx: StepContext) {
   return { summary, people, input, markdown, transcriptFile: `transcription-${day}.md`, reportFile: `compte-rendu-${day}.md`, pdfFile: `compte-rendu-${day}.pdf` };
 }
 
+/** Liens de l'en-tête du compte rendu : audio complet publié, message de l'ordre du jour. */
+async function reportLinks(deps: PipelineDeps, meeting: MeetingRow, hasAgenda: boolean): Promise<{ audioUrl?: string; agendaUrl?: string }> {
+  const mixOutput = (await deps.repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
+  const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
+  const agendaUrl = hasAgenda && meeting.agendaMessageId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}/${meeting.agendaMessageId}` : undefined;
+  return { ...(audioUrl ? { audioUrl } : {}), ...(agendaUrl ? { agendaUrl } : {}) };
+}
+
+/** Messages du compte rendu déjà dans le post : ceux de la publication, sinon ceux du provisoire. */
+function publishedIds(steps: readonly PipelineStepRow[]): string[] {
+  for (const step of ['publish', 'preview'] as const) {
+    const ids = steps.find((r) => r.step === step)?.output?.messageIds;
+    if (Array.isArray(ids) && ids.length) return ids as string[];
+  }
+  return [];
+}
+
+/**
+ * Compte rendu provisoire, dès la fin de la transcription : en-tête (présents, audio, ordre du
+ * jour) et transcription jointe, le résumé étant annoncé. Silencieux (aucune mention). La
+ * publication le complète ensuite sur place. Rien si un compte rendu existe déjà (correction,
+ * retranscription, nouvelle session) : il est simplement mis à jour à la publication.
+ */
+async function preview(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
+  const { meeting, m } = ctx;
+  if (publishedIds(await deps.repos.listPipeline(meeting.id)).length) return { skipped: true };
+  const thread = await fetchThread(deps.client, meeting.threadId);
+  if (!thread) throw new Error('Post de la réunion introuvable');
+  const content = await reportContent(deps, ctx, true);
+  if (!content) return { skipped: true }; // aucune parole : la publication le dira
+  const containers = renderReport({ ...content.input, transcriptFile: content.transcriptFile, ...(await reportLinks(deps, meeting, content.input.agenda.length > 0)) }, m);
+  await ensureUnarchived(thread);
+  const files = [{ attachment: Buffer.from(content.markdown, 'utf8'), name: content.transcriptFile }];
+  const { ids, url } = await sendReport(thread, containers, () => files);
+  return { messageIds: ids, url };
+}
+
 async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, client } = deps;
   const { meeting, m } = ctx;
   const thread = await fetchThread(client, meeting.threadId);
   if (!thread) throw new Error('Post de la réunion introuvable');
 
-  // Compte rendu déjà publié (correction, régénération) : édité sur place si possible, sinon
-  // remplacé — le nouveau d'abord, l'ancien supprimé ensuite.
-  const previous = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'publish')?.output;
-  const previousIds = Array.isArray(previous?.messageIds) ? (previous.messageIds as string[]) : [];
+  // Compte rendu déjà dans le post (provisoire, ou publié avant une correction) : complété ou
+  // remplacé sur place, son lien ne change pas.
+  const steps = await repos.listPipeline(meeting.id);
+  const previous = steps.find((r) => r.step === 'publish')?.output;
+  const previousIds = publishedIds(steps);
   const alreadyMentioned = new Set(Array.isArray(previous?.mentioned) ? (previous.mentioned as string[]) : []);
 
   const content = await reportContent(deps, ctx);
@@ -496,24 +543,19 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
     pdfPath = join(dir, pdfFile);
     await writeFile(pdfPath, pdf);
   }
-  const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
-  const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
-  // Message de l'ordre du jour du post, s'il y a des points.
-  const agendaUrl = content.input.agenda.length && meeting.agendaMessageId ? `https://discord.com/channels/${meeting.guildId}/${meeting.threadId}/${meeting.agendaMessageId}` : undefined;
   const containers = renderReport(
     {
       ...content.input,
       ...(content.input.summaryDisabled ? {} : { correctMeetingId: meeting.id }),
       transcriptFile,
       ...(pdf ? { pdfFile } : {}),
-      ...(audioUrl ? { audioUrl } : {}),
-      ...(agendaUrl ? { agendaUrl } : {}),
+      ...(await reportLinks(deps, meeting, content.input.agenda.length > 0)),
     },
     m,
   );
 
-  // Les responsables d'actions sont notifiés, une seule fois chacun : une correction ne
-  // re-mentionne que les nouveaux. Le reste du compte rendu est silencieux.
+  // Les responsables d'actions sont notifiés une seule fois chacun, par un court message à part
+  // (une édition ne notifie personne) ; une correction ne prévient que les nouveaux.
   const assignees = [
     ...new Set(
       summary.content.topics
@@ -525,16 +567,30 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const mentioned = [...new Set([...alreadyMentioned, ...assignees])];
   const attachments = () => [...(pdf ? [{ attachment: pdf, name: pdfFile }] : []), { attachment: Buffer.from(markdown, 'utf8'), name: transcriptFile }];
 
-  // Même nombre de messages et personne de nouveau à prévenir : édition (liens conservés, aucune notification).
-  if (previousIds.length === containers.length && toMention.length === 0) {
-    // Republication seulement si un message a été supprimé ; une erreur passagère fait échouer l'étape.
-    const url = await editReport(thread, previousIds, containers, attachments).catch((err: unknown) => {
-      if (isUnknownMessage(err)) return null;
-      throw err;
-    });
-    if (url) return { messageIds: previousIds, url, mentioned, ...(pdfPath ? { pdfPath } : {}) };
+  // Mise à jour sur place ; republication seulement si un message a été supprimé à la main (une
+  // erreur passagère fait échouer l'étape).
+  let report = previousIds.length
+    ? await updateReport(thread, previousIds, containers, attachments).catch((err: unknown) => {
+        if (isUnknownMessage(err)) return null;
+        throw err;
+      })
+    : null;
+  if (!report) {
+    report = await sendReport(thread, containers, attachments);
+    await deleteMessages(thread, previousIds);
   }
+  if (toMention.length) {
+    await thread.send({ content: m.report.actionsAssigned(toMention, report.url), allowedMentions: { users: toMention } });
+  }
+  return { messageIds: report.ids, url: report.url, mentioned, ...(pdfPath ? { pdfPath } : {}) };
+}
 
+/** Nouveaux messages du compte rendu (pièces jointes sur le dernier), sans aucune mention. */
+async function sendReport(
+  thread: ThreadChannel,
+  containers: readonly APIContainerComponent[],
+  attachments: () => Array<{ attachment: Buffer; name: string }>,
+): Promise<{ ids: string[]; url: string }> {
   const sent: string[] = [];
   let url = '';
   try {
@@ -543,7 +599,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       const message = await thread.send({
         components: [container],
         flags: MessageFlags.IsComponentsV2,
-        allowedMentions: { users: toMention },
+        allowedMentions: { parse: [] },
         ...(last ? { files: attachments() } : {}),
       });
       sent.push(message.id);
@@ -553,17 +609,20 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
     await deleteMessages(thread, sent);
     throw err;
   }
-  await deleteMessages(thread, previousIds);
-  return { messageIds: sent, url, mentioned, ...(pdfPath ? { pdfPath } : {}) };
+  return { ids: sent, url };
 }
 
-/** Édite le compte rendu publié ; null si un message manque (supprimé à la main) : il faut republier. */
-async function editReport(
+/**
+ * Met le compte rendu à jour sur place : messages existants édités (le premier garde son lien),
+ * messages en plus ajoutés, en trop supprimés ; pièces jointes sur le dernier. null si un message
+ * a été supprimé à la main (il faut republier).
+ */
+async function updateReport(
   thread: ThreadChannel,
   ids: readonly string[],
   containers: readonly APIContainerComponent[],
   attachments: () => Array<{ attachment: Buffer; name: string }>,
-): Promise<string | null> {
+): Promise<{ ids: string[]; url: string } | null> {
   const messages = [];
   for (const id of ids) {
     const message = await thread.messages.fetch(id).catch((err: unknown) => {
@@ -573,16 +632,25 @@ async function editReport(
     if (!message) return null;
     messages.push(message);
   }
-  for (const [i, message] of messages.entries()) {
-    const last = i === messages.length - 1;
-    await message.edit({
-      components: [containers[i]!],
-      allowedMentions: { parse: [] },
-      // Pièces jointes (PDF, transcription) remplacées par les nouvelles.
-      ...(last ? { files: attachments(), attachments: [] } : {}),
-    });
+  const kept: string[] = [];
+  for (const [i, container] of containers.entries()) {
+    const last = i === containers.length - 1;
+    const existing = messages[i];
+    if (existing) {
+      await existing.edit({
+        components: [container],
+        allowedMentions: { parse: [] },
+        // Pièces jointes (PDF, transcription) remplacées sur le dernier message, retirées des autres.
+        ...(last ? { files: attachments(), attachments: [] } : { attachments: [] }),
+      });
+      kept.push(existing.id);
+    } else {
+      const message = await thread.send({ components: [container], flags: MessageFlags.IsComponentsV2, allowedMentions: { parse: [] }, ...(last ? { files: attachments() } : {}) });
+      kept.push(message.id);
+    }
   }
-  return messages[0]!.url;
+  await deleteMessages(thread, ids.slice(containers.length));
+  return { ids: kept, url: messages[0]!.url };
 }
 
 // ---------------------------------------------------------------- copie vers le stockage

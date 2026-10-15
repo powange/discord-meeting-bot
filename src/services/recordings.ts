@@ -721,8 +721,10 @@ export class RecordingService {
     const last = points.at(-1);
     const index = last ? agenda.findIndex((a) => a.id === last.agendaItemId) : -1;
     const agendaLine = last ? m.summary.agendaLine(index >= 0 ? `${index + 1}/${agenda.length} · ${agenda[index]!.title}` : null, markers.length - points.length) : undefined;
-    const publish = pipeline.find((r) => r.step === 'publish' && r.status === 'done');
-    const reportUrl = typeof publish?.output?.url === 'string' ? publish.output.url : undefined;
+    // Lien du compte rendu, dès sa version provisoire (transcription publiée) : il ne change plus ensuite.
+    const reportUrl = ['publish', 'preview']
+      .map((step) => pipeline.find((r) => r.step === step && r.status === 'done')?.output?.url)
+      .find((url): url is string => typeof url === 'string' && url.length > 0);
     return renderRecordingSummary(
       {
         reason: m.recording.reasons[reason] ?? reason,

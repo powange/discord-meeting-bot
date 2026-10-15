@@ -103,7 +103,8 @@ export class PipelineService {
 
   constructor(
     private readonly deps: PipelineDeps,
-    private readonly steps: Record<PipelineStep, StepFn>,
+    /** Étapes ; la publication provisoire (`preview`) est facultative : absente, elle est sautée. */
+    private readonly steps: Record<Exclude<PipelineStep, 'preview'>, StepFn> & Partial<Record<'preview', StepFn>>,
   ) {}
 
   /**
@@ -369,7 +370,8 @@ export class PipelineService {
     await status.update(details);
     plog.info({ step: row.step }, 'Étape démarrée');
     try {
-      const output = await this.steps[row.step]({
+      const step: StepFn = this.steps[row.step] ?? (async () => ({ skipped: true }));
+      const output = await step({
         meeting,
         settings,
         m,
@@ -386,6 +388,9 @@ export class PipelineService {
       // ne remet pas à zéro celle de la transcription.
       this.autoRetries.get(meetingId)?.delete(row.step);
       // Compte rendu publié : la carte, le post épinglé et les demandeurs n'attendent pas la copie vers le stockage.
+      // Compte rendu provisoire publié (transcription disponible) : la carte, le post épinglé et le
+      // bilan reçoivent déjà son lien, qui ne changera plus.
+      if (row.step === 'preview' && Array.isArray(output.messageIds)) this.onPublished(meeting);
       if (row.step === 'publish') {
         this.onPublished(meeting);
         await this.notifyRequesters(meeting, m).catch((e) => plog.warn({ err: errorMessage(e) }, 'Avis de mise à jour impossible'));

@@ -33,6 +33,8 @@ export interface ReportInput {
   agendaUrl?: string;
   /** Aucun LLM configuré : compte rendu réduit (audio et transcription). */
   summaryDisabled?: boolean;
+  /** Compte rendu provisoire (transcription publiée, résumé en préparation) : pas de sujets. */
+  summaryPending?: boolean;
   /** Réunion dont le compte rendu peut être corrigé : bouton « Corriger » sur le dernier message. */
   correctMeetingId?: string;
 }
@@ -135,7 +137,9 @@ function reportSections(input: ReportInput, m: Messages, plain = false): string[
   const sections: string[] = [
     `## 📝 ${r.title} · ${truncate(input.title, 150)}\n-# ${input.subtitle}${input.audioUrl ? ` · 🎧 [${r.listen}](${input.audioUrl})` : ''}${input.agendaUrl ? ` · 📋 [${r.agendaLink}](${input.agendaUrl})` : ''}${present}`,
   ];
-  if (input.summaryDisabled) {
+  if (input.summaryPending) {
+    sections.push(r.pending);
+  } else if (input.summaryDisabled) {
     sections.push(r.disabled);
   } else {
     if (input.summary.overview) sections.push(input.summary.overview);

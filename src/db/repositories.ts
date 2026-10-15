@@ -560,20 +560,28 @@ export class Repositories {
       const row = rows.find((r) => r.step === step && r.status === 'done');
       return typeof row?.output?.url === 'string' && row.output.url ? row.output.url : null;
     };
-    return { report: url('publish'), audio: url('mix') };
+    // Compte rendu provisoire (transcription publiée avant le résumé) : même message, même lien.
+    return { report: url('publish') ?? url('preview'), audio: url('mix') };
   }
 
   /** Derniers comptes rendus publiés d'un serveur (post épinglé). */
   async listRecentReports(guildId: string, limit: number): Promise<Array<{ title: string; startsAt: Date; url: string }>> {
     const rows = await this.db
-      .select({ title: meetings.title, startsAt: meetings.startsAt, output: pipelineSteps.output })
+      .select({ id: meetings.id, title: meetings.title, startsAt: meetings.startsAt, step: pipelineSteps.step, output: pipelineSteps.output })
       .from(pipelineSteps)
       .innerJoin(meetings, eq(meetings.id, pipelineSteps.meetingId))
-      // Post supprimé à la main (threadId vidé) : plus de lien vers ce compte rendu.
-      .where(and(eq(meetings.guildId, guildId), isNotNull(meetings.threadId), eq(pipelineSteps.step, 'publish'), eq(pipelineSteps.status, 'done')))
+      // Post supprimé à la main (threadId vidé) : plus de lien vers ce compte rendu. Compte rendu
+      // provisoire (transcription publiée, résumé en préparation) compris.
+      .where(and(eq(meetings.guildId, guildId), isNotNull(meetings.threadId), inArray(pipelineSteps.step, ['publish', 'preview']), eq(pipelineSteps.status, 'done')))
       .orderBy(sql`${meetings.startsAt} desc`)
-      .limit(limit);
-    return rows.flatMap((r) => (typeof r.output?.url === 'string' && r.output.url ? [{ title: r.title, startsAt: r.startsAt, url: r.output.url }] : []));
+      .limit(limit * 2);
+    const byMeeting = new Map<string, { title: string; startsAt: Date; url: string; final: boolean }>();
+    for (const r of rows) {
+      if (typeof r.output?.url !== 'string' || !r.output.url) continue;
+      const known = byMeeting.get(r.id);
+      if (!known || (!known.final && r.step === 'publish')) byMeeting.set(r.id, { title: r.title, startsAt: r.startsAt, url: r.output.url, final: r.step === 'publish' });
+    }
+    return [...byMeeting.values()].slice(0, limit).map(({ title, startsAt, url }) => ({ title, startsAt, url }));
   }
 
   /** Ajoute une personne à prévenir à la prochaine publication du compte rendu (sans doublon). */

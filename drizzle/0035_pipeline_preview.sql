@@ -1,0 +1,1 @@
+ALTER TYPE "public"."pipeline_step" ADD VALUE 'preview' BEFORE 'summarize';

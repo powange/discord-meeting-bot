@@ -244,29 +244,49 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     };
     const save = (who: string[]) => repos.saveSummary({ meetingId: meeting!.id, content: summary(who), llmModel: 'm', llmDeployments: [], transcriptionBackends: [], passes: 1 });
 
-    // 1re publication : Carole est mentionnée.
+    const m = (await import('../src/i18n/index.js')).messages('fr');
+    const texts = (p: Record<string, unknown>) => JSON.stringify(p.components ?? p.content);
+
+    // Fin de la transcription : compte rendu provisoire, silencieux, transcription jointe.
+    const draft = await steps.preview(ctx);
+    await repos.updateStep(meeting!.id, 'preview', { status: 'done', output: draft });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.every((p) => JSON.stringify(p.allowedMentions) === JSON.stringify({ parse: [] }))).toBe(true);
+    expect(texts(sent[0]!)).toContain('Le résumé sera ajouté ici');
+    expect((sent.at(-1)!.files as Array<{ name: string }>).map((f) => f.name)).toEqual(['transcription-2026-10-15.md']);
+    const draftCount = sent.length;
+
+    // Résumé prêt : même message complété sur place (même lien), PDF et transcription joints ;
+    // Carole, responsable d'une action, prévenue par un court message à part.
     await save(['Carole']);
     const first = await publish();
-    expect(sent.map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual(sent.map(() => ['555']));
-    // Dernier message : le compte rendu en PDF (téléchargeable) et la transcription.
-    const files = (sent.at(-1)!.files as Array<{ name: string; attachment: Buffer }>).map((f) => [f.name, f.attachment.subarray(0, 5).toString()]);
-    expect(files).toEqual([
+    expect(first).toMatchObject({ messageIds: draft.messageIds, url: draft.url });
+    expect(deleted).toEqual([]);
+    const lastEdit = edited.filter((e) => e.id === (draft.messageIds as string[]).at(-1)).at(-1)!;
+    expect((lastEdit.files as Array<{ name: string; attachment: Buffer }>).map((f) => [f.name, f.attachment.subarray(0, 5).toString()])).toEqual([
       ['compte-rendu-2026-10-15.pdf', '%PDF-'],
       ['transcription-2026-10-15.md', '# Tra'],
     ]);
+    expect(sent.slice(draftCount).map((p) => [p.content, p.allowedMentions])).toEqual([[m.report.actionsAssigned(['555'], draft.url as string), { users: ['555'] }]]);
     const count = sent.length;
 
     // Correction sans nouveau responsable : édition sur place, aucun message envoyé ni supprimé.
     expect(await publish()).toMatchObject({ messageIds: first.messageIds });
     expect(sent).toHaveLength(count);
     expect(deleted).toEqual([]);
-    expect(edited.length).toBe(count);
 
-    // Nouveau responsable : republication, seul Dan est mentionné, l'ancien compte rendu supprimé ensuite.
+    // Nouveau responsable : toujours sur place, seul Dan est mentionné.
     await save(['Carole', 'Dan']);
     const third = await publish();
-    expect(sent.slice(count).map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual(sent.slice(count).map(() => ['556']));
-    expect(deleted).toEqual(first.messageIds);
+    expect(third).toMatchObject({ messageIds: first.messageIds });
+    expect(sent.slice(count).map((p) => (p.allowedMentions as { users: string[] }).users)).toEqual([['556']]);
+    expect(deleted).toEqual([]);
+
+    // Retranscription ou nouvelle session : le compte rendu existe déjà, pas de second provisoire
+    // (il sera mis à jour sur place à la publication, sans effacer le résumé entre-temps).
+    const sentBefore = sent.length;
+    expect(await steps.preview(ctx)).toEqual({ skipped: true });
+    expect(sent).toHaveLength(sentBefore);
 
     // Message supprimé à la main : republication (pas d'édition impossible).
     await thread.messages.delete((third.messageIds as string[])[0]!);
@@ -274,7 +294,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     await publish();
     expect(sent.length).toBeGreaterThan(before);
     // Pipeline laissé terminé : les autres tests de ce fichier partagent la base.
-    for (const step of ['mix', 'transcribe', 'summarize'] as const) await repos.updateStep(meeting!.id, step, { status: 'done' });
+    for (const step of ['mix', 'transcribe', 'preview', 'summarize'] as const) await repos.updateStep(meeting!.id, step, { status: 'done' });
   }, 60_000);
 
   it('copie vers le stockage : compte rendu, transcription et audio dans un dossier par réunion ; rien sans stockage', async () => {
@@ -673,6 +693,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect(rows.map((r) => [r.step, r.status])).toEqual([
       ['mix', 'failed'],
       ['transcribe', 'done'],
+      ['preview', 'done'],
       ['summarize', 'done'],
       ['publish', 'done'],
       ['export', 'done'],
@@ -831,6 +852,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     expect((await repos.listPipeline(meeting.id)).map((r) => [r.step, r.status, r.error])).toEqual([
       ['mix', 'done', null],
       ['transcribe', 'done', null],
+      ['preview', 'done', null],
       ['summarize', 'failed', 'summarize KO'],
       ['publish', 'pending', null],
       ['export', 'pending', null],

@@ -438,6 +438,9 @@ export const fr = {
     correctSaved: 'Correction prise en compte : le compte rendu va être régénéré (quelques secondes à quelques minutes). Vous serez mentionné dans le post une fois qu’il sera à jour.',
     correctNoSummary: "Il n'y a pas encore de résumé à corriger pour cette réunion.",
     disabled: '*Résumé désactivé : aucun modèle de langue configuré. La transcription complète est jointe.*',
+    pending: '⏳ *Le résumé sera ajouté ici dès qu’il sera prêt. La transcription complète est déjà jointe.*',
+    traceTranscription: (transcription: string) => `Transcription : ${transcription} · Résumé en préparation`,
+    actionsAssigned: (userIds: readonly string[], url: string) => `📌 Actions confiées : ${userIds.map((id) => `<@${id}>`).join(' ')} → [compte rendu](${url})`,
     traceNoSummary: (transcription: string) => `Transcription : ${transcription} · Résumé désactivé`,
   },
 
@@ -510,7 +513,7 @@ export const fr = {
 
   pipeline: {
     title: '## ⏳ Préparation du compte rendu',
-    steps: { mix: 'Audio complet', transcribe: 'Transcription', summarize: 'Résumé', publish: 'Publication', export: 'Copie vers le stockage' } as Record<string, string>,
+    steps: { mix: 'Audio complet', transcribe: 'Transcription', preview: 'Transcription publiée', summarize: 'Résumé', publish: 'Publication', export: 'Copie vers le stockage' } as Record<string, string>,
     progressMix: (duration: string) => `assemblage de ${duration} d'audio`,
     pending: '⬜',
     running: '⏳',
