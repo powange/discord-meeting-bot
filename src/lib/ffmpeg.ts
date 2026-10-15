@@ -60,6 +60,11 @@ const MAX_INPUTS_PER_PASS = 48;
 export interface PlacedInput {
   file: string;
   offsetMs: number;
+  /**
+   * Piste à laquelle appartient le fichier (une personne) : ses fichiers ne se chevauchent pas et
+   * sont d'abord mis bout à bout. Sans piste, le fichier est mixé tel quel (mix précédent).
+   */
+  track?: string;
 }
 
 /**
@@ -77,7 +82,19 @@ export async function mixPlaced(
   signal?: AbortSignal,
 ): Promise<void> {
   if (inputs.length === 0) throw new Error('Aucune piste à mixer');
-  let current = [...inputs];
+  // Une piste continue par personne (coût proportionnel à la durée), puis un mix de ces pistes :
+  // sans cela chaque prise de parole serait étirée sur toute la réunion (silence de tête) et le
+  // mix additionnerait des centaines de flux sur toute la durée.
+  const byTrack = new Map<string, PlacedInput[]>();
+  let current: PlacedInput[] = [];
+  for (const input of inputs) {
+    if (input.track === undefined) current.push(input);
+    else byTrack.set(input.track, [...(byTrack.get(input.track) ?? []), input]);
+  }
+  let n = 0;
+  for (const list of byTrack.values()) {
+    current.push(await sequence(bin, [...list].sort((a, b) => a.offsetMs - b.offsetMs), join(tmpDir, `piste-${n++}`), signal));
+  }
   let pass = 0;
   while (current.length > MAX_INPUTS_PER_PASS) {
     const next: PlacedInput[] = [];
@@ -90,6 +107,31 @@ export async function mixPlaced(
     pass++;
   }
   await mixOnce(bin, current, output, encodeArgs, true, signal);
+}
+
+/**
+ * Fichiers d'une même piste mis bout à bout, chacun complété de silence (ou coupé) jusqu'au début
+ * du suivant : durée exacte, sans dérive. Renvoie la piste, placée au début de son premier fichier.
+ */
+async function sequence(bin: string, list: readonly PlacedInput[], prefix: string, signal?: AbortSignal): Promise<PlacedInput> {
+  if (list.length === 1) return list[0]!;
+  if (list.length > MAX_INPUTS_PER_PASS) {
+    const parts: PlacedInput[] = [];
+    for (let i = 0; i < list.length; i += MAX_INPUTS_PER_PASS) {
+      parts.push(await sequence(bin, list.slice(i, i + MAX_INPUTS_PER_PASS), `${prefix}-${i / MAX_INPUTS_PER_PASS}`, signal));
+    }
+    return sequence(bin, parts, `${prefix}-s`, signal);
+  }
+  const seconds = (ms: number) => (Math.max(0, ms) / 1000).toFixed(3);
+  const pieces = list.map((input, i) => {
+    const next = list[i + 1];
+    const fit = next ? `,apad=whole_dur=${seconds(next.offsetMs - input.offsetMs)},atrim=end=${seconds(next.offsetMs - input.offsetMs)}` : '';
+    return `[${i}:a]aformat=sample_rates=48000:channel_layouts=mono${fit}[p${i}]`;
+  });
+  const concat = `${list.map((_, i) => `[p${i}]`).join('')}concat=n=${list.length}:v=0:a=1[out]`;
+  const file = `${prefix}.flac`;
+  await runFfmpeg(bin, [...list.flatMap((i) => ['-i', i.file]), '-filter_complex', [...pieces, concat].join(';'), '-map', '[out]', '-c:a', 'flac', file], signal);
+  return { file, offsetMs: list[0]!.offsetMs };
 }
 
 async function mixOnce(bin: string, inputs: readonly PlacedInput[], output: string, encodeArgs: readonly string[], limit: boolean, signal?: AbortSignal) {

@@ -41,6 +41,8 @@ const DISK_CHECK_MS = 10 * 60_000;
 const RECONNECT_GRACE_MS = 5_000;
 /** Délai au-delà duquel un enregistrement coupé par un redémarrage n'est plus repris tout seul. */
 const RESUME_WINDOW_MS = 15 * 60_000;
+/** Réunions en cours d'un serveur gardées en mémoire pour les arrivées dans un vocal. */
+const LIVE_CACHE_MS = 30_000;
 
 const VOICE_PERMISSIONS = {
   ViewChannel: PermissionFlagsBits.ViewChannel,
@@ -506,21 +508,35 @@ export class RecordingService {
 
   /** Réunion passée « En cours » : démarrage auto éventuel, et contrôle si quelqu'un est déjà là. */
   async onMeetingStarted(meeting: MeetingRow): Promise<void> {
+    this.liveCache.delete(meeting.guildId);
     await this.autoStart(meeting.id);
     await this.syncControl(meeting.id);
   }
 
   /** Réunion close ou annulée : arrêt de l'enregistrement et contrôle désactivé. */
   async onMeetingClosing(meetingId: string): Promise<void> {
+    this.liveCache.clear();
     await this.stop(meetingId, 'meeting_end');
     await this.syncControl(meetingId);
   }
 
-  /** Quelqu'un rejoint un vocal : s'il s'agit de celui d'une réunion en cours, on propose l'enregistrement. */
+  /**
+   * Quelqu'un rejoint un vocal : s'il s'agit de celui d'une réunion en cours, on propose
+   * l'enregistrement. Les réunions en cours sont gardées 30 s par serveur (une arrivée dans
+   * n'importe quel salon ne fait plus une requête), et oubliées dès qu'une réunion démarre ou se clôt.
+   */
   private async offerControl(guildId: string, channelId: string): Promise<void> {
-    const live = await this.repos.listMeetings(guildId, ['live']);
-    for (const meeting of live) if (meeting.voiceChannelId === channelId && !meeting.controlMessageId) await this.syncControl(meeting.id);
+    const cached = this.liveCache.get(guildId);
+    const live = cached && Date.now() - cached.at < LIVE_CACHE_MS ? cached.meetings : await this.repos.listMeetings(guildId, ['live']);
+    if (!cached || cached.meetings !== live) this.liveCache.set(guildId, { at: Date.now(), meetings: live });
+    for (const meeting of live) {
+      if (meeting.voiceChannelId !== channelId) continue;
+      // Le message de contrôle a pu apparaître depuis la mise en cache : relu avant d'agir.
+      if (!(await this.repos.getMeeting(meeting.id))?.controlMessageId) await this.syncControl(meeting.id);
+    }
   }
+
+  private readonly liveCache = new Map<string, { at: number; meetings: readonly MeetingRow[] }>();
 
   /**
    * Publie ou met à jour le message de contrôle. Il n'apparaît qu'une fois la réunion « En

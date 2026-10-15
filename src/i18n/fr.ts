@@ -427,6 +427,7 @@ export const fr = {
     noSpeech: 'Aucune parole enregistrée : pas de compte rendu.',
     listen: "Écouter l'audio",
     agendaLink: 'Ordre du jour',
+    due: (when: string) => `échéance : ${when}`,
     correct: 'Corriger',
     regen: 'Régénérer',
     regenAsk: 'Régénérer le compte rendu ? La version publiée sera remplacée par un nouveau résumé de la même transcription.',

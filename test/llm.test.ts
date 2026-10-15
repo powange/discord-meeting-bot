@@ -12,6 +12,8 @@ let reply: (body: { messages: Array<{ role: string; content: string }> }) => str
 let rejectFormats: string[] = [];
 /** Codes HTTP renvoyés avant de répondre normalement (erreurs passagères simulées). */
 let failNext: number[] = [];
+/** Requêtes refusées pour contexte trop petit (comme LM Studio). */
+let overflowIf: (prompt: string) => boolean = () => false;
 const requests: Array<{ body: { model: string; messages: Array<{ role: string; content: string }>; response_format: unknown }; auth?: string }> = [];
 let server: Server;
 let base: string;
@@ -26,6 +28,10 @@ beforeAll(async () => {
     if (failure) {
       requests.push({ body });
       return res.writeHead(failure, { 'content-type': 'application/json' }).end('{"error":"busy"}');
+    }
+    if (overflowIf(body.messages.at(-1)?.content ?? '')) {
+      requests.push({ body });
+      return res.writeHead(400, { 'content-type': 'application/json' }).end('{"error":"The number of tokens to keep from the initial prompt is greater than the context length (n_ctx)"}');
     }
     if (rejectFormats.includes(format)) {
       requests.push({ body, ...(req.headers.authorization ? { auth: req.headers.authorization } : {}) });
@@ -161,6 +167,29 @@ describe('summarizeMeeting', () => {
     expect(calls.length).toBe(r.passes);
     expect(r.summary.overview).toBe('Fusion');
     expect(progress).toEqual(Array.from({ length: r.passes }, (_, i) => i + 1));
+  });
+
+  it('fusion trop grosse pour le contexte : faite en deux moitiés, sans refaire les passes', async () => {
+    const before = requests.length;
+    reply = (body) => {
+      const prompt = body.messages.at(-1)!.content;
+      if (prompt.includes('résumés partiels')) return JSON.stringify({ overview: 'Fusion', topics: [topic(1, 'Budget', ['A'])] });
+      return JSON.stringify({ overview: 'Partiel', topics: [topic(1, 'Budget', ['A'])] });
+    };
+    // Plus de deux résumés à fusionner d'un coup : refusé par le modèle.
+    overflowIf = (prompt) => /Voici ([3-9]|\d{2,}) résumés partiels/.test(prompt);
+    const lines = Array.from({ length: 40 }, (_, i) => `[18:${String(i).padStart(2, '0')}:00] Alice : ${'blabla '.repeat(60)}`);
+    try {
+      const r = await summarizeMeeting(llm(), ctx, lines, 1500);
+      const calls = requests.slice(before);
+      const maps = calls.map((c) => c.body.messages.at(-1)!.content).filter((p) => p.includes("Voici l'extrait"));
+      expect(r.summary.overview).toBe('Fusion');
+      expect(maps.length).toBeGreaterThan(2);
+      expect(new Set(maps).size).toBe(maps.length); // chaque morceau résumé une seule fois
+      expect(calls.filter((c) => /Voici 2 résumés partiels/.test(c.body.messages.at(-1)!.content)).length).toBeGreaterThan(0);
+    } finally {
+      overflowIf = () => false;
+    }
   });
 
   it('reprise après un redémarrage : les morceaux déjà résumés ne sont pas redemandés ; autre transcription : tout est refait', async () => {

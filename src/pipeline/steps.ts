@@ -58,7 +58,7 @@ async function mix(deps: PipelineDeps, ctx: StepContext): Promise<Record<string,
     const shift = rec.startedAt.getTime() - origin!;
     const list: PlacedInput[] = [];
     for (const seg of await repos.listSegments(rec.id)) {
-      list.push({ file: seg.filePath, offsetMs: shift + seg.startMs });
+      list.push({ file: seg.filePath, offsetMs: shift + seg.startMs, track: seg.userId });
       endMs = Math.max(endMs, shift + seg.endMs);
     }
     placed.set(rec.id, list);
@@ -483,6 +483,14 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
   const { summary, people, transcriptFile, markdown, pdfFile } = content;
   // Compte rendu en PDF, téléchargeable depuis le dernier message (sans résumé : pas de PDF).
   const pdf = content.input.summaryDisabled ? null : await renderReportPdf(content.input, m);
+  // Gardé à côté de l'audio : la copie vers le stockage le reprend sans le rendre de nouveau.
+  let pdfPath: string | undefined;
+  if (pdf) {
+    const dir = join(deps.config.dataDir, 'meetings', meeting.guildId, meeting.id);
+    await mkdir(dir, { recursive: true });
+    pdfPath = join(dir, pdfFile);
+    await writeFile(pdfPath, pdf);
+  }
   const mixOutput = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
   const audioUrl = typeof mixOutput?.url === 'string' ? mixOutput.url : undefined;
   // Message de l'ordre du jour du post, s'il y a des points.
@@ -519,7 +527,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
       if (isUnknownMessage(err)) return null;
       throw err;
     });
-    if (url) return { messageIds: previousIds, url, mentioned };
+    if (url) return { messageIds: previousIds, url, mentioned, ...(pdfPath ? { pdfPath } : {}) };
   }
 
   const sent: string[] = [];
@@ -541,7 +549,7 @@ async function publish(deps: PipelineDeps, ctx: StepContext): Promise<Record<str
     throw err;
   }
   await deleteMessages(thread, previousIds);
-  return { messageIds: sent, url, mentioned };
+  return { messageIds: sent, url, mentioned, ...(pdfPath ? { pdfPath } : {}) };
 }
 
 /** Édite le compte rendu publié ; null si un message manque (supprimé à la main) : il faut republier. */
@@ -581,25 +589,40 @@ async function editReport(
 async function exportFiles(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
   const { repos, storage } = deps;
   const { meeting, settings, m } = ctx;
-  if (!storage || !(await storage.get(meeting.guildId))) return { skipped: true };
+  const target = storage ? await storage.get(meeting.guildId) : undefined;
+  if (!storage || !target) return { skipped: true };
+  const steps = await repos.listPipeline(meeting.id);
+  const previous = steps.find((r) => r.step === 'export')?.output;
+  const published = steps.find((r) => r.step === 'publish')?.output;
 
   const files: UploadFile[] = [];
   const content = await reportContent(deps, ctx);
   if (content) {
     if (!content.input.summaryDisabled) {
       files.push({ name: content.reportFile, source: { data: Buffer.from(renderReportMarkdown(content.input, m), 'utf8') }, mime: 'text/markdown' });
-      files.push({ name: content.pdfFile, source: { data: await renderReportPdf(content.input, m) }, mime: 'application/pdf' });
+      // PDF rendu à la publication, repris tel quel.
+      const pdfPath = typeof published?.pdfPath === 'string' && existsSync(published.pdfPath) ? published.pdfPath : null;
+      files.push({ name: content.pdfFile, source: pdfPath ? { path: pdfPath } : { data: await renderReportPdf(content.input, m) }, mime: 'application/pdf' });
     }
     files.push({ name: content.transcriptFile, source: { data: Buffer.from(content.markdown, 'utf8') }, mime: 'text/markdown' });
   }
-  const mix = (await repos.listPipeline(meeting.id)).find((r) => r.step === 'mix')?.output;
+  const mix = steps.find((r) => r.step === 'mix')?.output;
   const audio = typeof mix?.file === 'string' && !mix.purgedAt && existsSync(mix.file) ? mix.file : null;
-  if (audio) files.push({ name: basename(audio), source: { path: audio }, mime: 'audio/ogg' });
+  // L'audio (jusqu'à 100 Mo) n'est renvoyé que s'il a changé, ou si le stockage n'est plus le même :
+  // une correction du compte rendu ne le recopie pas.
+  const destination = `${target.provider}:${target.folder}`;
+  let audioSig: string | undefined;
+  if (audio) {
+    const st = await stat(audio);
+    audioSig = `${basename(audio)}:${st.size}:${Math.round(st.mtimeMs)}`;
+    if (previous?.audioSig !== audioSig || previous?.destination !== destination) files.push({ name: basename(audio), source: { path: audio }, mime: 'audio/ogg' });
+  }
   if (files.length === 0) return { files: [] };
 
   ctx.progress(m.pipeline.progressExport(files.length));
-  const folder = meetingFolderName(formatWhen(meeting.startsAt, settings.timezone, settings.locale, "yyyy-MM-dd HH'h'mm"), meeting.title);
+  // Dossier de la réunion : celui de la première copie, même si le titre a changé depuis.
+  const folder = typeof previous?.folder === 'string' ? previous.folder : meetingFolderName(formatWhen(meeting.startsAt, settings.timezone, settings.locale, "yyyy-MM-dd HH'h'mm"), meeting.title);
   const result = await storage.upload(meeting.guildId, folder, files, ctx.signal);
   if (!result) return { skipped: true };
-  return { provider: result.provider, path: result.path, files: files.map((f) => f.name) };
+  return { provider: result.provider, path: result.path, folder, destination, ...(audioSig ? { audioSig } : {}), files: files.map((f) => f.name) };
 }

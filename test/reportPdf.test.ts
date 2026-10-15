@@ -22,8 +22,14 @@ const input: ReportInput = {
 };
 
 describe('compte rendu en PDF', () => {
-  it('texte compatible avec les polices standard : accents et typographie gardés, émojis et mentions retirés', () => {
+  it('accents, typographie et lettres non latines gardés ; émojis et mentions retirés', () => {
     expect(pdfText('Réunion « été » — œuvre… 🎉 ✅ <@123> fin')).toBe('Réunion « été » — œuvre… fin');
+    expect(pdfText('Łukasz, Ondřej et Дмитрий')).toBe('Łukasz, Ondřej et Дмитрий');
+  });
+
+  it('police embarquée : les noms non latins sont écrits dans le PDF', async () => {
+    const pdf = await renderReportPdf({ ...input, title: 'Réunion avec Łukasz' }, m);
+    expect(pdf.toString('latin1')).toContain('DejaVuSans');
   });
 
   it('un vrai PDF, même avec émojis, sujets hors ODJ, points non traités', async () => {

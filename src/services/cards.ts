@@ -118,6 +118,8 @@ export class CardService {
   private async edit(thread: ThreadChannel, messageId: string, payload: RenderedMessage, meetingId: string): Promise<boolean> {
     try {
       const message = await thread.messages.fetch(messageId);
+      // Contenu identique (redémarrage du bot, mise à jour sans effet) : pas d'édition inutile.
+      if (sameContent({ embeds: (message.embeds ?? []).map((e) => e.toJSON()), components: (message.components ?? []).map((c) => c.toJSON()) }, payload)) return true;
       await message.edit({ ...payload, allowedMentions: { parse: [] } });
       return true;
     } catch (err) {
@@ -134,4 +136,29 @@ export class CardService {
     const pending = [...this.pending.keys()];
     await Promise.allSettled([...pending.map((id) => this.refreshNow(id, [])), ...this.queues.values()]);
   }
+}
+
+/**
+ * Forme comparable d'un message : sans les valeurs vides ou par défaut, ni les champs que Discord
+ * ajoute (identifiants de composants, type « rich » des embeds). Au moindre doute, les contenus
+ * diffèrent et le message est édité.
+ */
+function normalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.length ? value.map(normalize) : undefined;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      const v = (value as Record<string, unknown>)[key];
+      if (key === 'id' && typeof v === 'number') continue;
+      if (key === 'type' && v === 'rich') continue;
+      const n = normalize(v);
+      if (n !== undefined) out[key] = n;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return value === null || value === false || value === '' ? undefined : value;
+}
+
+export function sameContent(current: { embeds: unknown[]; components: unknown[] }, next: RenderedMessage): boolean {
+  return JSON.stringify(normalize({ embeds: current.embeds, components: current.components })) === JSON.stringify(normalize({ embeds: next.embeds ?? [], components: next.components ?? [] }));
 }

@@ -4,8 +4,11 @@ import { chunks, sizeOf, type AccessToken, type FileSource, type StorageClient, 
 
 const API = 'https://api.dropboxapi.com/2';
 const CONTENT = 'https://content.dropboxapi.com/2';
-/** Au-delà, envoi en session (limite d'un envoi simple : 150 Mo). */
-const SIMPLE_MAX = 100 * 1024 * 1024;
+/**
+ * Envoi en une requête jusqu'à 8 Mo ; au-delà, par morceaux (session d'envoi) : un audio de
+ * 100 Mo n'est jamais chargé en entier en mémoire, dans le processus qui reçoit l'audio en direct.
+ */
+const SIMPLE_MAX = 8 * 1024 * 1024;
 
 /**
  * Dropbox, accès « dossier de l'application » (Applications/<nom de l'app>) : les dossiers se

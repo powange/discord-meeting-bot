@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { chunkLines, estimateTokens } from '../../domain/transcript.js';
+import { isContextOverflow } from '../../domain/failure.js';
 import { applyReplacements, correctionReplacements } from '../../domain/vocabulary.js';
 import type { ChatMessage } from './client.js';
 import type { JsonLlm } from './failover.js';
@@ -153,23 +154,29 @@ export async function summarizeMeeting(
       size += t;
     }
     groups.push(current);
-    const merged: MeetingSummary[] = [];
-    for (const group of groups) {
-      if (group.length === 1) {
-        merged.push(group[0]!);
-        continue;
+    // Paquet trop gros pour le contexte du modèle : fusionné en deux moitiés, sans redemander les
+    // passes déjà faites (les notes partielles sont gardées).
+    const mergeGroup = async (group: MeetingSummary[]): Promise<MeetingSummary[]> => {
+      if (group.length === 1) return group;
+      try {
+        onProgress(++pass, Math.max(estimatedTotal, pass));
+        return [
+          await run([
+            system,
+            {
+              role: 'user',
+              content: `${contextBlock(ctx)}\n\nVoici ${group.length} résumés partiels successifs de la même réunion. Fusionne-les en un seul (même format) : regroupe par sujet, supprime les doublons, garde toutes les décisions et actions.\n\n${group.map((p, i) => `Résumé ${i + 1} :\n${JSON.stringify(p)}`).join('\n\n')}`,
+            },
+          ]),
+        ];
+      } catch (err) {
+        if (group.length <= 2 || !isContextOverflow(err instanceof Error ? err.message : String(err))) throw err;
+        const half = Math.ceil(group.length / 2);
+        return [...(await mergeGroup(group.slice(0, half))), ...(await mergeGroup(group.slice(half)))];
       }
-      onProgress(++pass, Math.max(estimatedTotal, pass));
-      merged.push(
-        await run([
-          system,
-          {
-            role: 'user',
-            content: `${contextBlock(ctx)}\n\nVoici ${group.length} résumés partiels successifs de la même réunion. Fusionne-les en un seul (même format) : regroupe par sujet, supprime les doublons, garde toutes les décisions et actions.\n\n${group.map((p, i) => `Résumé ${i + 1} :\n${JSON.stringify(p)}`).join('\n\n')}`,
-          },
-        ]),
-      );
-    }
+    };
+    const merged: MeetingSummary[] = [];
+    for (const group of groups) merged.push(...(await mergeGroup(group)));
     partials = merged;
   }
   return { summary: finish(partials[0]!), passes: pass, models: [...models] };

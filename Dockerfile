@@ -20,6 +20,8 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY drizzle ./drizzle
+# Police du compte rendu en PDF (accents, lettres d'Europe de l'Est, cyrillique…).
+COPY assets ./assets
 COPY package.json ./
 # Version affichée au démarrage et dans /health (renseignées par la CI).
 ARG GIT_SHA=""
