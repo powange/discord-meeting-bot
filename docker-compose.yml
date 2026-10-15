@@ -129,7 +129,7 @@ services:
   # fichiers supprimés ici sont gardés 30 jours dans <destination>/.supprimes avant d'être effacés.
   # rclone.conf à créer sur l'hôte (voir docs/exploitation.md). « unhealthy » sans copie réussie depuis 26 h.
   offsite:
-    image: rclone/rclone:1.75.1
+    image: rclone/rclone:1.75.2
     profiles: [offsite]
     restart: unless-stopped
     logging: *logging
