@@ -29,10 +29,15 @@ import { effectiveBackends } from '../services/transcriptionBackends.js';
 import type { PipelineDeps, StepContext, StepFn } from './runner.js';
 
 /** Étapes du traitement post-réunion (phase 3). */
-export function createSteps(deps: PipelineDeps): Record<PipelineStep, StepFn> {
+export interface StepOptions {
+  /** Durée maximale de la transcription en ms (tests) ; sinon `transcription.stepMaxMin`. */
+  transcribeMaxMs?: number;
+}
+
+export function createSteps(deps: PipelineDeps, options: StepOptions = {}): Record<PipelineStep, StepFn> {
   return {
     mix: (ctx) => mix(deps, ctx),
-    transcribe: (ctx) => transcribe(deps, ctx),
+    transcribe: (ctx) => transcribe(deps, ctx, options.transcribeMaxMs),
     summarize: (ctx) => summarize(deps, ctx),
     publish: (ctx) => publish(deps, ctx),
     export: (ctx) => exportFiles(deps, ctx),
@@ -214,7 +219,7 @@ async function deleteMessages(thread: ThreadChannel, ids: readonly string[]): Pr
  * au premier backend disponible. Chaque bloc est enregistré dès qu'il est transcrit : une
  * relance reprend là où on s'était arrêté.
  */
-async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<string, unknown>> {
+async function transcribe(deps: PipelineDeps, ctx: StepContext, maxMs?: number): Promise<Record<string, unknown>> {
   const { repos, config } = deps;
   const { meeting, signal } = ctx;
   const cfg = config.guild(meeting.guildId).transcription;
@@ -258,7 +263,7 @@ async function transcribe(deps: PipelineDeps, ctx: StepContext): Promise<Record<
   // Annulation commune : abandon du traitement, durée maximale dépassée, ou échec d'un bloc
   // (les autres s'arrêtent au lieu de continuer pendant qu'on supprime leur dossier).
   const failed = new AbortController();
-  const tooLong = AbortSignal.timeout(cfg.stepMaxMin * 60_000);
+  const tooLong = AbortSignal.timeout(maxMs ?? cfg.stepMaxMin * 60_000);
   const stepSignal = AbortSignal.any([signal, failed.signal, tooLong]);
   try {
     const queue = [...pending];

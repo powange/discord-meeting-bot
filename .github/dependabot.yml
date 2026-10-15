@@ -13,7 +13,16 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: monthly }
+    ignore:
+      # Node : seules les versions paires sont maintenues longtemps (LTS) ; montée majeure à la main.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
   # Images de la stack (postgres, rclone, litellm) épinglées dans docker-compose.yml.
   - package-ecosystem: docker-compose
     directory: /
     schedule: { interval: monthly }
+    ignore:
+      # Une version majeure de PostgreSQL ne relit pas les données de la précédente : montée à la
+      # main, par sauvegarde et restauration (docs/exploitation.md).
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]

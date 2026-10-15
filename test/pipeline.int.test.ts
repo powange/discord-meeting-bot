@@ -38,6 +38,9 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
   const llmPrompts: string[] = [];
   let llmContextRefusals = 0;
 
+  /** Serveur de transcription qui met 2 s à répondre (durée maximale dépassée). */
+  let slowTranscription = false;
+
   beforeAll(async () => {
     ({ db, pool } = createDb(await freshDatabase(url!, 'pipeline')));
     await runMigrations(db);
@@ -55,6 +58,7 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
       if (req.url === '/speaches/v1/models') return res.writeHead(200).end('{}');
       if (req.url === '/speaches/v1/audio/transcriptions') {
         hits.speaches++;
+        if (slowTranscription) await new Promise((r) => setTimeout(r, 2000)); // serveur trop lent
         const ok = raw.includes('RIFF'); // un vrai WAV a été envoyé
         return res.writeHead(200, { 'content-type': 'application/json' }).end(
           JSON.stringify({
@@ -128,6 +132,29 @@ describe.skipIf(!url)('Traitement post-réunion (PostgreSQL, ffmpeg, serveurs si
     const client = { guilds: { fetch: async () => ({ premiumTier: 0 }) } } as unknown as Client;
     return { client, repos, settings: new SettingsService(repos, config), config, log };
   }
+
+  it('transcription plus longue que la durée maximale : échec clair, sans relance automatique', async () => {
+    const meeting = await seedMeeting();
+    const d = deps();
+    const steps = createSteps(d, { transcribeMaxMs: 300 });
+    const settings = await d.settings.get('g');
+    const m = (await import('../src/i18n/index.js')).messages('fr');
+    const ctx = { meeting, settings, m, signal: new AbortController().signal, log, progress: () => undefined };
+    const { failureCause, TRANSIENT_CAUSES } = await import('../src/domain/failure.js');
+    slowTranscription = true;
+    try {
+      const error = await steps.transcribe(ctx).then(
+        () => null,
+        (err: Error) => err.message,
+      );
+      expect(error).toBe(m.pipeline.stepTooLong(d.config.guild('g').transcription.stepMaxMin));
+      expect(failureCause(error!)).toBe('tooLong');
+      expect(TRANSIENT_CAUSES).not.toContain('tooLong');
+    } finally {
+      slowTranscription = false;
+    }
+    for (const row of await repos.listPipeline(meeting.id)) await repos.updateStep(meeting.id, row.step, { status: 'done' });
+  }, 30_000);
 
   it('transcription (bascule) puis résumé', async () => {
     const meeting = await seedMeeting();
