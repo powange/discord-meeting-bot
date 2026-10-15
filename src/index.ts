@@ -9,6 +9,7 @@ import { restoreSuppressedEmbeds } from './discord/embedGuard.js';
 import { routeInteraction } from './discord/interactions/router.js';
 import { registerCommands } from './discord/registerCommands.js';
 import { startHealthServer } from './lib/health.js';
+import { errorMessage } from './lib/errors.js';
 import { createLogger } from './lib/logger.js';
 import { buildInfo } from './lib/version.js';
 import { configureSecrets, encryptSecret, secretsEnabled } from './lib/secrets.js';
@@ -34,8 +35,31 @@ async function main(): Promise<void> {
   log.info({ ...build, env: process.env.NODE_ENV ?? 'development' }, 'Démarrage de meeting-recorder');
 
   const { db, pool } = createDb(config.database.url);
+  // Connexion inactive coupée (redémarrage de PostgreSQL) : sans écouteur, l'erreur arrêterait le
+  // bot net, enregistrements compris. Le pool en rouvre une à la demande suivante.
+  pool.on('error', (err) => log.warn({ err: err.message }, 'Connexion à la base perdue : elle sera rouverte'));
   // Une seule instance par base, puis sauvegarde avant de toucher au schéma.
-  const instanceLock = await acquireInstanceLock(pool, log);
+  let instanceLock = await acquireInstanceLock(pool, log);
+  // Verrou d'instance perdu avec sa connexion : repris (une seconde instance ne doit pas pouvoir
+  // démarrer), sinon arrêt propre plutôt que de tourner sans protection.
+  const watchLock = (lock: typeof instanceLock) => {
+    lock.on('error', (err) => {
+      log.error({ err: err.message }, 'Connexion du verrou d’instance perdue : reprise du verrou');
+      lock.release(err);
+      void acquireInstanceLock(pool, log, 120_000).then(
+        (next) => {
+          instanceLock = next;
+          watchLock(next);
+          log.info('Verrou d’instance repris');
+        },
+        (lost) => {
+          log.fatal({ err: errorMessage(lost) }, 'Verrou d’instance non repris : arrêt du bot');
+          void shutdown('verrou perdu');
+        },
+      );
+    });
+  };
+  watchLock(instanceLock);
   await backupBeforeMigrations(pool, config.database.url, join(config.dataDir, 'backups'), log);
   await runMigrations(db);
   log.info('Migrations appliquées');
@@ -100,7 +124,13 @@ async function main(): Promise<void> {
   const scheduler = new Scheduler(ctx);
   scheduler.setAlert((guildId, cause, message) => alerts.guild(guildId, cause, message));
   const watcher = new MeetingWatcher(client, repos, meetings, config, log);
-  const retention = new RetentionService(repos, config, log, (message) => alerts.global('disk', message));
+  const retention = new RetentionService(
+    repos,
+    config,
+    log,
+    (message) => alerts.global('disk', message),
+    (guildId, cause, message) => alerts.guild(guildId, cause, message),
+  );
   await hub.load();
 
   // Chaque étape d'initialisation est indépendante : une erreur passagère (base, Discord) dans
@@ -205,14 +235,15 @@ async function main(): Promise<void> {
     stopping = true;
     log.info({ signal }, 'Arrêt en cours');
     const force = setTimeout(() => process.exit(1), 15_000).unref();
-    // Les enregistrements d'abord : fermer proprement les pistes est ce qui ne doit jamais manquer
-    // de temps. Le traitement des comptes rendus s'interrompt en parallèle (il reprendra au démarrage).
+    // Plus de nouveau travail d'abord (le planificateur et la surveillance peuvent encore lancer un
+    // enregistrement), puis les enregistrements : fermer proprement les pistes est ce qui ne doit
+    // jamais manquer de temps. Le traitement des comptes rendus s'interrompt en parallèle.
+    await scheduler.stop().catch(() => undefined);
+    await watcher.stop().catch(() => undefined);
     await Promise.allSettled([
       recordings.stopAll().catch((err) => log.error({ err }, 'Arrêt des enregistrements incomplet')),
       pipeline.stop(),
     ]);
-    await scheduler.stop().catch(() => undefined);
-    await watcher.stop();
     await retention.stop().catch(() => undefined);
     await hub.stopWatchdog().catch(() => undefined);
     await cards.flush().catch(() => undefined);

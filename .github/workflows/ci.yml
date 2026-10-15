@@ -63,12 +63,14 @@ jobs:
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
+      # L'image est d'abord poussée sous une étiquette propre au commit ; stable, la version et
+      # latest ne sont posés qu'après l'analyse de vulnérabilités (étape « Étiquettes »).
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ghcr.io/${{ github.repository }}:build-${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GIT_SHA=${{ github.sha }}
@@ -78,12 +80,25 @@ jobs:
           # Provenance (comment l'image a été construite) et inventaire des paquets, attachés à l'image.
           provenance: mode=max
           sbom: true
-      # Failles critiques ayant un correctif : la version n'est pas déployée (le webhook est après).
+      # Failles critiques ayant un correctif : l'image ne reçoit ni stable ni sa version, et la
+      # production n'est pas redéployée (pas même par un « Pull and redeploy » manuel).
       - name: Analyse de vulnérabilités (Trivy 0.74.0)
         run: >-
           docker run --rm aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
           image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1
           ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+      # Analyse réussie : la même image (même empreinte, sans reconstruction) reçoit ses étiquettes.
+      - name: Étiquettes (stable, version, latest, sha)
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then args+=(-t "$tag"); fi
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$IMAGE"
       # Seulement pour une version publiée : un push sur main ne doit jamais couper une réunion en cours.
       - name: Déclencher le redéploiement Portainer
         if: startsWith(github.ref, 'refs/tags/v') && env.PORTAINER_WEBHOOK != ''

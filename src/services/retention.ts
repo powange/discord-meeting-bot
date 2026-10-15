@@ -28,8 +28,10 @@ export class RetentionService {
     private readonly repos: Repositories,
     private readonly config: AppConfig,
     private readonly log: Logger,
-    /** Alerte opérateur (salon d'alertes) : branchée par la supervision. */
+    /** Alerte opérateur (salon d'alertes de tous les serveurs) : espace disque. */
     private readonly alert: (message: string) => Promise<unknown> = async () => undefined,
+    /** Alerte d'un serveur (son salon d'alertes) : ses enregistrements bientôt purgés. */
+    private readonly guildAlert: (guildId: string, cause: string, message: string) => Promise<unknown> = async () => undefined,
   ) {}
 
   start(): void {
@@ -52,9 +54,15 @@ export class RetentionService {
 
     const raw = (await this.repos.listRawPurgeCandidates()).map((r) => ({ ...r, days: this.config.guild(r.guildId).retention.rawTracksDays }));
     const toPurge = new Set(rawTracksToPurge(raw, now));
-    const soon = unprocessedTracksExpiringSoon(raw, now);
-    if (soon.length > 0) {
-      await this.alert(`${soon.length} enregistrement(s) dont le compte rendu est en échec seront supprimés demain (pistes brutes) : relancez-les avant si besoin.`).catch(() => undefined);
+    // Pistes d'un compte rendu en échec supprimées demain : chaque serveur concerné est prévenu
+    // (avec les titres), sans partager l'anti-répétition de l'alerte disque.
+    const soon = new Set(unprocessedTracksExpiringSoon(raw, now));
+    const byGuild = new Map<string, Set<string>>();
+    for (const r of raw.filter((x) => soon.has(x.recordingId))) byGuild.set(r.guildId, (byGuild.get(r.guildId) ?? new Set()).add(r.meetingId));
+    for (const [guildId, meetingIds] of byGuild) {
+      const titles = [];
+      for (const id of meetingIds) titles.push((await this.repos.getMeeting(id))?.title ?? id);
+      await this.guildAlert(guildId, 'retention', `Les enregistrements de ${titles.map((t) => `« ${t} »`).join(', ')} seront supprimés demain alors que leur compte rendu est en échec : réessayez-le avant si besoin.`).catch(() => undefined);
     }
     for (const r of raw.filter((x) => toPurge.has(x.recordingId))) {
       try {

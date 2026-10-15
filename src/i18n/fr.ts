@@ -610,6 +610,7 @@ export const fr = {
     timezone: 'Fuseau horaire inconnu (ex. `Europe/Paris`).',
     forumPermissions: (perms: string) => `Il me manque des permissions sur ce forum : ${perms}.`,
     recordingBusy: 'Un enregistrement est déjà en cours sur ce serveur (un bot ne peut être que dans un vocal à la fois).',
+    recordingStopping: "L'enregistrement précédent est en train de se terminer : réessayez dans quelques secondes.",
     alreadyRecording: 'Cette réunion est déjà en cours d’enregistrement.',
     notRecording: "Cette réunion n'est pas en cours d'enregistrement.",
     alertChannel: "Je ne peux pas écrire dans ce salon : vérifiez mes permissions (voir le salon, envoyer des messages).",

@@ -69,6 +69,8 @@ interface ActiveRecording {
 export class RecordingService {
   /** Par serveur. Une entrée `null` = démarrage en cours (évite deux démarrages simultanés). */
   private readonly active = new Map<string, ActiveRecording | null>();
+  /** Serveurs dont l'enregistrement est en train de s'arrêter (pistes, connexion vocale). */
+  private readonly stopping = new Set<string>();
   /** Appelé à la fin d'un enregistrement (pas après une coupure : une reprise est probable). */
   private onStopped: (meetingId: string) => Promise<unknown> = async () => undefined;
   /** Mises à jour du message de contrôle, sérialisées par réunion (pas de double publication). */
@@ -145,6 +147,7 @@ export class RecordingService {
     const m = messages(settings.locale);
     if (!isOpen(meeting.status)) throw new UserError(m.errors.meetingClosed);
     if (this.active.has(meeting.guildId)) {
+      if (this.stopping.has(meeting.guildId)) throw new UserError(m.errors.recordingStopping);
       throw new UserError(this.isRecording(meetingId) ? m.errors.alreadyRecording : m.errors.recordingBusy);
     }
 
@@ -334,9 +337,16 @@ export class RecordingService {
   async stop(meetingId: string, reason: StopReason, by?: string): Promise<boolean> {
     const entry = [...this.active.values()].find((a) => a?.meetingId === meetingId);
     if (!entry) return false;
-    this.active.delete(entry.guildId); // avant toute attente : un seul arrêt
-
-    await entry.session.stop();
+    // Place gardée (réservation) jusqu'à la fin de l'arrêt : un « Reprendre » immédiat réutiliserait
+    // la connexion vocale que l'ancienne session détruit juste après (nouvelle session muette).
+    this.active.set(entry.guildId, null);
+    this.stopping.add(entry.guildId);
+    try {
+      await entry.session.stop();
+    } finally {
+      this.stopping.delete(entry.guildId);
+      if (this.active.get(entry.guildId) === null) this.active.delete(entry.guildId);
+    }
     const guildForNick = this.client.guilds.cache.get(entry.guildId);
     if (guildForNick) await this.setNickname(guildForNick, entry.previousNickname);
     await this.repos.saveCaptureStats(entry.recordingId, entry.session.captureStats()).catch((err) => this.warn(meetingId, 'Statistiques de capture non enregistrées', err));
@@ -490,6 +500,11 @@ export class RecordingService {
 
   /** Coupure réseau : on laisse quelques secondes à la reconnexion, sinon arrêt (reprise possible). */
   private watchConnection(entry: ActiveRecording, connection: VoiceConnection): void {
+    // Connexion détruite par un autre chemin (bibliothèque, autre session) : la session n'enregistre
+    // plus rien, elle est arrêtée comme une déconnexion (reprise possible).
+    connection.on(VoiceConnectionStatus.Destroyed, () => {
+      if (this.active.get(entry.guildId) === entry) void this.stop(entry.meetingId, 'disconnected').catch((err) => this.warn(entry.meetingId, 'Arrêt après destruction de la connexion impossible', err));
+    });
     connection.on(VoiceConnectionStatus.Disconnected, () => {
       void (async () => {
         try {

@@ -5,6 +5,7 @@ import { ensureUnarchived } from '../discord/forum.js';
 import { renderAgendaMessage, renderMeetingCard, type RenderedMessage } from '../discord/embeds/meetingCard.js';
 import { fetchThread, isUnknownMessage } from '../discord/threads.js';
 import { slotLabel, tallySlots } from '../domain/datePoll.js';
+import { isOpen } from '../domain/meeting.js';
 import { messages } from '../i18n/index.js';
 import { errorMessage } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
@@ -91,8 +92,19 @@ export class CardService {
     if (!meeting?.threadId) return;
     const thread = await fetchThread(this.client, meeting.threadId);
     if (!thread) return;
+    // Post d'une réunion close déjà archivé (annulation) : rouvert le temps de l'édition (Discord
+    // refuse d'éditer dans un post archivé), puis réarchivé.
+    const rearchive = thread.archived === true && !isOpen(meeting.status);
     await ensureUnarchived(thread);
+    try {
+      await this.refreshParts(meeting, thread, parts);
+    } finally {
+      if (rearchive) await thread.setArchived(true, 'Réunion close').catch((err) => this.log.warn({ meetingId, err: errorMessage(err) }, 'Post non réarchivé'));
+    }
+  }
 
+  private async refreshParts(meeting: MeetingRow, thread: ThreadChannel, parts: Set<CardPart>): Promise<void> {
+    const meetingId = meeting.id;
     if (!meeting.agendaMessageId) parts.add('agenda'); // l'ODJ ne doit jamais disparaître de la carte sans son message
     if (parts.has('agenda')) {
       const created = await this.updateAgenda(meeting, thread);

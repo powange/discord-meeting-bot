@@ -13,3 +13,7 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: monthly }
+  # Images de la stack (postgres, rclone, litellm) épinglées dans docker-compose.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: monthly }

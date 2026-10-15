@@ -178,53 +178,11 @@ En BDD, réglé via `/config` : salon forum (le bot y crée ou retrouve les 4 ta
 
 ## 4. Schéma de BDD (Drizzle / PostgreSQL)
 
-```
-guild_settings      guild_id PK, forum_channel_id, tag_ids jsonb{upcoming,live,ended,cancelled},
-                    manager_role_id, optout_role_id, timezone, locale,
-                    reminder_offsets_min int[], nudge_non_responders bool, auto_record_default bool
+Le schéma à jour est dans [src/db/schema.ts](../src/db/schema.ts) (commenté table par table) et ses migrations dans [drizzle/](../drizzle). Le schéma de conception initial qui figurait ici (tables `stored_files`, `removed_at`, étapes par enregistrement…) n'existe plus.
 
-meetings            id uuid PK, guild_id, thread_id UQ, card_message_id, scheduled_event_id,
-                    voice_channel_id, title, description, starts_at timestamptz, duration_min,
-                    organizer_id, status enum(scheduled|live|ended|cancelled),
-                    auto_record bool, agenda_locked bool, created_at, updated_at
-
-rsvps               (meeting_id, user_id) PK, status enum(yes|maybe|no), updated_at
-
-agenda_items        id PK, meeting_id FK, position int, title, detail, author_id,
-                    created_at, removed_at          -- suppression logique, position ré-indexée
-
-scheduled_jobs      id PK, meeting_id FK, kind enum(reminder|nudge|auto_start|event_sync|retention),
-                    due_at, payload jsonb, done_at, attempts, last_error,
-                    UQ(meeting_id, kind, payload->>'offset')   -- idempotent au redémarrage
-
-recordings          id uuid PK, meeting_id FK, started_at, ended_at, started_by,
-                    status enum(recording|stopped|interrupted|failed),
-                    data_dir, status_message_id
-
-recording_presence  id PK, recording_id FK, user_id, display_name, joined_at, left_at,
-                    excluded bool               -- opt-out : présence notée, audio ignoré
-
-audio_segments      id PK, recording_id FK, user_id, start_ms, end_ms, file_path,
-                    packets int, lost_packets int
-
-pipeline_steps      id PK, recording_id FK, step enum(transcribe|summarize|mix|upload|publish),
-                    status enum(pending|running|done|failed), attempts, locked_until,
-                    started_at, finished_at, error text, output jsonb,
-                    UQ(recording_id, step)
-
-transcript_segments id PK, recording_id FK, user_id, start_ms, end_ms, text, backend, model
-
-summaries           recording_id PK, content jsonb   -- par point d'ODJ : décisions, actions{qui,quoi,quand},
-                    markdown, llm_model_group, llm_deployment_ids text[], transcription_backends text[], created_at
-
-stored_files        id PK, recording_id FK, kind enum(track|mix|transcript), user_id NULL,
-                    destination, remote_path, public_url, size_bytes,
-                    uploaded_at, expires_at, deleted_at
-```
-
-- Une seule ligne `pipeline_steps` par étape et par enregistrement. Elle est prise avec `UPDATE … WHERE status IN ('pending','failed') … RETURNING`, avec un bail `locked_until`. « Réessayer » remet à `pending` **les étapes en échec** (les suivantes le sont déjà) ; l'audio complet et la transcription tournent en parallèle ; les étapes `done` réutilisent leur `output`.
-- Chaque étape est idempotente. Exemple : `upload` saute une destination déjà présente dans `stored_files`.
-- Au redémarrage : un enregistrement encore `recording` passe en `interrupted`, et le thread reçoit les boutons « Reprendre » et « Terminer et traiter ».
+- Une ligne `pipeline_steps` par étape et par **réunion** (`mix`, `transcribe`, `summarize`, `publish`, `export`). « Réessayer » remet à `pending` les étapes en échec (les suivantes le sont déjà) ; l'audio complet et la transcription tournent en parallèle ; les étapes `done` réutilisent leur `output`. Voir [docs/compte-rendu.md](compte-rendu.md).
+- Chaque étape est idempotente : blocs de transcription déjà faits gardés, mix sans perte décrit par un manifeste, copie vers le stockage qui saute l'audio inchangé.
+- Au redémarrage : un enregistrement encore `recording` passe en `interrupted`, son bilan propose « Reprendre », et il est repris tout seul s'il a été coupé il y a moins de 15 min et qu'il reste du monde dans le vocal.
 
 ## 5. Points de conception notables
 
@@ -241,34 +199,17 @@ stored_files        id PK, recording_id FK, kind enum(track|mix|transcript), use
 - **Découpage des embeds** : fonction pure `splitSummary(summary) → Embed[][]` (4096 caractères par description, 1024 par champ, 25 champs, 6000 au total et 10 embeds par message). Si nécessaire, les embeds sont répartis sur plusieurs messages, en coupant d'abord par point d'ODJ puis par paragraphe.
 - **Logs** : pino en JSON, enrichi de `guildId`, `meetingId`, `recordingId` et `step`.
 
-## 6. docker-compose (aperçu)
+## 6. docker-compose
 
-```yaml
-services:
-  bot:
-    image: ghcr.io/<toi>/meeting-bot:${BOT_TAG:-latest}
-    env_file: stack.env            # variables saisies dans Portainer
-    volumes: [ "/srv/meeting-bot/config:/app/config:ro", "data:/data" ]
-    depends_on: { postgres: { condition: service_healthy } }
-  postgres:
-    image: postgres:17
-    volumes: [ "pg:/var/lib/postgresql/data" ]
-    healthcheck: { test: ["CMD-SHELL","pg_isready -U bot"], interval: 5s }
-  litellm:
-    image: ghcr.io/berriai/litellm:<version épinglée>
-    command: ["--config","/app/config.yaml"]
-    volumes: [ "/srv/meeting-bot/litellm.yaml:/app/config.yaml:ro" ]
-  rclone:
-    image: rclone/rclone:<version épinglée>
-    command: ["rcd","--rc-addr",":5572","--rc-user","${RCLONE_USER}","--rc-pass","${RCLONE_PASS}"]
-    volumes: [ "/srv/meeting-bot/rclone:/config/rclone", "data:/data" ]
-volumes: { pg: {}, data: {} }
-```
+La stack de référence est [docker-compose.yml](../docker-compose.yml) (bot sur l'image `stable`, PostgreSQL, sauvegarde quotidienne, et en option LiteLLM et la copie hors site rclone) ; son installation est décrite dans [docs/installation.md](installation.md) et son exploitation dans [docs/exploitation.md](exploitation.md).
 
-- Aucun port n'est publié : NPM n'est pas nécessaire, le bot n'expose rien.
-- Les migrations Drizzle s'appliquent au démarrage du bot.
+- Aucun port n'est publié : le bot n'expose rien (le serveur de santé n'écoute que dans le conteneur).
+- Les migrations Drizzle s'appliquent au démarrage du bot, après une sauvegarde.
+- La production suit les versions publiées (tag `v*`) : un push sur `main` ne la redéploie pas.
 
-## 7. Phases de livraison
+## 7. Phases de livraison (historique)
+
+> Plan de développement initial, conservé pour mémoire : les commandes (`pnpm`, `/reunion …`) et le déploiement par push sur `main` qu'il décrit ne sont plus d'actualité. Le fonctionnement actuel est dans [docs/](.) ; le développement local dans [docs/developpement.md](developpement.md).
 
 ### Phase 1 — Gestion des réunions
 **Contenu**
@@ -334,6 +275,6 @@ volumes: { pg: {}, data: {} }
 
 **Déployer** : ajouter `rclone` et monter `rclone.conf` (via `rclone config` sur l'hôte).
 
-## 8. Questions encore ouvertes (non bloquantes pour la phase 1)
+## 8. Questions encore ouvertes (historique, phase 1)
 1. Image : build via **GitHub Actions → GHCR** (recommandé) plutôt que `build:` dans la stack Portainer ? Où est hébergé le repo ?
 2. Quelle stratégie exacte pour la VRAM si Vibe et Ollama tournent sur le même PC de 16 Go : `--unload-timeout` pour Vibe, et `keep_alive` court pour Ollama ?
